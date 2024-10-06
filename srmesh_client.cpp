@@ -6,13 +6,24 @@
 
 #include <chrono>
 #include <fstream>
+#include <future>
 #include <iostream>
+#include <mutex>
+#include <random>
 #include <sstream>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
-constexpr int QKEY = 0x11111111;  // QP의 QKEY 설정 상수
-constexpr int BUFFER_SIZE = 50;   // 송신/수신 버퍼 크기 상수
+constexpr int QKEY = 0x11111111;  // QKEY 설정 상수
+constexpr int BUFFER_SIZE = 50;   // 버퍼 크기 상수
+constexpr int TIMEOUT_MS = 500;   // 타임아웃 시간 (500ms)
+
+// 타겟 IP들에 대해 병렬로 각 타겟을 처리하는 부분에 랜덤 딜레이 추가
+std::random_device rd;                        // 랜덤 시드
+std::mt19937 gen(rd());                       // 랜덤 숫자 생성기
+std::uniform_int_distribution<> dist(1, 10);  // 1 ~ 10 마이크로초 범위
 
 // 로컬 머신의 IP 주소 목록을 가져오는 함수
 std::vector<std::string> get_local_ip_addresses() {
@@ -82,7 +93,170 @@ bool match_device_to_ip(struct ibv_context* context, const std::string& ip,
     return false;
 }
 
-// RDMA UD 클라이언트 함수
+// GID와 QPN을 저장하는 구조체
+struct GID_QPN {
+    uint8_t gid[16];
+    uint32_t qpn;
+};
+
+// CSV 파일을 파싱하고 IP를 키로 하는 unordered_map을 만드는 함수
+std::unordered_map<std::string, GID_QPN> load_gid_qpn_map(
+    const std::string& file_path) {
+    std::unordered_map<std::string, GID_QPN> gid_qpn_map;
+    std::ifstream file(file_path);
+    std::string line;
+
+    // CSV 파일의 각 행을 읽어옴
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string ip, gid_str;
+        uint32_t qpn;
+        uint8_t gid[16];
+
+        // IP, GID, QPN을 추출
+        if (std::getline(iss, ip, ',') && std::getline(iss, gid_str, ',') &&
+            iss >> qpn) {
+            // GID 문자열을 16바이트 배열로 변환
+            sscanf(gid_str.c_str(),
+                   "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:"
+                   "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+                   &gid[0], &gid[1], &gid[2], &gid[3], &gid[4], &gid[5],
+                   &gid[6], &gid[7], &gid[8], &gid[9], &gid[10], &gid[11],
+                   &gid[12], &gid[13], &gid[14], &gid[15]);
+
+            // IP를 키로 하고 GID와 QPN을 값으로 저장
+            gid_qpn_map[ip] = {{gid[0], gid[1], gid[2], gid[3], gid[4], gid[5],
+                                gid[6], gid[7], gid[8], gid[9], gid[10],
+                                gid[11], gid[12], gid[13], gid[14], gid[15]},
+                               qpn};
+        }
+    }
+    return gid_qpn_map;
+}
+
+// RDMA 송신 및 수신 처리 함수
+void process_target(struct ibv_context* context, struct ibv_pd* pd,
+                    struct ibv_qp* queue_pair, struct ibv_cq* send_cq,
+                    struct ibv_cq* recv_cq, const std::string& target_ip,
+                    const GID_QPN& gid_qpn, char* send_buffer,
+                    char* recv_buffer, struct ibv_mr* send_mr,
+                    struct ibv_mr* recv_mr) {
+    try {
+        // Address Handle 생성
+        struct ibv_ah_attr ah_attr = {};
+        ah_attr.is_global = 1;
+        ah_attr.grh.dgid.global.subnet_prefix =
+            *(reinterpret_cast<const uint64_t*>(&gid_qpn.gid[0]));
+        ah_attr.grh.dgid.global.interface_id =
+            *(reinterpret_cast<const uint64_t*>(&gid_qpn.gid[8]));
+        ah_attr.grh.sgid_index = 0;  // 로컬 포트에서 첫 번째 GID 사용
+        ah_attr.grh.hop_limit = 3;   // 네트워크 홉
+        ah_attr.dlid = 0;            // 대상 포트의 LID 사용
+
+        struct ibv_ah* ah = ibv_create_ah(pd, &ah_attr);
+        if (!ah) {
+            std::cerr << "Error: Failed to create address handle for target "
+                      << target_ip << std::endl;
+            return;
+        }
+
+        // 송신 요청 생성
+        struct ibv_sge send_sge = {};
+        send_sge.addr = reinterpret_cast<uint64_t>(send_buffer);
+        send_sge.length = BUFFER_SIZE;
+        send_sge.lkey = send_mr->lkey;
+
+        struct ibv_send_wr send_wr = {};
+        send_wr.wr_id = 0;
+        send_wr.next = nullptr;
+        send_wr.sg_list = &send_sge;
+        send_wr.num_sge = 1;
+        send_wr.opcode = IBV_WR_SEND;
+        send_wr.send_flags = IBV_SEND_SIGNALED;
+        send_wr.wr.ud.ah = ah;
+        send_wr.wr.ud.remote_qpn = gid_qpn.qpn;
+        send_wr.wr.ud.remote_qkey = QKEY;
+
+        struct ibv_send_wr* bad_send_wr = nullptr;
+        if (ibv_post_send(queue_pair, &send_wr, &bad_send_wr)) {
+            std::cerr << "Error: Failed to post send work request to target "
+                      << target_ip << std::endl;
+            ibv_destroy_ah(ah);
+            return;
+        }
+
+        // 송신 완료 대기
+        struct ibv_wc send_wc;
+        while (ibv_poll_cq(send_cq, 1, &send_wc) == 0) {
+            // 대기
+        }
+        if (send_wc.status != IBV_WC_SUCCESS) {
+            std::cerr << "Error: Send work completion failed with status "
+                      << send_wc.status << std::endl;
+        } else {
+            std::cout << "Message successfully sent to " << target_ip
+                      << std::endl;
+
+            // 수신 준비
+            auto start = std::chrono::steady_clock::now();
+
+            struct ibv_sge recv_sge = {};
+            recv_sge.addr = reinterpret_cast<uint64_t>(recv_buffer);
+            recv_sge.length = BUFFER_SIZE;
+            recv_sge.lkey = recv_mr->lkey;
+
+            struct ibv_recv_wr recv_wr = {};
+            recv_wr.wr_id = 0;
+            recv_wr.next = nullptr;
+            recv_wr.sg_list = &recv_sge;
+            recv_wr.num_sge = 1;
+
+            struct ibv_recv_wr* bad_recv_wr = nullptr;
+            if (ibv_post_recv(queue_pair, &recv_wr, &bad_recv_wr)) {
+                std::cerr
+                    << "Error: Failed to post receive work request for target "
+                    << target_ip << std::endl;
+                return;
+            }
+
+            // 응답 대기 및 타임아웃 처리
+            struct ibv_wc recv_wc;
+            bool received = false;
+            auto end_time = std::chrono::steady_clock::now() +
+                            std::chrono::milliseconds(TIMEOUT_MS);
+
+            while (std::chrono::steady_clock::now() < end_time) {
+                if (ibv_poll_cq(recv_cq, 1, &recv_wc) > 0 &&
+                    recv_wc.status == IBV_WC_SUCCESS) {
+                    received = true;
+                    break;
+                }
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(1));  // 폴링 간격을 조정
+            }
+
+            if (received) {
+                auto end = std::chrono::steady_clock::now();
+                auto rtt =
+                    std::chrono::duration_cast<std::chrono::microseconds>(end -
+                                                                          start)
+                        .count();
+                std::cout << "Received response from " << target_ip << " in "
+                          << rtt << " microseconds." << std::endl;
+            } else {
+                std::cerr << "Warning: No response received from " << target_ip
+                          << " within timeout." << std::endl;
+            }
+        }
+
+        ibv_destroy_ah(ah);  // 주소 핸들 해제
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+}
+
+// RDMA 클라이언트 함수 (병렬 처리 및 주기적 실행)
 void run_client(struct ibv_context* context, int port_num,
                 const std::string& ip,
                 const std::vector<std::string>& target_ips) {
@@ -97,7 +271,7 @@ void run_client(struct ibv_context* context, int port_num,
         return;
     }
 
-    // 완료 채널과 완료 큐 생성
+    // 송수신 큐 및 완료 큐 생성
     struct ibv_comp_channel* comp_channel = ibv_create_comp_channel(context);
     if (!comp_channel) {
         std::cerr << "Error: Failed to create completion channel." << std::endl;
@@ -105,19 +279,15 @@ void run_client(struct ibv_context* context, int port_num,
         return;
     }
 
-    struct ibv_cq* completion_queue =
+    struct ibv_cq* send_cq =
         ibv_create_cq(context, 16, nullptr, comp_channel, 0);
-    if (!completion_queue) {
-        std::cerr << "Error: Failed to create completion queue." << std::endl;
-        ibv_destroy_comp_channel(comp_channel);
-        ibv_dealloc_pd(pd);
-        return;
-    }
-
-    // CQ 알림 요청
-    if (ibv_req_notify_cq(completion_queue, 0)) {
-        std::cerr << "Error: Failed to request CQ notification." << std::endl;
-        ibv_destroy_cq(completion_queue);
+    struct ibv_cq* recv_cq =
+        ibv_create_cq(context, 16, nullptr, comp_channel, 0);
+    if (!send_cq || !recv_cq) {
+        std::cerr << "Error: Failed to create send or receive completion queue."
+                  << std::endl;
+        if (send_cq) ibv_destroy_cq(send_cq);
+        if (recv_cq) ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
@@ -125,8 +295,8 @@ void run_client(struct ibv_context* context, int port_num,
 
     // Queue Pair (QP) 생성
     struct ibv_qp_init_attr qp_init_attr = {};
-    qp_init_attr.send_cq = completion_queue;
-    qp_init_attr.recv_cq = completion_queue;
+    qp_init_attr.send_cq = send_cq;
+    qp_init_attr.recv_cq = recv_cq;
     qp_init_attr.cap.max_send_wr = 16;
     qp_init_attr.cap.max_recv_wr = 16;
     qp_init_attr.cap.max_send_sge = 1;
@@ -136,7 +306,8 @@ void run_client(struct ibv_context* context, int port_num,
     struct ibv_qp* queue_pair = ibv_create_qp(pd, &qp_init_attr);  // QP 생성
     if (!queue_pair) {
         std::cerr << "Error: Failed to create queue pair." << std::endl;
-        ibv_destroy_cq(completion_queue);
+        ibv_destroy_cq(send_cq);
+        ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
@@ -154,7 +325,8 @@ void run_client(struct ibv_context* context, int port_num,
             IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY)) {
         std::cerr << "Error: Failed to modify QP to INIT state." << std::endl;
         ibv_destroy_qp(queue_pair);
-        ibv_destroy_cq(completion_queue);
+        ibv_destroy_cq(send_cq);
+        ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
@@ -164,7 +336,8 @@ void run_client(struct ibv_context* context, int port_num,
     if (ibv_modify_qp(queue_pair, &qp_attr, IBV_QP_STATE)) {
         std::cerr << "Error: Failed to modify QP to RTR state." << std::endl;
         ibv_destroy_qp(queue_pair);
-        ibv_destroy_cq(completion_queue);
+        ibv_destroy_cq(send_cq);
+        ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
@@ -175,35 +348,70 @@ void run_client(struct ibv_context* context, int port_num,
     if (ibv_modify_qp(queue_pair, &qp_attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
         std::cerr << "Error: Failed to modify QP to RTS state." << std::endl;
         ibv_destroy_qp(queue_pair);
-        ibv_destroy_cq(completion_queue);
+        ibv_destroy_cq(send_cq);
+        ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
     }
 
-    // 메시지 송수신을 위한 버퍼 생성 및 등록
-    char buffer[BUFFER_SIZE];
-    struct ibv_mr* memory_region =
-        ibv_reg_mr(pd, buffer, sizeof(buffer), IBV_ACCESS_LOCAL_WRITE);
-    if (!memory_region) {
+    // 송수신을 위한 버퍼 생성 및 등록
+    char send_buffer[BUFFER_SIZE];
+    char recv_buffer[BUFFER_SIZE];
+    struct ibv_mr* send_mr = ibv_reg_mr(pd, send_buffer, sizeof(send_buffer),
+                                        IBV_ACCESS_LOCAL_WRITE);
+    struct ibv_mr* recv_mr = ibv_reg_mr(pd, recv_buffer, sizeof(recv_buffer),
+                                        IBV_ACCESS_LOCAL_WRITE);
+    if (!send_mr || !recv_mr) {
         std::cerr << "Error: Failed to register memory region." << std::endl;
         ibv_destroy_qp(queue_pair);
-        ibv_destroy_cq(completion_queue);
+        ibv_destroy_cq(send_cq);
+        ibv_destroy_cq(recv_cq);
         ibv_destroy_comp_channel(comp_channel);
         ibv_dealloc_pd(pd);
         return;
     }
 
-    // 타겟 IP들에 대해 메시지 송신 및 응답 처리
-    for (const auto& target_ip : target_ips) {
-        std::cout << "Sending message to target IP: " << target_ip << std::endl;
-        // 송신 및 수신 로직을 추가할 수 있음 (RDMA 자원 사용)
+    // CSV 파일을 초기에 한번 로드
+    std::unordered_map<std::string, GID_QPN> gid_qpn_map =
+        load_gid_qpn_map("config/global_server_info.csv");
+
+    // 1초마다 주기적으로 메시지 송수신 실행
+    while (true) {
+        auto start_time = std::chrono::steady_clock::now();
+
+        // 병렬 실행을 위한 future 리스트
+        std::vector<std::future<void>> futures;
+
+        for (const auto& target_ip : target_ips) {
+            // 병렬로 각 타겟 처리
+            futures.push_back(std::async(
+                std::launch::async, process_target, context, pd, queue_pair,
+                send_cq, recv_cq, target_ip, gid_qpn_map.at(target_ip),
+                send_buffer, recv_buffer, send_mr, recv_mr));
+            // random 으로 1 ~ 10 마이크로초 중 랜덤 숫자 선택해서 delay를 넣음
+            int random_delay = dist(gen);
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(random_delay));
+        }
+
+        // 모든 타겟 처리 대기
+        for (auto& future : futures) {
+            future.get();
+        }
+
+        // 1초 주기 맞추기
+        auto end_time = std::chrono::steady_clock::now();
+        std::this_thread::sleep_for(std::chrono::seconds(1) -
+                                    (end_time - start_time));
     }
 
     // RDMA 리소스 해제
-    ibv_dereg_mr(memory_region);
+    ibv_dereg_mr(send_mr);
+    ibv_dereg_mr(recv_mr);
     ibv_destroy_qp(queue_pair);
-    ibv_destroy_cq(completion_queue);
+    ibv_destroy_cq(send_cq);
+    ibv_destroy_cq(recv_cq);
     ibv_destroy_comp_channel(comp_channel);
     ibv_dealloc_pd(pd);
 }
