@@ -1,14 +1,40 @@
 #include "common.hpp"
 
+static struct ibv_cq *pp_cq(struct pingpong_context *ctx) {
+    return use_rnic_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
+}
+
 int init_ctx(struct pingpong_context *ctx) {
+    /* check RNIC timestamping support */
+    struct ibv_device_attr_ex attrx;
+    if (ibv_query_device_ex(ctx->context, NULL, &attrx)) {
+        printf("[WARNING] Couldn't query device for extension features\n");
+    } else if (!attrx.completion_timestamp_mask) {
+        printf("[WARNING] -> The device isn't completion timestamp capable\n");
+    } else {
+        printf("Use RNIC Timestamping...\n");
+        use_rnic_ts = 1;
+        ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
+
+        // clock metadata
+        ctx->ts.comp_recv_max_time_delta = 0;
+        ctx->ts.comp_recv_min_time_delta = 0xffffffff;
+        ctx->ts.comp_recv_total_time_delta = 0;
+        ctx->ts.comp_recv_prev_time = 0;
+        ctx->ts.last_comp_with_ts = 0;
+        ctx->ts.comp_with_time_iters = 0;
+    }
+
+    /* check page size */
     page_size = sysconf(_SC_PAGESIZE);
     printf("Page size: %d\n", page_size);
 
     ctx->send_flags = IBV_SEND_SIGNALED;
     ctx->rx_depth = rx_depth;
 
-    if (!posix_memalign((void **)&ctx->buf, page_size, msg_size + grh_size)) {
+    if (posix_memalign((void **)&ctx->buf, page_size, msg_size + grh_size)) {
         std::cerr << "ctx->buf memalign failed\n" << std::endl;
+        exit(1);
     }
     memset(ctx->buf, 0x7b, msg_size + grh_size);
 
@@ -52,9 +78,21 @@ int init_ctx(struct pingpong_context *ctx) {
     }
 
     {
-        ctx->cq =
-            ibv_create_cq(ctx->context, rx_depth + 1, NULL, ctx->channel, 0);
-        if (!ctx->cq) {
+        if (use_rnic_ts) {
+            struct ibv_cq_init_attr_ex attr_ex = {};
+            attr_ex.cqe = rx_depth + 1;
+            attr_ex.cq_context = NULL;
+            attr_ex.channel = ctx->channel;
+            attr_ex.comp_vector = 0;
+            attr_ex.wc_flags =
+                IBV_WC_EX_WITH_BYTE_LEN | IBV_WC_EX_WITH_COMPLETION_TIMESTAMP;
+            ctx->cq_s.cq_ex = ibv_create_cq_ex(ctx->context, &attr_ex);
+        } else {
+            ctx->cq_s.cq = ibv_create_cq(ctx->context, rx_depth + 1, NULL,
+                                         ctx->channel, 0);
+        }
+
+        if (!pp_cq(ctx)) {
             fprintf(stderr, "Couldn't create CQ\n");
             goto clean_mr;
         }
@@ -63,8 +101,8 @@ int init_ctx(struct pingpong_context *ctx) {
     {
         struct ibv_qp_attr attr;
         struct ibv_qp_init_attr init_attr = {};
-        init_attr.send_cq = ctx->cq;
-        init_attr.recv_cq = ctx->cq;
+        init_attr.send_cq = pp_cq(ctx);
+        init_attr.recv_cq = pp_cq(ctx);
         init_attr.cap.max_send_wr = 3;
         init_attr.cap.max_recv_wr = rx_depth;
         init_attr.cap.max_send_sge = 3;
@@ -101,7 +139,7 @@ clean_qp:
     ibv_destroy_qp(ctx->qp);
 
 clean_cq:
-    ibv_destroy_cq(ctx->cq);
+    ibv_destroy_cq(pp_cq(ctx));
 
 clean_mr:
     ibv_dereg_mr(ctx->mr);
@@ -250,7 +288,7 @@ int main(int argc, char *argv[]) {
 
     // Request CQ Notification
     if (use_event) {
-        if (ibv_req_notify_cq(ctx->cq, 0)) {
+        if (ibv_req_notify_cq(pp_cq(ctx), 0)) {
             fprintf(stderr, "Couldn't request CQ notification\n");
             exit(1);
         }
@@ -289,6 +327,12 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    struct ibv_poll_cq_attr attr = {};
+    if (use_rnic_ts) {
+        ret = ibv_start_poll(ctx->cq_s.cq_ex, &attr);
+        assert(ret == ENOENT);
+    }
+
     // RECV WR 포스트
     int num_init_post = 1;
     ret = post_recv(ctx, num_init_post);
@@ -298,9 +342,30 @@ int main(int argc, char *argv[]) {
     }
 
     if (ctx->is_server) {  // 서버
-        int cnt_send = 0;
+        int cnt_send = 0;  // expect total 2 SENDs
+        int num_cqe = 0;   // number of polled CQE
+        uint64_t ts_cqe = 0, ts_server_recv = 0, ts_server_send = 0;
         struct ibv_wc wc = {};
+
         while (true) {
+            if (cnt_send == 1) {
+                /** The second SEND (a.k.a. ACK) must be sent after first
+                 * post_send's CQE. */
+                /** TODO: Write the elapsed time to ACK's buffer
+                 * and send the information */
+                usleep(1);
+                if (post_send(ctx, rem_dest.qpn,
+                              msg_from_server + std::string("_2"))) {
+                    fprintf(stderr, "Couldn't post send\n");
+                    exit(1);
+                }
+                if (use_rnic_ts) {
+                    printf("Server process time: %lu\n",
+                           ts_server_send - ts_server_recv);
+                }
+            }
+
+            /* if using complete channel */
             if (use_event) {
                 struct ibv_cq *ev_cq;
                 void *ev_ctx;
@@ -309,34 +374,60 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
 
-                ibv_ack_cq_events(ctx->cq, 1);
+                ibv_ack_cq_events(pp_cq(ctx), 1);
 
-                if (ev_cq != ctx->cq) {
+                if (ev_cq != pp_cq(ctx)) {
                     fprintf(stderr, "CQ event for unknown CQ %p\n", ev_cq);
                     return 1;
                 }
-                if (ibv_req_notify_cq(ctx->cq, 0)) {
+                if (ibv_req_notify_cq(pp_cq(ctx), 0)) {
                     fprintf(stderr, "Couldn't request CQ notification\n");
                     return 1;
                 }
             }
 
-            int num_cqe = ibv_poll_cq(ctx->cq, 1, &wc);
-            if (num_cqe < 0) {
-                std::cerr << "Poll CQ failed" << std::endl;
-                break;
-            } else if (num_cqe > 1) {
-                std::cerr << "CQE must be 1" << std::endl;
-                break;
+            /* polling CQE */
+            if (use_rnic_ts) {  // extension
+                do {
+                    ret = ibv_next_poll(ctx->cq_s.cq_ex);
+                } while (!use_event && ret == ENOENT);  // until empty
+                num_cqe = 1;
+                ts_cqe = ibv_wc_read_completion_ts(ctx->cq_s.cq_ex);
+            } else {  // original
+                do {
+                    num_cqe = ibv_poll_cq(pp_cq(ctx), 1, &wc);
+                } while (!use_event && num_cqe == 0);  // until empty
+
+                if (num_cqe < 0) {
+                    std::cerr << "Poll CQ failed" << std::endl;
+                    break;
+                } else if (num_cqe > 1) {
+                    std::cerr << "CQE must be 1" << std::endl;
+                    break;
+                }
             }
 
             if (num_cqe > 0) {
                 printf("* CQE Event happend! (%d)\n", num_cqe);
 
+                if (use_rnic_ts) {
+                    /** TODO: overrided for simplicity. Later, optimize it */
+                    wc = {0};
+                    wc.status = ctx->cq_s.cq_ex->status;
+                    wc.wr_id = ctx->cq_s.cq_ex->wr_id;
+                    wc.byte_len = ibv_wc_read_byte_len(ctx->cq_s.cq_ex);
+                    wc.opcode = ctx->cq_s.cq_ex->read_opcode(ctx->cq_s.cq_ex);
+                }
+
                 if (wc.status == IBV_WC_SUCCESS) {
-                    printf("  [CQE] wc.status: %d\n", wc.status);
+                    printf("  [CQE] wc.status: %s(%d)\n",
+                           ibv_wc_status_str(wc.status), wc.status);
 
                     if (wc.opcode == IBV_WC_RECV) {
+                        if (use_rnic_ts) {
+                            ts_server_recv = ts_cqe; /* timestamp */
+                        }
+
                         ret = post_recv(ctx, 1);  // 다시 수신 대기
                         printf("  [CQE] RECV (wr_id: %lu)\n", wc.wr_id);
                         printf("Server received %d bytes. Buffer: %s\n",
@@ -348,25 +439,20 @@ int main(int argc, char *argv[]) {
                             fprintf(stderr, "Couldn't post send\n");
                             exit(1);
                         }
-
-                        /* Post a send with a message */
-                        usleep(1000);
-                        if (post_send(ctx, rem_dest.qpn,
-                                      msg_from_server + std::string("_2"))) {
-                            fprintf(stderr, "Couldn't post send\n");
-                            exit(1);
-                        }
                     }
 
                     if (wc.opcode == IBV_WC_SEND) {
                         printf("  [CQE] SEND (wr_id: %lu)\n", wc.wr_id);
                         ++cnt_send;
-                        if (cnt_send >= 2) {
+                        if (cnt_send == 1) {
+                            if (use_rnic_ts) {
+                                ts_server_send = ts_cqe; /* timestamp */
+                            }
+                        } else if (cnt_send >= 2) {
                             printf("Server completed.\n");
                             exit(1);
                         }
                     }
-
                 } else {
                     perror("Failed to get IBV_WC_SUCCESS\n");
                     exit(1);
@@ -376,15 +462,18 @@ int main(int argc, char *argv[]) {
 
         return 0;
 
-    } else {               // 클라이언트
-        int cnt_recv = 0;  // expect 2 RECVs
+    } else {               // Client
+        int cnt_recv = 0;  // expect total 2 RECVs
+        int num_cqe = 0;   // number of polled CQE
+        uint64_t ts_cqe = 0, ts_client_send = 0, ts_client_recv = 0;
         struct ibv_wc wc = {};
+
         if (gettimeofday(&start, NULL)) {
             perror("gettimeofday");
             return 1;
         }
 
-        // 일단 클라이언트 먼저 message 보내기
+        // Client first send a message to server
         if (post_send(ctx, rem_dest.qpn, msg_from_client)) {
             fprintf(stderr, "Couldn't post send\n");
             exit(1);
@@ -399,38 +488,66 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
 
-                ibv_ack_cq_events(ctx->cq, 1);
+                ibv_ack_cq_events(pp_cq(ctx), 1);
 
-                if (ev_cq != ctx->cq) {
+                if (ev_cq != pp_cq(ctx)) {
                     fprintf(stderr, "CQ event for unknown CQ %p\n", ev_cq);
                     return 1;
                 }
-                if (ibv_req_notify_cq(ctx->cq, 0)) {
+                if (ibv_req_notify_cq(pp_cq(ctx), 0)) {
                     fprintf(stderr, "Couldn't request CQ notification\n");
                     return 1;
                 }
             }
 
-            int num_cqe = ibv_poll_cq(ctx->cq, 1, &wc);
-            if (num_cqe < 0) {
-                std::cerr << "Poll CQ failed" << std::endl;
-                break;
-            } else if (num_cqe > 1) {
-                std::cerr << "CQE must be 1" << std::endl;
-                break;
+            /* polling CQE */
+            if (use_rnic_ts) {  // extension
+                do {
+                    ret = ibv_next_poll(ctx->cq_s.cq_ex);
+                } while (!use_event && ret == ENOENT);  // until empty
+                num_cqe = 1;
+                ts_cqe = ibv_wc_read_completion_ts(ctx->cq_s.cq_ex);
+            } else {  // original
+                do {
+                    num_cqe = ibv_poll_cq(pp_cq(ctx), 1, &wc);
+                } while (!use_event && num_cqe == 0);  // until empty
+
+                if (num_cqe < 0) {
+                    std::cerr << "Poll CQ failed" << std::endl;
+                    break;
+                } else if (num_cqe > 1) {
+                    std::cerr << "CQE must be 1" << std::endl;
+                    break;
+                }
             }
 
             if (num_cqe > 0) {
                 printf("* CQE Event happend! (%d)\n", num_cqe);
 
+                if (use_rnic_ts) {
+                    /** TODO: overrided for simplicity. Later, optimize it */
+                    wc = {0};
+                    wc.status = ctx->cq_s.cq_ex->status;
+                    wc.wr_id = ctx->cq_s.cq_ex->wr_id;
+                    wc.byte_len = ibv_wc_read_byte_len(ctx->cq_s.cq_ex);
+                    wc.opcode = ctx->cq_s.cq_ex->read_opcode(ctx->cq_s.cq_ex);
+                }
+
                 if (wc.status == IBV_WC_SUCCESS) {
-                    printf("  [CQE] wc.status: %d\n", wc.status);
+                    printf("  [CQE] wc.status: %s(%d)\n",
+                           ibv_wc_status_str(wc.status), wc.status);
 
                     if (wc.opcode == IBV_WC_RECV) {
                         ++cnt_recv;
                         ret = post_recv(ctx, 1);
                         printf("  [CQE] RECV (wr_id: %lu)\n", wc.wr_id);
                         if (cnt_recv == 1) {
+                            if (use_rnic_ts) {
+                                ts_client_recv = ts_cqe;
+                                printf("Network RTT + Server delay: %lu\n",
+                                       ts_client_recv - ts_client_send);
+                            }
+
                             if (gettimeofday(&end, NULL)) {
                                 perror("gettimeofday");
                                 return 1;
@@ -451,6 +568,9 @@ int main(int argc, char *argv[]) {
                     }
 
                     if (wc.opcode == IBV_WC_SEND) {
+                        if (use_rnic_ts) {
+                            ts_client_send = ts_cqe;
+                        }
                         printf("  [CQE] SEND (wr_id: %lu)\n", wc.wr_id);
                     }
 

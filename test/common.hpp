@@ -1,6 +1,7 @@
 #pragma once
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <dirent.h>
 #include <endian.h>
 #include <getopt.h>
@@ -31,7 +32,8 @@ const static unsigned int rx_depth = 50;
 const static int gid_index = 0;
 const static int service_level = 0;
 const static int use_event = 0;
-static int page_size;
+static int use_rnic_ts = 0;
+static int page_size = 0;
 
 static std::string msg_from_client = "Ping from client";
 static std::string msg_from_server = "Pong from server";
@@ -39,6 +41,15 @@ static std::string msg_from_server = "Pong from server";
 enum {
     PINGPONG_RECV_WRID = 1,
     PINGPONG_SEND_WRID = 2,
+};
+
+struct ts_params {
+    uint64_t comp_recv_max_time_delta;
+    uint64_t comp_recv_min_time_delta;
+    uint64_t comp_recv_total_time_delta;
+    uint64_t comp_recv_prev_time;
+    int last_comp_with_ts;
+    unsigned int comp_with_time_iters;
 };
 
 struct pingpong_context {
@@ -49,6 +60,10 @@ struct pingpong_context {
     struct ibv_cq *cq;
     struct ibv_qp *qp;
     struct ibv_ah *ah;
+    union {
+        struct ibv_cq *cq;
+        struct ibv_cq_ex *cq_ex;
+    } cq_s;
     char *buf;
     int send_flags;
     int rx_depth;
@@ -56,6 +71,8 @@ struct pingpong_context {
     int active_port;
     int is_server;
     struct ibv_port_attr portinfo;
+    uint64_t completion_timestamp_mask;
+    struct ts_params ts;
 };
 
 struct pingpong_dest {
