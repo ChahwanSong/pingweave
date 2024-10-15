@@ -159,15 +159,7 @@ clean_buffer:
     return 1;
 }
 
-static int connect_ctx(struct pingpong_context *ctx,
-                       struct pingpong_dest *rem_dest) {
-    struct ibv_ah_attr ah_attr = {};
-    ah_attr.is_global = 0;
-    ah_attr.dlid = rem_dest->lid;
-    ah_attr.sl = service_level;
-    ah_attr.src_path_bits = 0;
-    ah_attr.port_num = ctx->active_port;
-
+static int connect_ctx(struct pingpong_context *ctx) {
     struct ibv_qp_attr attr = {};
     attr.qp_state = IBV_QPS_RTR;
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
@@ -180,19 +172,6 @@ static int connect_ctx(struct pingpong_context *ctx,
 
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
         fprintf(stderr, "Failed to modify QP to RTS\n");
-        return 1;
-    }
-
-    if (rem_dest->gid.global.interface_id) {
-        ah_attr.is_global = 1;
-        ah_attr.grh.hop_limit = 1;
-        ah_attr.grh.dgid = rem_dest->gid;
-        ah_attr.grh.sgid_index = gid_index;
-    }
-
-    ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
-    if (!ctx->ah) {
-        fprintf(stderr, "Failed to create AH\n");
         return 1;
     }
 
@@ -223,8 +202,28 @@ static int post_recv(struct pingpong_context *ctx, int n) {
     return cnt;
 }
 
-static int post_send(struct pingpong_context *ctx, uint32_t qpn,
-                     std::string msg) {
+static int post_send(struct pingpong_context *ctx,
+                     struct pingpong_dest rem_dest, std::string msg) {
+    struct ibv_ah_attr ah_attr = {};
+    ah_attr.is_global = 0;
+    ah_attr.dlid = rem_dest.lid;
+    ah_attr.sl = service_level;
+    ah_attr.src_path_bits = 0;
+    ah_attr.port_num = ctx->active_port;
+
+    if (rem_dest.gid.global.interface_id) {
+        ah_attr.is_global = 1;
+        ah_attr.grh.hop_limit = 1;
+        ah_attr.grh.dgid = rem_dest.gid;
+        ah_attr.grh.sgid_index = gid_index;
+    }
+
+    ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
+    if (!ctx->ah) {
+        fprintf(stderr, "Failed to create AH\n");
+        return 1;
+    }
+
     /* save a message to buffer */
     strcpy(ctx->buf + grh_size, msg.c_str());
 
@@ -243,7 +242,7 @@ static int post_send(struct pingpong_context *ctx, uint32_t qpn,
     wr.opcode = IBV_WR_SEND;
     wr.send_flags = ctx->send_flags;
     wr.wr.ud.ah = ctx->ah;
-    wr.wr.ud.remote_qpn = qpn;
+    wr.wr.ud.remote_qpn = rem_dest.qpn;
     wr.wr.ud.remote_qkey = 0x11111111;
     struct ibv_send_wr *bad_wr;
 
@@ -286,6 +285,11 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    if (connect_ctx(ctx)) {
+        fprintf(stderr, "Couldn't modify QP state\n");
+        exit(1);
+    }
+
     // Request CQ Notification
     if (use_event) {
         if (ibv_req_notify_cq(pp_cq(ctx), 0)) {
@@ -321,10 +325,6 @@ int main(int argc, char *argv[]) {
 
     // 상대편 정보 읽어오기
     get_local_info(&rem_dest, ctx->is_server);
-    if (connect_ctx(ctx, &rem_dest)) {
-        fprintf(stderr, "Couldn't modify QP state\n");
-        exit(1);
-    }
 
     struct ibv_poll_cq_attr attr = {};
     if (use_rnic_ts) {
@@ -332,23 +332,15 @@ int main(int argc, char *argv[]) {
         assert(ret == ENOENT);
     }
 
-    // // RECV WR 포스트
-    // int num_init_post = 1;
-    // ret = post_recv(ctx, num_init_post);
-    // if (ret < num_init_post) {
-    //     fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
-    //             num_init_post);
-    // }
+    // RECV WR 포스트
+    int num_init_post = 1;
+    ret = post_recv(ctx, num_init_post);
+    if (ret < num_init_post) {
+        fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
+                num_init_post);
+    }
 
     if (ctx->is_server) {  // 서버
-        sleep(1);
-            // RECV WR 포스트
-            int num_init_post = 1;
-        ret = post_recv(ctx, num_init_post);
-        if (ret < num_init_post) {
-            fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
-                    num_init_post);
-        }
 
         int cnt_send = 0;  // expect total 2 SENDs
         int num_cqe = 0;   // number of polled CQE
@@ -368,7 +360,7 @@ int main(int argc, char *argv[]) {
                     printf("Server process time: %s\n", ack_msg.c_str());
                 }
 
-                if (post_send(ctx, rem_dest.qpn, ack_msg)) {
+                if (post_send(ctx, rem_dest, ack_msg)) {
                     fprintf(stderr, "Couldn't post send\n");
                     exit(1);
                 }
@@ -443,7 +435,7 @@ int main(int argc, char *argv[]) {
                                wc.byte_len, ctx->buf + grh_size);
 
                         /* Post a send with a message */
-                        if (post_send(ctx, rem_dest.qpn,
+                        if (post_send(ctx, rem_dest,
                                       msg_from_server + std::string("_1"))) {
                             fprintf(stderr, "Couldn't post send\n");
                             exit(1);
@@ -473,14 +465,6 @@ int main(int argc, char *argv[]) {
 
     } else {  // Client
 
-        // RECV WR 포스트
-        int num_init_post = 1;
-        ret = post_recv(ctx, num_init_post);
-        if (ret < num_init_post) {
-            fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
-                    num_init_post);
-        }
-
         int cnt_recv = 0;  // expect total 2 RECVs
         int num_cqe = 0;   // number of polled CQE
         uint64_t ts_cqe = 0, ts_client_send = 0, ts_client_recv = 0;
@@ -492,7 +476,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Client first send a message to server
-        if (post_send(ctx, rem_dest.qpn, msg_from_client)) {
+        if (post_send(ctx, rem_dest, msg_from_client)) {
             fprintf(stderr, "Couldn't post send\n");
             exit(1);
         }
@@ -576,6 +560,7 @@ int main(int argc, char *argv[]) {
                                 (end.tv_usec - start.tv_usec);
                             printf("\tElapsed time: %u microseconds\n", usec);
                         }
+
                         printf("\tClient received %d bytes. Buffer: %s\n",
                                wc.byte_len, ctx->buf + grh_size);
 
