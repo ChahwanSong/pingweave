@@ -325,7 +325,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Couldn't modify QP state\n");
         exit(1);
     }
-
+    
     struct ibv_poll_cq_attr attr = {};
     if (use_rnic_ts) {
         ret = ibv_start_poll(ctx->cq_s.cq_ex, &attr);
@@ -352,15 +352,16 @@ int main(int argc, char *argv[]) {
                  * post_send's CQE. */
                 /** TODO: Write the elapsed time to ACK's buffer
                  * and send the information */
-                usleep(1);
-                if (post_send(ctx, rem_dest.qpn,
-                              msg_from_server + std::string("_2"))) {
+                // usleep(1);
+                std::string ack_msg = msg_from_server + std::string("_2");
+                if (use_rnic_ts) {
+                    ack_msg = std::to_string(ts_server_send - ts_server_recv);
+                    printf("Server process time: %s\n", ack_msg.c_str());
+                }
+
+                if (post_send(ctx, rem_dest.qpn, ack_msg)) {
                     fprintf(stderr, "Couldn't post send\n");
                     exit(1);
-                }
-                if (use_rnic_ts) {
-                    printf("Server process time: %lu\n",
-                           ts_server_send - ts_server_recv);
                 }
             }
 
@@ -525,7 +526,7 @@ int main(int argc, char *argv[]) {
 
                 if (use_rnic_ts) {
                     /** TODO: overrided for simplicity. Later, optimize it */
-                    wc = {0};
+                    // wc = {0};
                     wc.status = ctx->cq_s.cq_ex->status;
                     wc.wr_id = ctx->cq_s.cq_ex->wr_id;
                     wc.byte_len = ibv_wc_read_byte_len(ctx->cq_s.cq_ex);
@@ -559,9 +560,16 @@ int main(int argc, char *argv[]) {
                         }
                         printf("\tClient received %d bytes. Buffer: %s\n",
                                wc.byte_len, ctx->buf + grh_size);
+
                         if (cnt_recv == 2) {
                             printf("\tThis is the last ACK\n");
-                            printf("Client completed.\n");
+
+                            if (use_rnic_ts) {
+                                auto server_delay = std::strtoull(
+                                    ctx->buf + grh_size, nullptr, 10);
+                                printf("\tServer delay: %llu\n", server_delay);
+                            }
+                            printf("\tClient completed.\n");
                             exit(1);
                         }
                     }
