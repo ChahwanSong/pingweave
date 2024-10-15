@@ -78,7 +78,6 @@ struct pingpong_context {
 struct pingpong_dest {
     int lid;
     int qpn;
-    int psn;
     union ibv_gid gid;
 };
 
@@ -237,13 +236,12 @@ int find_active_port(struct pingpong_context *ctx) {
 void put_local_info(struct pingpong_dest *my_dest, int is_server,
                     std::string ip) {
     std::string filepath = "local_table.csv";
-    std::string line, lid, gid, qpn, psn;
+    std::string line, lid, gid, qpn;
     std::vector<std::string> lines;
     char wgid[33];
 
     lid = std::to_string(my_dest->lid);
     qpn = std::to_string(my_dest->qpn);
-    psn = std::to_string(my_dest->psn);
     gid_to_wire_gid(&my_dest->gid, wgid);
     gid = std::string(wgid);
 
@@ -253,7 +251,7 @@ void put_local_info(struct pingpong_dest *my_dest, int is_server,
     }
     csv_file.close();
 
-    std::string new_line = ip + "," + lid + "," + qpn + "," + psn + "," + gid;
+    std::string new_line = ip + "," + lid + "," + qpn + "," + gid;
     int line_num = 2 - is_server;
     if (lines.size() > (size_t)line_num) {
         lines[line_num] = new_line;
@@ -271,7 +269,7 @@ void put_local_info(struct pingpong_dest *my_dest, int is_server,
 }
 
 void get_local_info(struct pingpong_dest *rem_dest, int is_server) {
-    std::string line, ip, lid, gid, qpn, psn;
+    std::string line, ip, lid, gid, qpn;
 
     std::ifstream file("local_table.csv");
     if (!file.is_open()) {
@@ -291,11 +289,10 @@ void get_local_info(struct pingpong_dest *rem_dest, int is_server) {
         std::getline(ss, ip, ',');
         std::getline(ss, lid, ',');
         std::getline(ss, qpn, ',');
-        std::getline(ss, psn, ',');
         std::getline(ss, gid, ',');
 
         std::cout << "Remote Info: " << ip << ", " << lid << ", " << qpn << ", "
-                  << psn << ", " << gid << std::endl;
+                  << gid << std::endl;
     } else {
         std::cerr << "Error reading second line." << std::endl;
     }
@@ -305,7 +302,6 @@ void get_local_info(struct pingpong_dest *rem_dest, int is_server) {
     try {
         rem_dest->lid = std::stoi(lid);
         rem_dest->qpn = std::stoi(qpn);
-        rem_dest->psn = std::stoi(psn);
         wire_gid_to_gid(gid.c_str(), &rem_dest->gid);
     } catch (const std::invalid_argument &e) {
         std::cerr << "Invalid argument: " << e.what() << std::endl;

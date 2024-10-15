@@ -159,7 +159,7 @@ clean_buffer:
     return 1;
 }
 
-static int connect_ctx(struct pingpong_context *ctx, int my_psn,
+static int connect_ctx(struct pingpong_context *ctx,
                        struct pingpong_dest *rem_dest) {
     struct ibv_ah_attr ah_attr = {};
     ah_attr.is_global = 0;
@@ -176,7 +176,7 @@ static int connect_ctx(struct pingpong_context *ctx, int my_psn,
     }
 
     attr.qp_state = IBV_QPS_RTS;
-    attr.sq_psn = my_psn;
+    attr.sq_psn = lrand48() & 0xffffff;
 
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
         fprintf(stderr, "Failed to modify QP to RTS\n");
@@ -296,7 +296,6 @@ int main(int argc, char *argv[]) {
 
     my_dest.lid = ctx->portinfo.lid;
     my_dest.qpn = ctx->qp->qp_num;
-    my_dest.psn = lrand48() & 0xffffff;
     if (ibv_query_gid(ctx->context, ctx->active_port, gid_index,
                       &my_dest.gid)) {
         fprintf(stderr, "Could not get local gid for gid index %d\n",
@@ -305,8 +304,8 @@ int main(int argc, char *argv[]) {
     }
 
     inet_ntop(AF_INET6, &my_dest.gid, parsed_gid, sizeof parsed_gid);
-    printf("  local address:  IP %s, LID %d, QPN %d, PSN %d: GID %s\n",
-           target_ip, my_dest.lid, my_dest.qpn, my_dest.psn, parsed_gid);
+    printf("  local info:  IP %s, LID %d, QPN %d, GID %s\n", target_ip,
+           my_dest.lid, my_dest.qpn, parsed_gid);
 
     // deparse for csv file
     gid_to_wire_gid(&my_dest.gid, wired_gid);
@@ -322,7 +321,7 @@ int main(int argc, char *argv[]) {
 
     // 상대편 정보 읽어오기
     get_local_info(&rem_dest, ctx->is_server);
-    if (connect_ctx(ctx, my_dest.psn, &rem_dest)) {
+    if (connect_ctx(ctx, &rem_dest)) {
         fprintf(stderr, "Couldn't modify QP state\n");
         exit(1);
     }
