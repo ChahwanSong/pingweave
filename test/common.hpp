@@ -31,7 +31,7 @@ const static unsigned int grh_size = 40;
 const static unsigned int rx_depth = 50;
 const static int gid_index = 0;
 const static int service_level = 0;
-const static int use_event = 0;
+const static int use_event = 1;
 static int use_rnic_ts = 0;
 static int page_size = 0;
 
