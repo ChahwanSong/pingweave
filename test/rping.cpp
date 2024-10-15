@@ -325,22 +325,31 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Couldn't modify QP state\n");
         exit(1);
     }
-    
+
     struct ibv_poll_cq_attr attr = {};
     if (use_rnic_ts) {
         ret = ibv_start_poll(ctx->cq_s.cq_ex, &attr);
         assert(ret == ENOENT);
     }
 
-    // RECV WR 포스트
-    int num_init_post = 1;
-    ret = post_recv(ctx, num_init_post);
-    if (ret < num_init_post) {
-        fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
-                num_init_post);
-    }
+    // // RECV WR 포스트
+    // int num_init_post = 1;
+    // ret = post_recv(ctx, num_init_post);
+    // if (ret < num_init_post) {
+    //     fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
+    //             num_init_post);
+    // }
 
     if (ctx->is_server) {  // 서버
+        sleep(1);
+            // RECV WR 포스트
+            int num_init_post = 1;
+        ret = post_recv(ctx, num_init_post);
+        if (ret < num_init_post) {
+            fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
+                    num_init_post);
+        }
+
         int cnt_send = 0;  // expect total 2 SENDs
         int num_cqe = 0;   // number of polled CQE
         uint64_t ts_cqe = 0, ts_server_recv = 0, ts_server_send = 0;
@@ -462,7 +471,16 @@ int main(int argc, char *argv[]) {
 
         return 0;
 
-    } else {               // Client
+    } else {  // Client
+
+        // RECV WR 포스트
+        int num_init_post = 1;
+        ret = post_recv(ctx, num_init_post);
+        if (ret < num_init_post) {
+            fprintf(stderr, "Failed to post all RECV (%d/%d)\n", ret,
+                    num_init_post);
+        }
+
         int cnt_recv = 0;  // expect total 2 RECVs
         int num_cqe = 0;   // number of polled CQE
         uint64_t ts_cqe = 0, ts_client_send = 0, ts_client_recv = 0;
