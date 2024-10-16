@@ -1,0 +1,22 @@
+[2024-10-16 20:44:00][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 20:44:00][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
+[2024-10-16 20:44:00][ERROR][test_consumer_queue.py:38] [Errno 2] No such file or directory: '/my_shared_memory_queue'
+[2024-10-16 20:49:03][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-16 20:49:03][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
+[2024-10-16 20:59:59][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-16 20:59:59][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:00:10][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:00:10][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:00:21][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:00:21][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:00:31][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:00:31][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:00:42][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:00:42][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:00:53][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:00:53][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:01:04][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:01:04][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-16 21:01:14][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-16 21:01:14][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
+[2024-10-16 21:01:14][ERROR][test_consumer_queue.py:38] [Errno 2] No such file or directory: '/my_shared_memory_queue'
