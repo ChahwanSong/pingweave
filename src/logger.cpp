@@ -1,25 +1,16 @@
 #include "logger.hpp"
 
-// queue_logger의 정의
-std::shared_ptr<spdlog::logger> queue_logger = nullptr;
-
-// call at main function
-void initialize_queue_logger(const std::string& logname) {
-    size_t max_file_size = 5 * 1024 * 1024;  // 5MB
-    size_t max_files = 3;                    // 최대 파일 개수
-
+void initialize_logger(std::shared_ptr<spdlog::logger> logger,
+                       enum spdlog::level::level_enum log_level,
+                       enum spdlog::level::level_enum flush_level) {
     // message format
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S][%l][%s:%#] %v");
 
-    // logging with a ring buffer
-    queue_logger = spdlog::rotating_logger_mt(
-        logname, "../logs/" + logname + ".log", max_file_size, max_files);
-
     // set log level
-    queue_logger->set_level(spdlog::level::debug);
+    logger->set_level(log_level);
 
     // Automatically flush every time an info-level or higher message is logged
-    queue_logger->flush_on(spdlog::level::info);
+    logger->flush_on(flush_level);
 
-    queue_logger->info("Logger initialized is successful.");
+    logger->info("Logger initialized is successful.");
 }

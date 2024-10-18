@@ -24,7 +24,7 @@ def main():
                 time.sleep(check_interval)
                 wait_time += check_interval
 
-                if wait_time > 10:
+                if wait_time > 5:
                     consumer.reload_memory()
                     wait_time = 0
 

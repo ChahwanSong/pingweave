@@ -20,3 +20,75 @@
 [2024-10-16 21:01:14][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
 [2024-10-16 21:01:14][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
 [2024-10-16 21:01:14][ERROR][test_consumer_queue.py:38] [Errno 2] No such file or directory: '/my_shared_memory_queue'
+[2024-10-17 09:39:04][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:39:04][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:39:15][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:39:15][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:39:25][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:39:25][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:39:36][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:39:36][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:39:47][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:39:47][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:39:58][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:39:58][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:40:08][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:40:08][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:40:19][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:40:19][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:40:30][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:40:30][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:40:40][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:40:40][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:40:51][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:40:51][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:02][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:02][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:13][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:13][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:23][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:23][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:34][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:34][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:45][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:45][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:41:55][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:41:55][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:06][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:42:06][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:17][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:42:17][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:27][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:42:27][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:38][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:42:38][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:39][ERROR][test_consumer_queue.py:34] KeyboardInterrupt detected. Cleaning up shared memory and exiting...
+[2024-10-17 09:42:40][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:42:40][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:42:51][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:42:51][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:43:02][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:43:02][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:43:06][ERROR][test_consumer_queue.py:34] KeyboardInterrupt detected. Cleaning up shared memory and exiting...
+[2024-10-17 09:44:00][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:44:00][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:44:04][ERROR][test_consumer_queue.py:34] KeyboardInterrupt detected. Cleaning up shared memory and exiting...
+[2024-10-17 09:45:14][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:45:14][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:45:25][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:45:25][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:45:36][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:45:36][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:45:46][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:45:46][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:45:57][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:45:57][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:46:08][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:46:08][DEBUG][consumer_queue.py:45] (re)loaded the shared memory.
+[2024-10-17 09:46:19][WARNING][consumer_queue.py:54] Reload the shared memory at /dev/shm/my_shared_memory_queue
+[2024-10-17 09:46:19][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
+[2024-10-17 09:46:19][ERROR][test_consumer_queue.py:38] [Errno 2] No such file or directory: '/my_shared_memory_queue'
+[2024-10-17 09:47:12][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:47:12][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.
+[2024-10-17 09:47:20][DEBUG][consumer_queue.py:36] Created the ConsumerQueue.
+[2024-10-17 09:47:20][ERROR][consumer_queue.py:47] Shared memory 'my_shared_memory_queue' not found. Ensure the producer is running.

@@ -1,14 +1,15 @@
-#include <chrono>
-#include <iostream>
-#include <string>
-
-#include "logger.hpp"
+#include "common.hpp"
 #include "producer_queue.hpp"
 
 int main() {
     // initialize logger
-    initialize_queue_logger("producer_queue");
-    const int total_messages = 1000000;  // 총 전송할 메시지 개수
+    std::shared_ptr<spdlog::logger> queue_logger = spdlog::rotating_logger_mt(
+        "producer_queue", "../logs/producer_queue.log", 5 * 1024 * 1024, 3);
+
+    initialize_logger(queue_logger, spdlog::level::debug, spdlog::level::info);
+
+    // 총 전송할 메시지 개수
+    const int total_messages = 100000;
 
     // ProducerQueue 객체 생성 (공유 메모리 초기화)
     ProducerQueue producer_queue("/my_shared_memory_queue");

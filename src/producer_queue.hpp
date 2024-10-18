@@ -1,22 +1,9 @@
 #pragma once
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <chrono>
-#include <cstring>
-#include <iostream>
-#include <thread>
-
-const int MESSAGE_SIZE = 64;            // Message size of 64 bytes
-const int BATCH_SIZE = 1000;            // Process messages in batches of 10
-const int QUEUE_SIZE = BATCH_SIZE + 1;  // Queue size
-const int BATCH_TIMEOUT_MS = 100;       // Timeout in milliseconds
+#include "common.hpp"
 
 struct SharedData {
-    char messages[QUEUE_SIZE]
+    char messages[BUFFER_SIZE]
                  [MESSAGE_SIZE];  // Queue of messages with size 64 bytes each
     std::atomic<int> head;  // Head of the queue (consumer reads from here)
     std::atomic<int> tail;  // Tail of the queue (producer writes to here)

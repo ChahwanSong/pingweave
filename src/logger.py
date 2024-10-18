@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 
 # Create the logs directory if it doesn't exist
 log_dir = "../logs"
-log_level = logging.DEBUG
+queue_log_level = logging.INFO
 
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -14,7 +14,7 @@ if not os.path.exists(log_dir):
 def initialize_logger(logname):
     # Set up the logger
     logger = logging.getLogger(logname)
-    logger.setLevel(log_level)  # Set the log level
+    logger.setLevel(queue_log_level)  # Set the log level
 
     # Create a rotating file handler for the logger
     log_file = os.path.join(log_dir, f"{logname}.log")
@@ -23,7 +23,7 @@ def initialize_logger(logname):
     file_handler = RotatingFileHandler(
         log_file, maxBytes=5 * 1024 * 1024, backupCount=3
     )
-    file_handler.setLevel(log_level)
+    file_handler.setLevel(queue_log_level)
 
     # Create a logging format
     formatter = logging.Formatter(

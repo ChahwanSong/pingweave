@@ -1,15 +1,13 @@
 #include "producer_queue.hpp"
 
-#include "logger.hpp"
-
 // Constructor: Acquire shared memory
 ProducerQueue::ProducerQueue(const std::string& shm_name)
     : shm_name(shm_name), messages_in_batch(0) {
     initSharedMemory();
     last_flush_time =
         std::chrono::steady_clock::now();  // Initialize last message time
-    queue_logger->info("[{}] Producer queue is created\n",
-                       this->shm_name.c_str());
+    spdlog::get("producer_queue")
+        ->info("[{}] Producer queue is created\n", this->shm_name.c_str());
 }
 
 // Initialize and map shared memory
@@ -17,8 +15,9 @@ void ProducerQueue::initSharedMemory() {
     // Create shared memory object
     shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) {
-        queue_logger->error("[{}}] Failed to create shared memory\n",
-                            this->shm_name.c_str());
+        spdlog::get("producer_queue")
+            ->error("[{}}] Failed to create shared memory\n",
+                    this->shm_name.c_str());
         throw std::runtime_error("Failed to create shared memory");
     }
 
@@ -26,8 +25,9 @@ void ProducerQueue::initSharedMemory() {
     if (ftruncate(shm_fd, sizeof(SharedData)) == -1) {
         close(shm_fd);
         shm_unlink(shm_name.c_str());
-        queue_logger->error("[{}}] Failed to set the size of shared memory\n",
-                            this->shm_name.c_str());
+        spdlog::get("producer_queue")
+            ->error("[{}}] Failed to set the size of shared memory\n",
+                    this->shm_name.c_str());
         throw std::runtime_error("Failed to set the size of shared memory");
     }
 
@@ -37,8 +37,9 @@ void ProducerQueue::initSharedMemory() {
     if (data == MAP_FAILED) {
         close(shm_fd);
         shm_unlink(shm_name.c_str());
-        queue_logger->error("[{}}] Failed to map shared memory\n",
-                            this->shm_name.c_str());
+        spdlog::get("producer_queue")
+            ->error("[{}}] Failed to map shared memory\n",
+                    this->shm_name.c_str());
         throw std::runtime_error("Failed to map shared memory");
     }
 
@@ -62,7 +63,7 @@ ProducerQueue::~ProducerQueue() {
 
 // Write a message to the shared memory queue
 bool ProducerQueue::writeMessage(const std::string& message) {
-    int next_tail = (data->tail.load() + 1) % QUEUE_SIZE;
+    int next_tail = (data->tail.load() + 1) % BUFFER_SIZE;
 
     if (next_tail == data->head.load()) {
         return false;  // Queue is full
@@ -101,7 +102,7 @@ void ProducerQueue::flushBatch() {
     if (messages_in_batch > 0) {
         data->message_ready.store(true);
         while (data->message_ready.load()) {
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
         }
         messages_in_batch = 0;
         last_flush_time = std::chrono::steady_clock::now();

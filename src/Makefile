@@ -3,7 +3,7 @@ CXX = g++
 CXXFLAGS = -std=c++17 -I ../libs
 
 # 소스 파일 목록
-SRCS = test_producer_queue.cpp producer_queue.cpp logger.cpp
+SRCS = test_producer_queue.cpp producer_queue.cpp common.cpp
 
 # 출력 파일
 TARGET = test_producer_queue
