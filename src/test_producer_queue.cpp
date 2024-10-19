@@ -2,12 +2,6 @@
 #include "producer_queue.hpp"
 
 int main() {
-    // initialize logger
-    std::shared_ptr<spdlog::logger> queue_logger = spdlog::rotating_logger_mt(
-        "producer_queue", "../logs/producer_queue.log", 5 * 1024 * 1024, 3);
-
-    initialize_logger(queue_logger, spdlog::level::debug, spdlog::level::info);
-
     // 총 전송할 메시지 개수
     const int total_messages = 100000;
 
@@ -27,7 +21,8 @@ int main() {
         // 각 메시지 전송 시작 시간 기록
         auto message_start = std::chrono::high_resolution_clock::now();
         if (!producer_queue.sendMessage(message)) {
-            queue_logger->warn("Message send failed - buffer is full\n");
+            spdlog::get("producer")
+                ->warn("Message send failed - buffer is full\n");
         }
         auto message_end = std::chrono::high_resolution_clock::now();
 

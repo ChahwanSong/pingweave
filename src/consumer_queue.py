@@ -2,11 +2,12 @@ import time
 from multiprocessing import shared_memory
 from multiprocessing import resource_tracker
 import ctypes
-from logger import queue_logger
+from logger import consumer_logger
 
 MESSAGE_SIZE = 64  # Message size of 64 bytes
 BATCH_SIZE = 1000  # Process messages in batches of 10
 BUFFER_SIZE = BATCH_SIZE + 1  # Queue size
+PREFIX_SHMEM_NAME = "pingweave_"
 
 
 # Define the structure for shared data to match the C++ structure
@@ -33,25 +34,29 @@ class ConsumerQueue:
             except Exception as e:
                 print(f"Error during cleanup: {e}")
 
-        queue_logger.debug("Created the ConsumerQueue.")
+        consumer_logger.debug(f"[{self.shm_name}] Created the ConsumerQueue.")
         self.load_memory()
 
     def load_memory(self):
         try:
-            self.shm = shared_memory.SharedMemory(name=self.shm_name)
+            self.shm = shared_memory.SharedMemory(
+                name=PREFIX_SHMEM_NAME + self.shm_name
+            )
             self.shared_data = SharedData.from_buffer(self.shm.buf)
             # Disable resource_tracker for shared memory
             resource_tracker.unregister(self.shm._name, "shared_memory")
-            queue_logger.debug("(re)loaded the shared memory.")
+            consumer_logger.debug("(re)loaded the shared memory.")
         except FileNotFoundError as e:
-            queue_logger.error(
-                f"Shared memory '{self.shm_name}' not found. Ensure the producer is running."
+            consumer_logger.error(
+                f"[{self.shm_name}] Shared memory '{self.shm_name}' not found. Ensure the producer is running."
             )
             self.shm = None
             raise e
 
     def reload_memory(self):
-        queue_logger.warning(f"Reload the shared memory at /dev/shm/{self.shm_name}")
+        consumer_logger.warning(
+            f"[{self.shm_name}] Reload the shared memory at /dev/shm/{self.shm_name}"
+        )
         self.clean_up()
         self.load_memory()
 
@@ -59,8 +64,8 @@ class ConsumerQueue:
         msg_list = list()
         messages_in_batch = 0
 
-        # 시작 시간 기록
-        start_time = time.time()
+        # # 시작 시간 기록
+        # start_time = time.time()
 
         while messages_in_batch < BATCH_SIZE:
             if self.shared_data.head == self.shared_data.tail:
@@ -74,9 +79,9 @@ class ConsumerQueue:
             self.shared_data.head = (self.shared_data.head + 1) % BUFFER_SIZE
             messages_in_batch += 1
 
-        # while 문이 끝난 후 시간 측정
-        elapsed_time = time.time() - start_time
-        print(f"While loop executed in {elapsed_time:.6f} seconds")
+        # # while 문이 끝난 후 시간 측정
+        # elapsed_time = time.time() - start_time
+        # print(f"While loop executed in {elapsed_time:.6f} seconds")
 
         self.shared_data.message_ready = False
         return msg_list
@@ -89,9 +94,11 @@ class ConsumerQueue:
                 self.shm.close()  # 메모리 맵핑 해제
                 # self.shm.unlink()  # 공유 메모리 삭제 생략
             except BufferError as e:
-                queue_logger.error(f"Error during cleanup: {e}")
+                consumer_logger.error(f"[{self.shm_name}] Error during cleanup: {e}")
             except Exception as e:
-                queue_logger.error(f"Unexpected error during cleanup: {e}")
+                consumer_logger.error(
+                    f"[{self.shm_name}] Unexpected error during cleanup: {e}"
+                )
 
     def __del__(self):
         try:

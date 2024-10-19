@@ -3,21 +3,30 @@
 // Constructor: Acquire shared memory
 ProducerQueue::ProducerQueue(const std::string& shm_name)
     : shm_name(shm_name), messages_in_batch(0) {
+    // initialize logger
+    logger = spdlog::rotating_logger_mt(
+        "producer", get_source_directory() + "/../logs/producer.log",
+        LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    logger->set_pattern(LOG_FORMAT);
+    logger->set_level(LOG_LEVEL_PRODUCER);
+    logger->flush_on(spdlog::level::debug);
+
+    // initialize shared memory
     initSharedMemory();
     last_flush_time =
         std::chrono::steady_clock::now();  // Initialize last message time
-    spdlog::get("producer_queue")
-        ->info("[{}] Producer queue is created\n", this->shm_name.c_str());
+
+    logger->info("[{}] Producer queue is created", this->shm_name.c_str());
 }
 
 // Initialize and map shared memory
 void ProducerQueue::initSharedMemory() {
     // Create shared memory object
-    shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
+    shm_fd = shm_open((PREFIX_SHMEM_NAME + shm_name).c_str(), O_CREAT | O_RDWR,
+                      0666);
     if (shm_fd == -1) {
-        spdlog::get("producer_queue")
-            ->error("[{}}] Failed to create shared memory\n",
-                    this->shm_name.c_str());
+        logger->error("[{}}] Failed to create shared memory",
+                      this->shm_name.c_str());
         throw std::runtime_error("Failed to create shared memory");
     }
 
@@ -25,9 +34,8 @@ void ProducerQueue::initSharedMemory() {
     if (ftruncate(shm_fd, sizeof(SharedData)) == -1) {
         close(shm_fd);
         shm_unlink(shm_name.c_str());
-        spdlog::get("producer_queue")
-            ->error("[{}}] Failed to set the size of shared memory\n",
-                    this->shm_name.c_str());
+        logger->error("[{}}] Failed to set the size of shared memory",
+                      this->shm_name.c_str());
         throw std::runtime_error("Failed to set the size of shared memory");
     }
 
@@ -37,9 +45,8 @@ void ProducerQueue::initSharedMemory() {
     if (data == MAP_FAILED) {
         close(shm_fd);
         shm_unlink(shm_name.c_str());
-        spdlog::get("producer_queue")
-            ->error("[{}}] Failed to map shared memory\n",
-                    this->shm_name.c_str());
+        logger->error("[{}}] Failed to map shared memory",
+                      this->shm_name.c_str());
         throw std::runtime_error("Failed to map shared memory");
     }
 
@@ -77,7 +84,6 @@ bool ProducerQueue::writeMessage(const std::string& message) {
 bool ProducerQueue::sendMessage(const std::string& message) {
     if (!writeMessage(message)) {
         ++n_dropped_msgs;
-        printf("dropped: %lu\n", n_dropped_msgs);
         return false;
     }
 
@@ -115,3 +121,5 @@ ProducerQueue::getLastFlushTime() {
 }
 
 uint64_t ProducerQueue::getNumDroppedMsgs() { return n_dropped_msgs; }
+
+std::shared_ptr<spdlog::logger> ProducerQueue::get_logger() { return logger; }

@@ -5,7 +5,10 @@
 #include <ifaddrs.h>
 #include <infiniband/verbs.h>
 #include <netdb.h>
-#include <signal.h>  // For kill(), signal()
+#include <signal.h>                           // For kill(), signal()
+#include <spdlog/async.h>                     // spdlog
+#include <spdlog/sinks/rotating_file_sink.h>  // spdlog
+#include <spdlog/spdlog.h>                    // spdlog
 #include <sys/mman.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
@@ -15,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -23,7 +27,15 @@
 #include <unordered_map>
 #include <vector>
 
-#include "logger.hpp"  // logging
+// spdlog
+const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
+const int LOG_FILE_EXTRA_NUM = 0;            // extra 3 rotations
+const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%e][%l] %v";
+
+const enum spdlog::level::level_enum LOG_LEVEL_MAIN = spdlog::level::debug;
+const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
+const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::debug;
+const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::debug;
 
 // constants
 const static int MESSAGE_SIZE = 64;  // Message size of 64 bytes
@@ -37,6 +49,9 @@ const static int RX_DEPTH = 50;      // enough
 const static int GID_INDEX = 0;      // by default 0
 const static int SERVICE_LEVEL = 0;  // by default 0
 const static int USE_EVENT = 1;  // 1: event-based polling, 2: active polling
+
+// Name of shared memory
+const std::string PREFIX_SHMEM_NAME = "/pingweave_";
 
 // variables
 static int use_rnic_ts = 0;  // automatically assigned
@@ -86,11 +101,11 @@ void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
 
 // Helper function to find RDMA device by matching network interface
 ibv_context *get_context_by_ifname(const char *ifname);
-
 ibv_context *get_context_by_ip(const char *ip);
 
-// RDMA 장치에서 사용 가능한 활성화된 포트 찾기
+// Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
+
 struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
 
 void put_local_info(struct pingweave_dest *my_dest, int is_server,
@@ -105,3 +120,7 @@ int post_recv(struct pingweave_context *ctx, int n);
 
 int post_send(struct pingweave_context *ctx, struct pingweave_dest rem_dest,
               std::string msg);
+
+std::string get_source_directory();
+
+std::shared_ptr<spdlog::logger> init_single_logger(std::string logname);

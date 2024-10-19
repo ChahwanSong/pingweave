@@ -23,8 +23,10 @@ class ProducerQueue {
     bool sendMessage(const std::string& message);
     void flushBatch();
     std::chrono::time_point<std::chrono::steady_clock> getLastFlushTime();
+    std::shared_ptr<spdlog::logger> get_logger();
 
    private:
+    std::shared_ptr<spdlog::logger> logger;
     SharedData* data;  // Pointer to the shared memory
     int shm_fd;
     int messages_in_batch;

@@ -43,4 +43,4 @@ def initialize_logger(logname):
 
 
 # Initialize the logger
-queue_logger = initialize_logger("consumer_queue")
+consumer_logger = initialize_logger("consumer")

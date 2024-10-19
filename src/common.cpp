@@ -460,3 +460,17 @@ int post_send(struct pingweave_context *ctx, struct pingweave_dest rem_dest,
 
     return ibv_post_send(ctx->qp, &wr, &bad_wr);
 }
+
+std::string get_source_directory() { return SOURCE_DIR; }
+
+std::shared_ptr<spdlog::logger> init_single_logger(std::string logname) {
+    spdlog::drop_all();
+    auto logger = spdlog::rotating_logger_mt(
+        logname, get_source_directory() + "/../logs/client_rx.log",
+        LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    logger->set_pattern(LOG_FORMAT);
+    logger->set_level(LOG_LEVEL_PRODUCER);
+    logger->flush_on(spdlog::level::debug);
+    logger->info("client_rx running (PID: {})", getpid());
+    return logger;
+}
