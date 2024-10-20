@@ -1,46 +1,50 @@
-#include "client_rx.hpp"
-#include "client_tx.hpp"
-#include "server_rx.hpp"
-#include "server_tx.hpp"
+#include <functional>
 
-pid_t start_process(void (*func)(), const char* name);
+#include "rdma_client.hpp"
+#include "rdma_common.hpp"
+#include "rdma_server.hpp"
+
+pid_t start_process(std::function<void()> func, const char* name);
 void signal_handler(int sig);
 
 // Structure to hold process information
 struct ProcessInfo {
     pid_t pid;
-    void (*func)();
+    std::function<void()> func;
     const char* name;
 };
 
 // Global variables
-ProcessInfo processes[4];
+const int n_processes = 2;
+ProcessInfo processes[n_processes];
 bool running = true;
 
 int main() {
-    // spdlog format
-    spdlog::set_pattern(LOG_FORMAT);
-    spdlog::set_level(LOG_LEVEL_MAIN);
+    // // spdlog format
+    // spdlog::set_pattern(LOG_FORMAT);
+    // spdlog::set_level(LOG_LEVEL_MAIN);
     spdlog::info("--- Main thread starts");
 
     // Register signal handlers in the parent process only
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    // Start each function in a separate process
-    processes[0] = {start_process(server_rx, "server_rx"), server_rx,
-                    "server_rx"};
-    processes[1] = {start_process(server_tx, "server_tx"), server_tx,
-                    "server_tx"};
-    processes[2] = {start_process(client_rx, "client_rx"), client_rx,
-                    "client_rx"};
-    processes[3] = {start_process(client_tx, "client_tx"), client_tx,
-                    "client_tx"};
+    // Example IP address (you can modify this based on your requirements)
+    std::string server_ip = "10.200.200.3";
+    std::string client_ip = "10.200.200.3";
+
+    // Start each function in a separate process with IP address as input
+    processes[0] = {
+        start_process([&] { rdma_server(server_ip); }, "rdma_server"),
+        std::bind(rdma_server, server_ip), "rdma_server"};
+    processes[1] = {
+        start_process([&] { rdma_client(server_ip); }, "rdma_client"),
+        std::bind(rdma_client, server_ip), "rdma_client"};
 
     // Monitor processes for every second and restart them if they exit
     while (running) {
         sleep(1);  // Check every 1 second
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < n_processes; ++i) {
             int status;
             pid_t result = waitpid(processes[i].pid, &status, WNOHANG);
             if (result == 0) {
@@ -62,7 +66,7 @@ int main() {
 }
 
 // Function to start a new process running the given function
-pid_t start_process(void (*func)(), const char* name) {
+pid_t start_process(std::function<void()> func, const char* name) {
     pid_t pid = fork();
     if (pid < 0) {
         exit(1);
@@ -86,8 +90,20 @@ pid_t start_process(void (*func)(), const char* name) {
 void signal_handler(int sig) {
     running = false;
     spdlog::critical("=== Main thread exits.");
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < n_processes; ++i) {
         kill(processes[i].pid, SIGTERM);
     }
     exit(0);
 }
+
+/**
+ * TODO:
+ *
+ * 10초에 한번씩
+ * - pinglist 파일을 읽고, 해당 노드에 있는 ip 주소를 가져온다
+ * - 해당 ip 주소에 해당하지 않는 스레드세트를 종료시킨다 (e.g., pinglist 에서
+ * 제외된 경우)
+ * - pinglist 에 있지만 실행되고 있지 않는 ip 주소에 대해 스레드세트 새롭게 실행
+ * (e.g., new IP)
+ * - 실행해야 되는 ip 주소들 중 종료된 스레드가 있다면 재실행
+ */

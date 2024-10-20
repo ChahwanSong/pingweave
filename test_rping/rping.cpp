@@ -1,7 +1,7 @@
 #include "common.hpp"
 
 static struct ibv_cq *pp_cq(struct pingpong_context *ctx) {
-    return use_rnic_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
+    return rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
 }
 
 int init_ctx(struct pingpong_context *ctx) {
@@ -13,7 +13,7 @@ int init_ctx(struct pingpong_context *ctx) {
         printf("[WARNING] -> The device isn't completion timestamp capable\n");
     } else {
         printf("Use RNIC Timestamping...\n");
-        use_rnic_ts = 1;
+        rnic_hw_ts = 1;
         ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
 
         // clock metadata
@@ -78,7 +78,7 @@ int init_ctx(struct pingpong_context *ctx) {
     }
 
     {
-        if (use_rnic_ts) {
+        if (rnic_hw_ts) {
             struct ibv_cq_init_attr_ex attr_ex = {};
             attr_ex.cqe = rx_depth + 1;
             attr_ex.cq_context = NULL;
@@ -327,7 +327,7 @@ int main(int argc, char *argv[]) {
     get_local_info(&rem_dest, ctx->is_server);
 
     struct ibv_poll_cq_attr attr = {};
-    if (use_rnic_ts) {
+    if (rnic_hw_ts) {
         ret = ibv_start_poll(ctx->cq_s.cq_ex, &attr);
         assert(ret == ENOENT);
     }
@@ -355,7 +355,7 @@ int main(int argc, char *argv[]) {
                  * and send the information */
                 // usleep(1);
                 std::string ack_msg = msg_from_server + std::string("_2");
-                if (use_rnic_ts) {
+                if (rnic_hw_ts) {
                     ack_msg = std::to_string(ts_server_send - ts_server_recv);
                     printf("Server process time: %s\n", ack_msg.c_str());
                 }
@@ -388,7 +388,7 @@ int main(int argc, char *argv[]) {
             }
 
             /* polling CQE */
-            if (use_rnic_ts) {  // extension
+            if (rnic_hw_ts) {  // extension
                 do {
                     ret = ibv_next_poll(ctx->cq_s.cq_ex);
                 } while (!use_event && ret == ENOENT);  // until empty
@@ -411,7 +411,7 @@ int main(int argc, char *argv[]) {
             if (num_cqe > 0) {
                 printf("* CQE Event happend! (%d)\n", num_cqe);
 
-                if (use_rnic_ts) {
+                if (rnic_hw_ts) {
                     /** TODO: overrided for simplicity. Later, optimize it */
                     wc = {0};
                     wc.status = ctx->cq_s.cq_ex->status;
@@ -425,7 +425,7 @@ int main(int argc, char *argv[]) {
                            ibv_wc_status_str(wc.status), wc.status);
 
                     if (wc.opcode == IBV_WC_RECV) {
-                        if (use_rnic_ts) {
+                        if (rnic_hw_ts) {
                             ts_server_recv = ts_cqe; /* timestamp */
                         }
 
@@ -446,7 +446,7 @@ int main(int argc, char *argv[]) {
                         printf("  [CQE] SEND (wr_id: %lu)\n", wc.wr_id);
                         ++cnt_send;
                         if (cnt_send == 1) {
-                            if (use_rnic_ts) {
+                            if (rnic_hw_ts) {
                                 ts_server_send = ts_cqe; /* timestamp */
                             }
                         } else if (cnt_send >= 2) {
@@ -503,7 +503,7 @@ int main(int argc, char *argv[]) {
             }
 
             /* polling CQE */
-            if (use_rnic_ts) {  // extension
+            if (rnic_hw_ts) {  // extension
                 do {
                     ret = ibv_next_poll(ctx->cq_s.cq_ex);
                 } while (!use_event && ret == ENOENT);  // until empty
@@ -526,7 +526,7 @@ int main(int argc, char *argv[]) {
             if (num_cqe > 0) {
                 printf("* CQE Event happend! (%d)\n", num_cqe);
 
-                if (use_rnic_ts) {
+                if (rnic_hw_ts) {
                     /** TODO: overrided for simplicity. Later, optimize it */
                     // wc = {0};
                     wc.status = ctx->cq_s.cq_ex->status;
@@ -544,7 +544,7 @@ int main(int argc, char *argv[]) {
                         ret = post_recv(ctx, 1);
                         printf("  [CQE] RECV (wr_id: %lu)\n", wc.wr_id);
                         if (cnt_recv == 1) {
-                            if (use_rnic_ts) {
+                            if (rnic_hw_ts) {
                                 ts_client_recv = ts_cqe;
                                 printf("Network RTT + Server delay: %lu\n",
                                        ts_client_recv - ts_client_send);
@@ -567,7 +567,7 @@ int main(int argc, char *argv[]) {
                         if (cnt_recv == 2) {
                             printf("\tThis is the last ACK\n");
 
-                            if (use_rnic_ts) {
+                            if (rnic_hw_ts) {
                                 auto server_delay = std::strtoull(
                                     ctx->buf + grh_size, nullptr, 10);
                                 printf("\tServer delay: %llu\n", server_delay);
@@ -578,7 +578,7 @@ int main(int argc, char *argv[]) {
                     }
 
                     if (wc.opcode == IBV_WC_SEND) {
-                        if (use_rnic_ts) {
+                        if (rnic_hw_ts) {
                             ts_client_send = ts_cqe;
                         }
                         printf("  [CQE] SEND (wr_id: %lu)\n", wc.wr_id);

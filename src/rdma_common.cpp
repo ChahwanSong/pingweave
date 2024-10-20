@@ -1,4 +1,4 @@
-#include "common.hpp"
+#include "rdma_common.hpp"
 
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid) {
     char tmp[9];
@@ -63,7 +63,7 @@ ibv_context *get_context_by_ip(const char *ip) {
     struct ifaddrs *ifaddr, *ifa;
     int family;
     if (getifaddrs(&ifaddr) == -1) {
-        perror("getifaddrs");
+        fprintf(stderr, "Failed to getifaddrs\n");
         exit(1);
     }
 
@@ -80,23 +80,22 @@ ibv_context *get_context_by_ip(const char *ip) {
             int s = getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), host,
                                 NI_MAXHOST, nullptr, 0, NI_NUMERICHOST);
             if (s != 0) {
-                std::cerr << "getnameinfo() failed: " << gai_strerror(s)
-                          << std::endl;
+                fprintf(stderr, "getnameinfo() failed: %s\n", gai_strerror(s));
                 exit(1);
             }
 
             if (strcmp(host, ip) == 0) {
-                std::cout << "Found matching interface for IP: " << ip
-                          << std::endl;
                 rdma_context = get_context_by_ifname(ifa->ifa_name);
                 if (rdma_context) {
-                    std::cout
-                        << "Found RDMA context of interface: " << ifa->ifa_name
-                        << std::endl;
+                    fprintf(stdout,
+                            "Found RDMA context of interface: %s (IP: %s)\n",
+                            ifa->ifa_name, ip);
                     break;
                 } else {
-                    std::cerr << "No matching RDMA device found for interface: "
-                              << ifa->ifa_name << std::endl;
+                    fprintf(stdout,
+                            "No matching RDMA device found for interface: %s "
+                            "(IP: %s)\n",
+                            ifa->ifa_name, ip);
                 }
             }
         }
@@ -104,8 +103,7 @@ ibv_context *get_context_by_ip(const char *ip) {
 
     freeifaddrs(ifaddr);
     if (!rdma_context) {
-        std::cerr << "No matching RDMA device found for IP: " << ip
-                  << std::endl;
+        fprintf(stderr, "No matching RDMA device found for IP: %s\n", ip);
         exit(1);
     }
 
@@ -122,130 +120,125 @@ int find_active_port(struct pingweave_context *ctx) {
 
     for (int port = 1; port <= device_attr.phys_port_cnt; ++port) {
         if (ibv_query_port(ctx->context, port, &ctx->portinfo)) {
-            std::cerr << "Failed to query port " << port << std::endl;
+            fprintf(stderr, "Failed to query port: %d\n", port);
             continue;
         }
         if (ctx->portinfo.state == IBV_PORT_ACTIVE) {
-            std::cout << "Found active port: " << port << std::endl;
+            // fprintf(stdout, "Found active port: %d\n", port);
             return port;
         }
     }
 
-    std::cerr << "No active ports found" << std::endl;
+    fprintf(stderr, "No active ports found.\n");
     return -1;
 }
 
 struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
-    return use_rnic_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
+    return rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
 }
 
-void put_local_info(struct pingweave_dest *my_dest, int is_server,
-                    std::string ip) {
-    std::string filepath = "local_table.csv";
-    std::string line, lid, gid, qpn;
-    std::vector<std::string> lines;
-    char wgid[33];
+// void put_local_info(struct pingweave_dest *my_dest, int is_server,
+//                     std::string ip) {
+//     std::string filepath = "local_table.csv";
+//     std::string line, lid, gid, qpn;
+//     std::vector<std::string> lines;
+//     char wgid[33];
 
-    lid = std::to_string(my_dest->lid);
-    qpn = std::to_string(my_dest->qpn);
-    gid_to_wire_gid(&my_dest->gid, wgid);
-    gid = std::string(wgid);
+//     lid = std::to_string(my_dest->lid);
+//     qpn = std::to_string(my_dest->qpn);
+//     gid_to_wire_gid(&my_dest->gid, wgid);
+//     gid = std::string(wgid);
 
-    std::ifstream csv_file(filepath);
-    while (std::getline(csv_file, line)) {
-        lines.push_back(line);
-    }
-    csv_file.close();
+//     std::ifstream csv_file(filepath);
+//     while (std::getline(csv_file, line)) {
+//         lines.push_back(line);
+//     }
+//     csv_file.close();
 
-    std::string new_line = ip + "," + lid + "," + qpn + "," + gid;
-    int line_num = 2 - is_server;
-    if (lines.size() > (size_t)line_num) {
-        lines[line_num] = new_line;
-    } else {
-        lines.push_back(new_line);
-    }
+//     std::string new_line = ip + "," + lid + "," + qpn + "," + gid;
+//     int line_num = 2 - is_server;
+//     if (lines.size() > (size_t)line_num) {
+//         lines[line_num] = new_line;
+//     } else {
+//         lines.push_back(new_line);
+//     }
 
-    std::ofstream csv_output_file(filepath, std::ios::trunc);
-    for (const auto &csv_line : lines) {
-        csv_output_file << csv_line << "\n";
-    }
-    csv_output_file.close();
+//     std::ofstream csv_output_file(filepath, std::ios::trunc);
+//     for (const auto &csv_line : lines) {
+//         csv_output_file << csv_line << "\n";
+//     }
+//     csv_output_file.close();
 
-    printf("Finished writing a line to local_table.csv\n");
-}
+//     printf("Finished writing a line to local_table.csv\n");
+// }
 
-void get_local_info(struct pingweave_dest *rem_dest, int is_server) {
-    std::string line, ip, lid, gid, qpn;
+// void get_local_info(struct pingweave_dest *rem_dest, int is_server) {
+//     std::string line, ip, lid, gid, qpn;
 
-    std::ifstream file("local_table.csv");
-    if (!file.is_open()) {
-        std::cerr << "Error opening file." << std::endl;
-        exit(1);
-    }
+//     std::ifstream file("local_table.csv");
+//     if (!file.is_open()) {
+//         std::cerr << "Error opening file." << std::endl;
+//         exit(1);
+//     }
 
-    std::getline(file, line);
+//     std::getline(file, line);
 
-    if (is_server) {
-        std::getline(file, line);
-    }
+//     if (is_server) {
+//         std::getline(file, line);
+//     }
 
-    if (std::getline(file, line)) {
-        std::istringstream ss(line);
+//     if (std::getline(file, line)) {
+//         std::istringstream ss(line);
 
-        std::getline(ss, ip, ',');
-        std::getline(ss, lid, ',');
-        std::getline(ss, qpn, ',');
-        std::getline(ss, gid, ',');
+//         std::getline(ss, ip, ',');
+//         std::getline(ss, lid, ',');
+//         std::getline(ss, qpn, ',');
+//         std::getline(ss, gid, ',');
 
-        std::cout << "Remote Info: " << ip << ", " << lid << ", " << qpn << ", "
-                  << gid << std::endl;
-    } else {
-        std::cerr << "Error reading second line." << std::endl;
-    }
+//         std::cout << "Remote Info: " << ip << ", " << lid << ", " << qpn <<
+//         ", "
+//                   << gid << std::endl;
+//     } else {
+//         std::cerr << "Error reading second line." << std::endl;
+//     }
 
-    file.close();
+//     file.close();
 
-    try {
-        rem_dest->lid = std::stoi(lid);
-        rem_dest->qpn = std::stoi(qpn);
-        wire_gid_to_gid(gid.c_str(), &rem_dest->gid);
-    } catch (const std::invalid_argument &e) {
-        std::cerr << "Invalid argument: " << e.what() << std::endl;
-    } catch (const std::out_of_range &e) {
-        std::cerr << "Out of range: " << e.what() << std::endl;
-    }
-}
+//     try {
+//         rem_dest->lid = std::stoi(lid);
+//         rem_dest->qpn = std::stoi(qpn);
+//         wire_gid_to_gid(gid.c_str(), &rem_dest->gid);
+//     } catch (const std::invalid_argument &e) {
+//         std::cerr << "Invalid argument: " << e.what() << std::endl;
+//     } catch (const std::out_of_range &e) {
+//         std::cerr << "Out of range: " << e.what() << std::endl;
+//     }
+// }
 
 int init_ctx(struct pingweave_context *ctx) {
+    logger()->critical("TEST");
+
     /* check RNIC timestamping support */
     struct ibv_device_attr_ex attrx;
     if (ibv_query_device_ex(ctx->context, NULL, &attrx)) {
-        printf("[WARNING] Couldn't query device for extension features\n");
+        fprintf(stdout, "Couldn't query device for extension features.\n");
     } else if (!attrx.completion_timestamp_mask) {
-        printf("[WARNING] -> The device isn't completion timestamp capable\n");
+        fprintf(stdout, "The device isn't completion timestamp capable.\n");
     } else {
-        printf("Use RNIC Timestamping...\n");
-        use_rnic_ts = 1;
+        fprintf(stdout, "RNIC HW timestamping is available.\n");
+        rnic_hw_ts = 1;
         ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
-
-        // clock metadata
-        ctx->ts.comp_recv_max_time_delta = 0;
-        ctx->ts.comp_recv_min_time_delta = 0xffffffff;
-        ctx->ts.comp_recv_total_time_delta = 0;
-        ctx->ts.comp_recv_prev_time = 0;
-        ctx->ts.last_comp_with_ts = 0;
-        ctx->ts.comp_with_time_iters = 0;
     }
 
     /* check page size */
     page_size = sysconf(_SC_PAGESIZE);
-    printf("Page size: %d\n", page_size);
+    // fprintf(stdout, "Page size: %d\n", page_size);
 
     ctx->send_flags = IBV_SEND_SIGNALED;
 
     if (posix_memalign((void **)&ctx->buf, page_size,
                        MESSAGE_SIZE + GRH_SIZE)) {
-        std::cerr << "ctx->buf memalign failed\n" << std::endl;
+        fprintf(stderr, "ctx->buf memalign failed.\n");
         exit(1);
     }
     memset(ctx->buf, 0x7b, MESSAGE_SIZE + GRH_SIZE);
@@ -253,7 +246,7 @@ int init_ctx(struct pingweave_context *ctx) {
     {
         int active_port = find_active_port(ctx);
         if (active_port < 0) {
-            fprintf(stderr, "Unable to query port info for port %d\n",
+            fprintf(stderr, "Unable to query port info for port: %d\n",
                     active_port);
             goto clean_device;
         }
@@ -261,14 +254,10 @@ int init_ctx(struct pingweave_context *ctx) {
     }
 
     {
-        if (USE_EVENT) {
-            ctx->channel = ibv_create_comp_channel(ctx->context);
-            if (!ctx->channel) {
-                fprintf(stderr, "Couldn't create completion channel\n");
-                goto clean_device;
-            }
-        } else {
-            ctx->channel = NULL;
+        ctx->channel = ibv_create_comp_channel(ctx->context);
+        if (!ctx->channel) {
+            fprintf(stderr, "Couldn't create completion channel.\n");
+            goto clean_device;
         }
     }
 
@@ -290,7 +279,7 @@ int init_ctx(struct pingweave_context *ctx) {
     }
 
     {
-        if (use_rnic_ts) {
+        if (rnic_hw_ts) {
             struct ibv_cq_init_attr_ex attr_ex = {};
             attr_ex.cqe = RX_DEPTH + 1;
             attr_ex.cq_context = NULL;
@@ -311,7 +300,7 @@ int init_ctx(struct pingweave_context *ctx) {
     }
 
     {
-        struct ibv_qp_attr attr;
+        struct ibv_qp_attr attr = {};
         struct ibv_qp_init_attr init_attr = {};
         init_attr.send_cq = pingweave_cq(ctx);
         init_attr.recv_cq = pingweave_cq(ctx);
@@ -328,6 +317,10 @@ int init_ctx(struct pingweave_context *ctx) {
         }
 
         ibv_query_qp(ctx->qp, &attr, IBV_QP_CAP, &init_attr);
+        fprintf(stderr, "init_attr.cap.max_inline_data: %d\n",
+                init_attr.cap.max_inline_data);
+        if (init_attr.cap.max_inline_data >= MESSAGE_SIZE + GRH_SIZE)
+            ctx->send_flags |= IBV_SEND_INLINE;
     }
 
     {
@@ -380,7 +373,7 @@ int connect_ctx(struct pingweave_context *ctx) {
     }
 
     attr.qp_state = IBV_QPS_RTS;
-    attr.sq_psn = lrand48() & 0xffffff;
+    attr.sq_psn = 0;
 
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
         fprintf(stderr, "Failed to modify QP to RTS\n");
@@ -459,18 +452,4 @@ int post_send(struct pingweave_context *ctx, struct pingweave_dest rem_dest,
     struct ibv_send_wr *bad_wr;
 
     return ibv_post_send(ctx->qp, &wr, &bad_wr);
-}
-
-std::string get_source_directory() { return SOURCE_DIR; }
-
-std::shared_ptr<spdlog::logger> init_single_logger(std::string logname) {
-    spdlog::drop_all();
-    auto logger = spdlog::rotating_logger_mt(
-        logname, get_source_directory() + "/../logs/client_rx.log",
-        LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    logger->set_pattern(LOG_FORMAT);
-    logger->set_level(LOG_LEVEL_PRODUCER);
-    logger->flush_on(spdlog::level::debug);
-    logger->info("client_rx running (PID: {})", getpid());
-    return logger;
 }

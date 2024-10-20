@@ -32,8 +32,8 @@ const static unsigned int rx_depth = 50;
 const static int gid_index = 0;
 const static int service_level = 0;
 const static int use_event = 1;
-static int use_rnic_ts = 0;  // automatically assigned
-static int page_size = 0;    // automatically assigned
+static int rnic_hw_ts = 0;  // automatically assigned
+static int page_size = 0;   // automatically assigned
 
 static std::string msg_from_client = "Ping from client";
 static std::string msg_from_server = "Pong from server";

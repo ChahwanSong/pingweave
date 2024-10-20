@@ -35,6 +35,7 @@ def initialize_logger(logname):
     # Add the file handler to the logger
     logger.addHandler(file_handler)
 
+    logger.info("Initialization is successful.")
     # # Example usage of the logger
     # logger.info("This is an info message")
     # logger.debug("This is a debug message")

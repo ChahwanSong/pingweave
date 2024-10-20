@@ -4,10 +4,10 @@ from consumer_queue import *
 
 
 def main():
-    consumer = ConsumerQueue(f"test")
-
+    ip_addr = "10.200.200.3"
     check_interval = 0.001  # seconds
 
+    consumer = ConsumerQueue(ip_addr)
     if consumer.shm is None:
         consumer.clean_up()
         raise RuntimeError("Shared memory not initialized, cannot receive messages.")
@@ -26,7 +26,9 @@ def main():
 
             msg_list = consumer.process_batch()
             if msg_list:
-                print(f"Last received message in batch: {msg_list[-1]}")
+                print(
+                    f"Received message in batch - First: {msg_list[0]}, Last: {msg_list[-1]}"
+                )
     except KeyboardInterrupt as e:
         print("KeyboardInterrupt detected. Cleaning up shared memory and exiting...")
         consumer.clean_up()

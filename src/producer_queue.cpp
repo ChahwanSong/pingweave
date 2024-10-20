@@ -1,12 +1,14 @@
 #include "producer_queue.hpp"
 
 // Constructor: Acquire shared memory
-ProducerQueue::ProducerQueue(const std::string& shm_name)
+ProducerQueue::ProducerQueue(const std::string& prefix_name,
+                             const std::string& shm_name)
     : shm_name(shm_name), messages_in_batch(0) {
     // initialize logger
-    logger = spdlog::rotating_logger_mt(
-        "producer", get_source_directory() + "/../logs/producer.log",
-        LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    auto log_path = get_source_directory() + "/../logs/" + prefix_name +
+                    "_producer_" + shm_name + ".log";
+    logger = spdlog::rotating_logger_mt("producer_" + shm_name, log_path,
+                                        LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     logger->set_pattern(LOG_FORMAT);
     logger->set_level(LOG_LEVEL_PRODUCER);
     logger->flush_on(spdlog::level::debug);

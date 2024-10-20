@@ -1,14 +1,12 @@
 #pragma once
 
+#include <arpa/inet.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <infiniband/verbs.h>
 #include <netdb.h>
-#include <signal.h>                           // For kill(), signal()
-#include <spdlog/async.h>                     // spdlog
-#include <spdlog/sinks/rotating_file_sink.h>  // spdlog
-#include <spdlog/spdlog.h>                    // spdlog
+#include <signal.h>  // For kill(), signal()
 #include <sys/mman.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
@@ -27,22 +25,14 @@
 #include <unordered_map>
 #include <vector>
 
-// spdlog
-const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
-const int LOG_FILE_EXTRA_NUM = 0;            // extra 3 rotations
-const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%e][%l] %v";
-
-const enum spdlog::level::level_enum LOG_LEVEL_MAIN = spdlog::level::debug;
-const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
-const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::debug;
-const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::debug;
+#include "logger.hpp"
 
 // constants
-const static int MESSAGE_SIZE = 64;  // Message size of 64 bytes
-const static int BATCH_SIZE = 1000;  // Process messages in batches of 10
-const static int BUFFER_SIZE = BATCH_SIZE + 1;  // Queue size
-const static int BATCH_TIMEOUT_MS = 100;        // Timeout in milliseconds
-const static int GRH_SIZE = 40;                 // Specification
+const static int MESSAGE_SIZE = 64;       // Message size of 64 bytes
+const static int GRH_SIZE = 40;           // GRH header before msg (see IB Spec)
+const static int BATCH_SIZE = 1000;       // Process messages in batches of 10
+const static int BATCH_TIMEOUT_MS = 100;  // Timeout in milliseconds
+const static int BUFFER_SIZE = BATCH_SIZE + 1;  // Message queue's buffer size
 
 // RDMA parameters
 const static int RX_DEPTH = 50;      // enough
@@ -54,17 +44,8 @@ const static int USE_EVENT = 1;  // 1: event-based polling, 2: active polling
 const std::string PREFIX_SHMEM_NAME = "/pingweave_";
 
 // variables
-static int use_rnic_ts = 0;  // automatically assigned
-static int page_size = 0;    // automatically assigned
-
-struct ts_params {
-    uint64_t comp_recv_max_time_delta;
-    uint64_t comp_recv_min_time_delta;
-    uint64_t comp_recv_total_time_delta;
-    uint64_t comp_recv_prev_time;
-    int last_comp_with_ts;
-    unsigned int comp_with_time_iters;
-};
+static int rnic_hw_ts = 0;  // automatically assigned
+static int page_size = 0;   // automatically assigned
 
 struct pingweave_context {
     struct ibv_context *context;
@@ -82,10 +63,9 @@ struct pingweave_context {
     int send_flags;
     int pending;
     int active_port;
-    int is_server;
+    int is_rx;
     struct ibv_port_attr portinfo;
     uint64_t completion_timestamp_mask;
-    struct ts_params ts;
 };
 
 struct pingweave_dest {
@@ -108,9 +88,9 @@ int find_active_port(struct pingweave_context *ctx);
 
 struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
 
-void put_local_info(struct pingweave_dest *my_dest, int is_server,
-                    std::string ip);
-void get_local_info(struct pingweave_dest *rem_dest, int is_server);
+// void put_local_info(struct pingweave_dest *my_dest, int is_server,
+//                     std::string ip);
+// void get_local_info(struct pingweave_dest *rem_dest, int is_server);
 
 int init_ctx(struct pingweave_context *ctx);
 
@@ -120,7 +100,3 @@ int post_recv(struct pingweave_context *ctx, int n);
 
 int post_send(struct pingweave_context *ctx, struct pingweave_dest rem_dest,
               std::string msg);
-
-std::string get_source_directory();
-
-std::shared_ptr<spdlog::logger> init_single_logger(std::string logname);

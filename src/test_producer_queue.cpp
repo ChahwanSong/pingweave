@@ -1,5 +1,5 @@
-#include "common.hpp"
 #include "producer_queue.hpp"
+#include "rdma_common.hpp"
 
 int main() {
     // 총 전송할 메시지 개수

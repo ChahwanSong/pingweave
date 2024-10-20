@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.hpp"
+#include "rdma_common.hpp"
 
 struct SharedData {
     char messages[BUFFER_SIZE]
@@ -13,7 +13,7 @@ struct SharedData {
 
 class ProducerQueue {
    public:
-    ProducerQueue(const std::string& shm_name);
+    ProducerQueue(const std::string& prefix_name, const std::string& shm_name);
     ~ProducerQueue();  // Destructor will handle resource cleanup (RAII)
 
     // Prevent dynamic class allocation to call deconstructor if runtime error
