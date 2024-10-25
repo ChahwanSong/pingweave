@@ -1,7 +1,5 @@
 #include "logger.hpp"
 
-std::string get_source_directory() { return SOURCE_DIR; }
-
 std::shared_ptr<spdlog::logger> initialize_custom_logger(
     const std::string &logname, enum spdlog::level::level_enum log_level) {
     spdlog::drop_all();
@@ -11,7 +9,7 @@ std::shared_ptr<spdlog::logger> initialize_custom_logger(
     logger->set_pattern(LOG_FORMAT);
     logger->set_level(log_level);
     logger->flush_on(log_level);
-    logger->info("{} running (PID: {})", logname, getpid());
+    logger->info("Logger initialization (logname: {}, PID: {})", logname,
+                 getpid());
     return logger;
 }
-

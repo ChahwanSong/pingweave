@@ -349,10 +349,6 @@ int main(int argc, char *argv[]) {
 
         while (true) {
             if (cnt_send == 1) {
-                /** The second SEND (a.k.a. ACK) must be sent after first
-                 * post_send's CQE. */
-                /** TODO: Write the elapsed time to ACK's buffer
-                 * and send the information */
                 // usleep(1);
                 std::string ack_msg = msg_from_server + std::string("_2");
                 if (rnic_hw_ts) {
@@ -394,6 +390,7 @@ int main(int argc, char *argv[]) {
                 } while (!use_event && ret == ENOENT);  // until empty
                 num_cqe = 1;
                 ts_cqe = ibv_wc_read_completion_ts(ctx->cq_s.cq_ex);
+
             } else {  // original
                 do {
                     num_cqe = ibv_poll_cq(pp_cq(ctx), 1, &wc);

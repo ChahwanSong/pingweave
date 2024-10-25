@@ -20,9 +20,6 @@ ProcessInfo processes[n_processes];
 bool running = true;
 
 int main() {
-    // // spdlog format
-    // spdlog::set_pattern(LOG_FORMAT);
-    // spdlog::set_level(LOG_LEVEL_MAIN);
     spdlog::info("--- Main thread starts");
 
     // Register signal handlers in the parent process only
@@ -38,12 +35,13 @@ int main() {
         start_process([&] { rdma_server(server_ip); }, "rdma_server"),
         std::bind(rdma_server, server_ip), "rdma_server"};
     processes[1] = {
-        start_process([&] { rdma_client(server_ip); }, "rdma_client"),
-        std::bind(rdma_client, server_ip), "rdma_client"};
+        start_process([&] { rdma_client(client_ip); }, "rdma_client"),
+        std::bind(rdma_client, client_ip), "rdma_client"};
 
     // Monitor processes for every second and restart them if they exit
     while (running) {
-        sleep(1);  // Check every 1 second
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
         for (int i = 0; i < n_processes; ++i) {
             int status;
             pid_t result = waitpid(processes[i].pid, &status, WNOHANG);

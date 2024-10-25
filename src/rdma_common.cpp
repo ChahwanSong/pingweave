@@ -18,24 +18,26 @@ void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]) {
     int i;
 
     memcpy(tmp_gid, gid, sizeof(tmp_gid));
-    for (i = 0; i < 4; ++i) sprintf(&wgid[i * 8], "%08x", htobe32(tmp_gid[i]));
+    for (i = 0; i < 4; ++i) {
+        sprintf(&wgid[i * 8], "%08x", htobe32(tmp_gid[i]));
+    }
 }
 
 // Helper function to find RDMA device by matching network interface
-ibv_context *get_context_by_ifname(const char *ifname) {
+int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     char path[512];
     snprintf(path, sizeof(path), "/sys/class/net/%s/device/infiniband", ifname);
 
     DIR *dir = opendir(path);
     if (!dir) {
-        std::cerr << "Unable to open directory: " << path << std::endl;
-        return nullptr;
+        fprintf(stderr, "Unable to open directory: %s\n", ifname);
+        return 1;
     }
 
     ibv_device **device_list = ibv_get_device_list(nullptr);
     if (!device_list) {
-        std::cerr << "Failed to get RDMA devices list" << std::endl;
-        return nullptr;
+        fprintf(stderr, "Failed to get RDMA devices list: %s\n", ifname);
+        return 1;
     }
 
     struct dirent *entry;
@@ -47,7 +49,8 @@ ibv_context *get_context_by_ifname(const char *ifname) {
                 if (rdma_device_name == ibv_get_device_name(device_list[i])) {
                     ibv_context *context = ibv_open_device(device_list[i]);
                     ibv_free_device_list(device_list);
-                    return context;
+                    ctx->context = context;
+                    return 0;
                 }
             }
 
@@ -56,18 +59,17 @@ ibv_context *get_context_by_ifname(const char *ifname) {
     }
 
     closedir(dir);
-    return nullptr;
+    return 1;
 }
 
-ibv_context *get_context_by_ip(const char *ip) {
+int get_context_by_ip(struct pingweave_context *ctx) {
     struct ifaddrs *ifaddr, *ifa;
     int family;
     if (getifaddrs(&ifaddr) == -1) {
-        fprintf(stderr, "Failed to getifaddrs\n");
-        exit(1);
+        append_log(ctx->log_msg, "Failed to getifaddrs\n");
+        return 1;
     }
 
-    ibv_context *rdma_context = nullptr;
     for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
         if (ifa->ifa_addr == nullptr) {
             continue;
@@ -80,34 +82,32 @@ ibv_context *get_context_by_ip(const char *ip) {
             int s = getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), host,
                                 NI_MAXHOST, nullptr, 0, NI_NUMERICHOST);
             if (s != 0) {
-                fprintf(stderr, "getnameinfo() failed: %s\n", gai_strerror(s));
-                exit(1);
+                append_log(ctx->log_msg, "getnameinfo() %s\n", gai_strerror(s));
+                return 1;
             }
 
-            if (strcmp(host, ip) == 0) {
-                rdma_context = get_context_by_ifname(ifa->ifa_name);
-                if (rdma_context) {
-                    fprintf(stdout,
-                            "Found RDMA context of interface: %s (IP: %s)\n",
-                            ifa->ifa_name, ip);
-                    break;
+            ctx->iface = std::string(ifa->ifa_name);
+            if (strcmp(host, ctx->ipv4.c_str()) == 0) {
+                if (get_context_by_ifname(ifa->ifa_name, ctx)) {
+                    append_log(
+                        ctx->log_msg,
+                        "No matching RDMA device found for interface  %s\n",
+                        ifa->ifa_name);
+                    return 1;
                 } else {
-                    fprintf(stdout,
-                            "No matching RDMA device found for interface: %s "
-                            "(IP: %s)\n",
-                            ifa->ifa_name, ip);
+                    break;
                 }
             }
         }
     }
 
     freeifaddrs(ifaddr);
-    if (!rdma_context) {
-        fprintf(stderr, "No matching RDMA device found for IP: %s\n", ip);
-        exit(1);
+    if (!ctx->context) {
+        append_log(ctx->log_msg, "No matching RDMA device found for IP %s\n",
+                   ctx->ipv4);
+        return 1;
     }
-
-    return rdma_context;
+    return 0;
 }
 
 // RDMA 장치에서 사용 가능한 활성화된 포트 찾기
@@ -133,11 +133,49 @@ int find_active_port(struct pingweave_context *ctx) {
     return -1;
 }
 
-struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
-    return rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
+int save_device_info(struct pingweave_context *ctx) {
+    const std::string directory = get_source_directory() + "/../local";
+    struct stat st = {0};
+
+    if (stat(directory.c_str(), &st) == -1) {
+        // create a directory if not exists
+        if (mkdir(directory.c_str(), 0744) != 0) {
+            append_log(ctx->log_msg, "Cannot create a directory %s\n",
+                       directory.c_str());
+            return 1;
+        }
+    }
+
+    // 2. compose a file name
+    std::string filename = directory + "/" + ctx->ipv4;
+
+    // 3. save (overwrite)
+    std::ofstream outfile(filename);
+    if (!outfile.is_open()) {
+        append_log(ctx->log_msg, "Cannot open a file %s (%s)\n",
+                   filename.c_str(), strerror(errno));
+        return 1;
+    }
+
+    // save as lines (GID, QPN)
+    outfile << ctx->parsed_gid << "\n" << ctx->qp->qp_num;  // GID, QPN
+
+    // check error
+    if (!outfile) {
+        append_log(ctx->log_msg, "Error occued when writing a file %s (%s)\n",
+                   filename.c_str(), strerror(errno));
+        return 1;
+    }
+
+    outfile.close();
+    return 0;
 }
 
-// void put_local_info(struct pingweave_dest *my_dest, int is_server,
+struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
+    return ctx->rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
+}
+
+// void put_local_info(struct pingweave_addr *my_dest, int is_server,
 //                     std::string ip) {
 //     std::string filepath = "local_table.csv";
 //     std::string line, lid, gid, qpn;
@@ -172,7 +210,7 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
 //     printf("Finished writing a line to local_table.csv\n");
 // }
 
-// void get_local_info(struct pingweave_dest *rem_dest, int is_server) {
+// void get_local_info(struct pingweave_addr *rem_dest, int is_server) {
 //     std::string line, ip, lid, gid, qpn;
 
 //     std::ifstream file("local_table.csv");
@@ -216,38 +254,38 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
 // }
 
 int init_ctx(struct pingweave_context *ctx) {
-    logger()->critical("TEST");
+    // initialize
+    ctx->rnic_hw_ts = false;
+    ctx->send_flags = IBV_SEND_SIGNALED;
 
     /* check RNIC timestamping support */
     struct ibv_device_attr_ex attrx;
     if (ibv_query_device_ex(ctx->context, NULL, &attrx)) {
-        fprintf(stdout, "Couldn't query device for extension features.\n");
+        append_log(ctx->log_msg,
+                   "Couldn't query device for extension features.\n");
     } else if (!attrx.completion_timestamp_mask) {
-        fprintf(stdout, "The device isn't completion timestamp capable.\n");
+        append_log(ctx->log_msg,
+                   "The device isn't completion timestamp capable.\n");
     } else {
-        fprintf(stdout, "RNIC HW timestamping is available.\n");
-        rnic_hw_ts = 1;
+        append_log(ctx->log_msg, "RNIC HW timestamping is available.\n");
+        ctx->rnic_hw_ts = true;
         ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
     }
 
     /* check page size */
-    page_size = sysconf(_SC_PAGESIZE);
-    // fprintf(stdout, "Page size: %d\n", page_size);
-
-    ctx->send_flags = IBV_SEND_SIGNALED;
-
+    int page_size = sysconf(_SC_PAGESIZE);
     if (posix_memalign((void **)&ctx->buf, page_size,
                        MESSAGE_SIZE + GRH_SIZE)) {
-        fprintf(stderr, "ctx->buf memalign failed.\n");
-        exit(1);
+        append_log(ctx->log_msg, "ctx->buf memalign failed.\n");
+        return 1;
     }
     memset(ctx->buf, 0x7b, MESSAGE_SIZE + GRH_SIZE);
 
     {
         int active_port = find_active_port(ctx);
         if (active_port < 0) {
-            fprintf(stderr, "Unable to query port info for port: %d\n",
-                    active_port);
+            append_log(ctx->log_msg, "Unable to query port info for port: %d\n",
+                       active_port);
             goto clean_device;
         }
         ctx->active_port = active_port;
@@ -256,7 +294,7 @@ int init_ctx(struct pingweave_context *ctx) {
     {
         ctx->channel = ibv_create_comp_channel(ctx->context);
         if (!ctx->channel) {
-            fprintf(stderr, "Couldn't create completion channel.\n");
+            append_log(ctx->log_msg, "Couldn't create completion channel.\n");
             goto clean_device;
         }
     }
@@ -264,7 +302,7 @@ int init_ctx(struct pingweave_context *ctx) {
     {
         ctx->pd = ibv_alloc_pd(ctx->context);
         if (!ctx->pd) {
-            fprintf(stderr, "Couldn't allocate PD\n");
+            append_log(ctx->log_msg, "Couldn't allocate PD\n");
             goto clean_comp_channel;
         }
     }
@@ -273,15 +311,15 @@ int init_ctx(struct pingweave_context *ctx) {
         ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, MESSAGE_SIZE + GRH_SIZE,
                              IBV_ACCESS_LOCAL_WRITE);
         if (!ctx->mr) {
-            fprintf(stderr, "Couldn't register MR\n");
+            append_log(ctx->log_msg, "Couldn't register MR\n");
             goto clean_pd;
         }
     }
 
     {
-        if (rnic_hw_ts) {
+        if (ctx->rnic_hw_ts) {
             struct ibv_cq_init_attr_ex attr_ex = {};
-            attr_ex.cqe = RX_DEPTH + 1;
+            attr_ex.cqe = RX_DEPTH + TX_DEPTH;
             attr_ex.cq_context = NULL;
             attr_ex.channel = ctx->channel;
             attr_ex.comp_vector = 0;
@@ -289,12 +327,12 @@ int init_ctx(struct pingweave_context *ctx) {
                 IBV_WC_EX_WITH_BYTE_LEN | IBV_WC_EX_WITH_COMPLETION_TIMESTAMP;
             ctx->cq_s.cq_ex = ibv_create_cq_ex(ctx->context, &attr_ex);
         } else {
-            ctx->cq_s.cq = ibv_create_cq(ctx->context, RX_DEPTH + 1, NULL,
-                                         ctx->channel, 0);
+            ctx->cq_s.cq = ibv_create_cq(ctx->context, RX_DEPTH + TX_DEPTH,
+                                         NULL, ctx->channel, 0);
         }
 
         if (!pingweave_cq(ctx)) {
-            fprintf(stderr, "Couldn't create CQ\n");
+            append_log(ctx->log_msg, "Couldn't create CQ\n");
             goto clean_mr;
         }
     }
@@ -304,23 +342,22 @@ int init_ctx(struct pingweave_context *ctx) {
         struct ibv_qp_init_attr init_attr = {};
         init_attr.send_cq = pingweave_cq(ctx);
         init_attr.recv_cq = pingweave_cq(ctx);
-        init_attr.cap.max_send_wr = 3;
+        init_attr.cap.max_send_wr = TX_DEPTH;
         init_attr.cap.max_recv_wr = RX_DEPTH;
-        init_attr.cap.max_send_sge = 3;
-        init_attr.cap.max_recv_sge = 3;
+        init_attr.cap.max_send_sge = 1;
+        init_attr.cap.max_recv_sge = 1;
         init_attr.qp_type = IBV_QPT_UD;
 
         ctx->qp = ibv_create_qp(ctx->pd, &init_attr);
         if (!ctx->qp) {
-            fprintf(stderr, "Couldn't create QP\n");
+            append_log(ctx->log_msg, "Couldn't create QP\n");
             goto clean_cq;
         }
 
         ibv_query_qp(ctx->qp, &attr, IBV_QP_CAP, &init_attr);
-        fprintf(stderr, "init_attr.cap.max_inline_data: %d\n",
-                init_attr.cap.max_inline_data);
-        if (init_attr.cap.max_inline_data >= MESSAGE_SIZE + GRH_SIZE)
+        if (init_attr.cap.max_inline_data >= MESSAGE_SIZE + GRH_SIZE) {
             ctx->send_flags |= IBV_SEND_INLINE;
+        }
     }
 
     {
@@ -333,10 +370,13 @@ int init_ctx(struct pingweave_context *ctx) {
         if (ibv_modify_qp(
                 ctx->qp, &attr,
                 IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY)) {
-            fprintf(stderr, "Failed to modify QP to INIT\n");
+            append_log(ctx->log_msg, "Failed to modify QP to INIT\n");
             goto clean_qp;
         }
     }
+
+    // clear the log message
+    ctx->log_msg.clear();
 
     return 0;
 
@@ -364,11 +404,11 @@ clean_buffer:
     return 1;
 }
 
-int connect_ctx(struct pingweave_context *ctx) {
+int prepare_ctx(struct pingweave_context *ctx) {
     struct ibv_qp_attr attr = {};
     attr.qp_state = IBV_QPS_RTR;
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
-        fprintf(stderr, "Failed to modify QP to RTR\n");
+        append_log(ctx->log_msg, "Failed to modify QP to RTR\n");
         return 1;
     }
 
@@ -376,24 +416,72 @@ int connect_ctx(struct pingweave_context *ctx) {
     attr.sq_psn = 0;
 
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
-        fprintf(stderr, "Failed to modify QP to RTS\n");
+        append_log(ctx->log_msg, "Failed to modify QP to RTS\n");
         return 1;
     }
 
     return 0;
 }
 
-int post_recv(struct pingweave_context *ctx, int n) {
+int initialize_ctx(struct pingweave_context *ctx, const std::string &ipv4,
+                   const std::string &logname, const int &is_rx) {
+    ctx->log_msg = "";
+    ctx->ipv4 = ipv4;
+    ctx->is_rx = is_rx;
+    if (get_context_by_ip(ctx)) {
+        if (check_log(ctx->log_msg)) {
+            spdlog::get(logname)->error(ctx->log_msg);
+            return 1;
+        }
+    }
+
+    if (init_ctx(ctx)) {  // Failed to initialize context
+        if (check_log(ctx->log_msg)) {
+            spdlog::get(logname)->error(ctx->log_msg);
+        }
+        return 1;
+    }
+
+    if (prepare_ctx(ctx)) {  // Failed to prepare context
+        if (check_log(ctx->log_msg)) {
+            spdlog::get(logname)->error(ctx->log_msg);
+        }
+        return 1;
+    }
+
+    if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
+        spdlog::get(logname)->error("Couldn't request CQ notification");
+        return 1;
+    }
+
+    if (ibv_query_gid(ctx->context, ctx->active_port, GID_INDEX, &ctx->gid)) {
+        spdlog::get(logname)->error("Could not get my gid for gid index {}",
+                                    GID_INDEX);
+        return 1;
+    }
+    gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
+    inet_ntop(AF_INET6, &ctx->gid, ctx->parsed_gid, sizeof(ctx->parsed_gid));
+
+    if (is_rx) {
+        // Save RX connection info (ip, qpn, gid) as file
+        save_device_info(ctx);
+    }
+
+    std::string ctx_type = is_rx ? "RX" : "TX";
+    spdlog::get(logname)->info("[{}] IP: {} -> GID: {}, QPN: {}", ctx_type,
+                               ipv4, ctx->parsed_gid, ctx->qp->qp_num);
+    return 0;
+}
+
+int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id) {
     /* generate a unique wr_id */
-    uint64_t randval = static_cast<uint64_t>(lrand48() % UINT8_MAX) * 1000;
-    printf("  [POST] RECV with wr_id: %lu\n", randval);
     struct ibv_sge list = {};
     list.addr = (uintptr_t)ctx->buf;
     list.length = MESSAGE_SIZE + GRH_SIZE;
     list.lkey = ctx->mr->lkey;
 
     struct ibv_recv_wr wr = {};
-    wr.wr_id = randval;
+    wr.wr_id = wr_id;
     wr.sg_list = &list;
     wr.num_sge = 1;
     struct ibv_recv_wr *bad_wr;
@@ -407,18 +495,18 @@ int post_recv(struct pingweave_context *ctx, int n) {
     return cnt;
 }
 
-int post_send(struct pingweave_context *ctx, struct pingweave_dest rem_dest,
+int post_send(struct pingweave_context *ctx, struct pingweave_addr rem_dest,
               std::string msg) {
     struct ibv_ah_attr ah_attr = {};
     ah_attr.is_global = 0;
-    ah_attr.dlid = rem_dest.lid;
+    ah_attr.dlid = 0;
     ah_attr.sl = SERVICE_LEVEL;
     ah_attr.src_path_bits = 0;
     ah_attr.port_num = ctx->active_port;
 
     if (rem_dest.gid.global.interface_id) {
         ah_attr.is_global = 1;
-        ah_attr.grh.hop_limit = 1;
+        ah_attr.grh.hop_limit = 3;
         ah_attr.grh.dgid = rem_dest.gid;
         ah_attr.grh.sgid_index = GID_INDEX;
     }
