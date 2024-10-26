@@ -1,5 +1,6 @@
 #include "rdma_common.hpp"
 
+// use when writing to file
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid) {
     char tmp[9];
     __be32 v32;
@@ -13,6 +14,7 @@ void wire_gid_to_gid(const char *wgid, union ibv_gid *gid) {
     memcpy(gid, tmp_gid, sizeof(*gid));
 }
 
+// use when reading from file
 void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]) {
     uint32_t tmp_gid[4];
     int i;
@@ -158,7 +160,7 @@ int save_device_info(struct pingweave_context *ctx) {
     }
 
     // save as lines (GID, QPN)
-    outfile << ctx->parsed_gid << "\n" << ctx->qp->qp_num;  // GID, QPN
+    outfile << ctx->wired_gid << "\n" << ctx->qp->qp_num;  // GID, QPN
 
     // check error
     if (!outfile) {
@@ -168,6 +170,46 @@ int save_device_info(struct pingweave_context *ctx) {
     }
 
     outfile.close();
+    return 0;
+}
+
+int load_device_info(union rdma_addr *dst_addr, const std::string &filepath) {
+    std::string line, gid, qpn;
+
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "Error opening file." << std::endl;
+        return 1;
+    }
+
+    // read gid
+    if (std::getline(file, line)) {
+        gid = line;
+    } else {
+        std::cerr << "Error reading first line." << std::endl;
+        return 1;
+    }
+
+    // read qpn
+    if (std::getline(file, line)) {
+        qpn = line;
+    } else {
+        std::cerr << "Error reading second line." << std::endl;
+        return 1;
+    }
+
+    file.close();
+
+    try {
+        dst_addr->x.qpn = std::stoi(qpn);
+        wire_gid_to_gid(gid.c_str(), &dst_addr->x.gid);
+    } catch (const std::invalid_argument &e) {
+        std::cerr << "Invalid argument: " << e.what() << std::endl;
+        return 1;
+    } catch (const std::out_of_range &e) {
+        std::cerr << "Out of range: " << e.what() << std::endl;
+        return 1;
+    }
     return 0;
 }
 
@@ -423,8 +465,9 @@ int prepare_ctx(struct pingweave_context *ctx) {
     return 0;
 }
 
-int initialize_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-                   const std::string &logname, const int &is_rx) {
+int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
+             const std::string &logname, const int &is_server,
+             const int &is_rx) {
     ctx->log_msg = "";
     ctx->ipv4 = ipv4;
     ctx->is_rx = is_rx;
@@ -459,17 +502,23 @@ int initialize_ctx(struct pingweave_context *ctx, const std::string &ipv4,
                                     GID_INDEX);
         return 1;
     }
+    // sanity check - always use GID
+    assert(ctx->gid.global.subnet_prefix > 0);
+
+    // gid to wired and parsed gid
     gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
     inet_ntop(AF_INET6, &ctx->gid, ctx->parsed_gid, sizeof(ctx->parsed_gid));
 
-    if (is_rx) {
-        // Save RX connection info (ip, qpn, gid) as file
+    if (is_server && is_rx) {
+        // Save Server's RX connection info (ip, qpn, gid) as file
         save_device_info(ctx);
     }
 
-    std::string ctx_type = is_rx ? "RX" : "TX";
-    spdlog::get(logname)->info("[{}] IP: {} -> GID: {}, QPN: {}", ctx_type,
-                               ipv4, ctx->parsed_gid, ctx->qp->qp_num);
+    std::string ctx_node_type = is_server ? "Server" : "Client";
+    std::string ctx_send_type = is_rx ? "RX" : "TX";
+    spdlog::get(logname)->info(
+        "[{} {}] IP: {} has Queue pair with GID: {}, QPN: {}", ctx_node_type,
+        ctx_send_type, ipv4, ctx->parsed_gid, ctx->qp->qp_num);
     return 0;
 }
 
@@ -495,8 +544,9 @@ int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id) {
     return cnt;
 }
 
-int post_send(struct pingweave_context *ctx, struct pingweave_addr rem_dest,
-              std::string msg) {
+int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
+              const char *msg, const size_t &msg_len, const uint64_t &wr_id) {
+    int ret = 0;
     struct ibv_ah_attr ah_attr = {};
     ah_attr.is_global = 0;
     ah_attr.dlid = 0;
@@ -504,40 +554,51 @@ int post_send(struct pingweave_context *ctx, struct pingweave_addr rem_dest,
     ah_attr.src_path_bits = 0;
     ah_attr.port_num = ctx->active_port;
 
-    if (rem_dest.gid.global.interface_id) {
+    if (rem_dest.x.gid.global.interface_id) {
         ah_attr.is_global = 1;
         ah_attr.grh.hop_limit = 3;
-        ah_attr.grh.dgid = rem_dest.gid;
+        ah_attr.grh.dgid = rem_dest.x.gid;
         ah_attr.grh.sgid_index = GID_INDEX;
+    } else {
+        append_log(ctx->log_msg, "PingWeave does not support LID");
+        return 1;
     }
 
+    // sanity check
     ctx->ah = ibv_create_ah(ctx->pd, &ah_attr);
     if (!ctx->ah) {
-        fprintf(stderr, "Failed to create AH\n");
+        append_log(ctx->log_msg, "Failed to create AH\n");
+        return 1;
+    }
+    if (!msg) {
+        append_log(ctx->log_msg, "Empty message\n");
         return 1;
     }
 
     /* save a message to buffer */
-    strcpy(ctx->buf + GRH_SIZE, msg.c_str());
+    std::memcpy(ctx->buf + GRH_SIZE, msg, msg_len);
+    // strncpy(ctx->buf + GRH_SIZE, msg, msg_len);
 
     /* generate a unique wr_id */
-    uint64_t randval = static_cast<uint64_t>(lrand48() % UINT8_MAX);
-    printf("  [POST] SEND with wr_id: %lu\n", randval);
     struct ibv_sge list = {};
     list.addr = (uintptr_t)ctx->buf + GRH_SIZE;
     list.length = MESSAGE_SIZE;
     list.lkey = ctx->mr->lkey;
 
     struct ibv_send_wr wr = {};
-    wr.wr_id = randval;
+    wr.wr_id = wr_id;
     wr.sg_list = &list;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_SEND;
     wr.send_flags = ctx->send_flags;
     wr.wr.ud.ah = ctx->ah;
-    wr.wr.ud.remote_qpn = rem_dest.qpn;
+    wr.wr.ud.remote_qpn = rem_dest.x.qpn;
     wr.wr.ud.remote_qkey = 0x11111111;
     struct ibv_send_wr *bad_wr;
 
-    return ibv_post_send(ctx->qp, &wr, &bad_wr);
+    ret = ibv_post_send(ctx->qp, &wr, &bad_wr);
+    if (ret) {
+        append_log(ctx->log_msg, "SEND post is failed\n");
+    }
+    return ret;
 }

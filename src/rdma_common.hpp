@@ -23,6 +23,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -30,17 +31,18 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../libs/readerwriterqueue/readerwriterqueue.h"
 #include "logger.hpp"
 
 #define MSG_INPUT(out, msg, args...) \
     snprintf(out, 100, "%s : %d : " msg, __FILE__, __LINE__, ##args);
 
+// internal queue typedef
+typedef moodycamel::ReaderWriterQueue<union server_interval_msg_t> ServerQueue;
+
 // constants
-const static int MESSAGE_SIZE = 64;       // Message size of 64 bytes
-const static int GRH_SIZE = 40;           // GRH header before msg (see IB Spec)
-const static int BATCH_SIZE = 1000;       // Process messages in batches of 10
-const static int BATCH_TIMEOUT_MS = 100;  // Timeout in milliseconds
-const static int BUFFER_SIZE = BATCH_SIZE + 1;  // Message queue's buffer size
+const static int MESSAGE_SIZE = 64;           // Message size of 64 B
+const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
 
 // RDMA parameters
 const static int TX_DEPTH = 1;       // only 1 SEND to have data consistency
@@ -49,8 +51,14 @@ const static int GID_INDEX = 0;      // by default 0
 const static int SERVICE_LEVEL = 0;  // by default 0
 const static int USE_EVENT = 1;  // 1: event-based polling, 2: active polling
 
-// Name of shared memory
-const std::string PREFIX_SHMEM_NAME = "/pingweave_";
+// Params for internal message queue btw threads (RX <-> TX)
+const static int QUEUE_SIZE = 100;
+
+// Params for IPC (inter-processor communication)
+const static int BATCH_SIZE = 1000;             // Process messages in batches
+const static int BUFFER_SIZE = BATCH_SIZE + 1;  // Message queue's buffer size
+const static int BATCH_TIMEOUT_MS = 100;        // Timeout in milliseconds
+const std::string PREFIX_SHMEM_NAME = "/pingweave_";  // Name of shared memory
 
 enum {
     PINGWEAVE_WRID_RECV = 1,
@@ -91,12 +99,34 @@ struct pingweave_context {
     std::string log_msg;
 };
 
-struct pingweave_addr {
-    uint32_t qpn;
-    union ibv_gid gid;
+union rdma_addr {
+    char raw[20];
+    struct {
+        uint32_t qpn;       // 4B
+        union ibv_gid gid;  // 16B
+    } x;
 };
 
-enum ibv_mtu pingweave_mtu_to_enum(int mtu);
+union alignas(8) ping_msg_t {
+    char raw[8];
+    struct {
+        uint32_t pingid;  // 4B
+        uint32_t qpn;     // 4B
+    } x;
+};
+
+// Server's internal message format
+union alignas(32) server_interval_msg_t {
+    char raw[32];
+    struct {
+        uint32_t pingid;    // 4B
+        uint32_t qpn;       // 4B
+        union ibv_gid gid;  // 16B
+        uint64_t time;      // 8B
+    } x;
+};
+
+// enum ibv_mtu pingweave_mtu_to_enum(int mtu);
 
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid);
 void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
@@ -118,12 +148,13 @@ int init_ctx(struct pingweave_context *ctx);
 
 int prepare_ctx(struct pingweave_context *ctx);
 
-int initialize_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-                   const std::string &logname, const int &is_rx);
+int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
+             const std::string &logname, const int &is_server,
+             const int &is_rx);
 
 int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id);
-
-int post_send(struct pingweave_context *ctx, struct pingweave_addr rem_dest,
-              std::string msg);
+int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
+              const char *msg, const size_t &msg_len, const uint64_t &wr_id);
 
 int save_device_info(struct pingweave_context *ctx);
+int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);

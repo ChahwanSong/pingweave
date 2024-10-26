@@ -6,4 +6,4 @@
     - 개별 logger로 해결
 - client RX (sender) C++ -> python shmem 메시지큐 테스트
     - 성공
-- 
+- server가 핑 16개 이상 받고는, 그이상은 WQ 안뽑아냄

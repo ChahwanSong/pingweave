@@ -87,7 +87,7 @@ pid_t start_process(std::function<void()> func, const char* name) {
 // Signal handler to terminate all child processes
 void signal_handler(int sig) {
     running = false;
-    spdlog::critical("=== Main thread exits.");
+    spdlog::critical("*** Main thread exits. ***");
     for (int i = 0; i < n_processes; ++i) {
         kill(processes[i].pid, SIGTERM);
     }
