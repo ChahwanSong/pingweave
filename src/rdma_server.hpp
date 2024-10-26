@@ -20,18 +20,6 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             throw std::runtime_error("Failed to make RX device info");
         }
 
-        // initialize polling CQ in case of HW timestamp usage
-        struct ibv_poll_cq_attr attr = {};
-        if (ctx_rx.rnic_hw_ts) {
-            ret = ibv_start_poll(ctx_rx.cq_s.cq_ex, &attr);
-            if (ret != ENOENT) {  // Must start with clean-slate
-                spdlog::get(logname)->error(
-                    "ibv_start_poll starts with non-empty entries.");
-                throw std::runtime_error(
-                    "ibv_start_poll starts with non-empty entries.");
-            }
-        }
-
         // post 1 RECV WR
         if (post_recv(&ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
             spdlog::get(logname)->warn("RECV post is failed.");
@@ -68,17 +56,31 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 throw std::runtime_error("CQ event for unknown CQ");
             }
 
+            struct ibv_poll_cq_attr attr = {};
             if (ctx_rx.rnic_hw_ts) {  // RNIC timestamping
-                if (ibv_next_poll(ctx_rx.cq_s.cq_ex) == ENOENT) {
-                    spdlog::get(logname)->error("CQE event does not exist");
-                    throw std::runtime_error("CQE event does not exist");
+                // initialize polling CQ in case of HW timestamp usage
+                ret = ibv_start_poll(ctx_rx.cq_s.cq_ex, &attr);
+                if (ret == ENOENT) {
+                    spdlog::get(logname)->error(
+                        "ibv_start_poll must have an entry.");
+                    throw std::runtime_error(
+                        "ibv_start_poll must have an entry.");
                 }
+            
+                // if (ibv_next_poll(ctx_rx.cq_s.cq_ex) == ENOENT) {
+                //     spdlog::get(logname)->error("CQE event does not exist");
+                //     throw std::runtime_error("CQE event does not exist");
+                // }
                 wc = {0};
                 wc.status = ctx_rx.cq_s.cq_ex->status;
                 wc.wr_id = ctx_rx.cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_rx.cq_s.cq_ex);
                 wc.byte_len = ibv_wc_read_byte_len(ctx_rx.cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx.cq_s.cq_ex);
+
+                // finish polling CQ
+                ibv_end_poll(ctx_rx.cq_s.cq_ex);
+
             } else {  // app-layer timestamping
                 if (ibv_poll_cq(pingweave_cq(&ctx_rx), 1, &wc) != 1) {
                     spdlog::get(logname)->error("CQE poll receives nothing");

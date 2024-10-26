@@ -22,13 +22,7 @@ void rdma_client(const std::string& ipv4) {
     /**
      * TEST: generate a ping message to server RX
      **/
-    // initialize polling CQ in case of HW timestamp usage
-    struct ibv_poll_cq_attr attr = {};
     int ret = 0;
-    if (ctx_tmp.rnic_hw_ts) {
-        ret = ibv_start_poll(ctx_tmp.cq_s.cq_ex, &attr);
-        assert(ret == ENOENT);  // should be nothing
-    }
 
     // post 1 RECV WR
     if (post_recv(&ctx_tmp, 1, PINGWEAVE_WRID_RECV) == 0) {
@@ -93,17 +87,25 @@ void rdma_client(const std::string& ipv4) {
         }
 
         // poll -> CQE
+        struct ibv_poll_cq_attr attr = {};
         if (ctx_tmp.rnic_hw_ts) {  // extension
-            if (ibv_next_poll(ctx_tmp.cq_s.cq_ex) == ENOENT) {
-                spdlog::get(logname)->error("CQE event does not exist");
-                break;
+            // initialize polling CQ in case of HW timestamp usage
+            ret = ibv_start_poll(ctx_tmp.cq_s.cq_ex, &attr);
+            if (ret == ENOENT) {
+                spdlog::get(logname)->error(
+                    "ibv_start_poll must have an entry.");
+                throw std::runtime_error("ibv_start_poll must have an entry.");
             }
+
             wc = {0};  // init
             wc.status = ctx_tmp.cq_s.cq_ex->status;
             wc.wr_id = ctx_tmp.cq_s.cq_ex->wr_id;
             wc.opcode = ibv_wc_read_opcode(ctx_tmp.cq_s.cq_ex);
             wc.byte_len = ibv_wc_read_byte_len(ctx_tmp.cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tmp.cq_s.cq_ex);
+
+            // finish polling CQ
+            ibv_end_poll(ctx_tmp.cq_s.cq_ex);
         } else {  // original
             if (ibv_poll_cq(pingweave_cq(&ctx_tmp), 1, &wc) != 1) {
                 spdlog::get(logname)->error("CQE poll receives nothing");
