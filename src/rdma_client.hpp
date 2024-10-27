@@ -125,6 +125,6 @@ void rdma_client(const std::string& ipv4) {
         }
 
         logger->debug("Sleep 0.1 seconds...");
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }

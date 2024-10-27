@@ -38,7 +38,7 @@
     snprintf(out, 100, "%s : %d : " msg, __FILE__, __LINE__, ##args);
 
 // internal queue typedef
-typedef moodycamel::ReaderWriterQueue<union server_interval_msg_t> ServerQueue;
+typedef moodycamel::ReaderWriterQueue<union server_internal_msg_t> ServerQueue;
 
 // constants
 const static int MESSAGE_SIZE = 64;           // Message size of 64 B
@@ -116,7 +116,7 @@ union alignas(8) ping_msg_t {
 };
 
 // Server's internal message format
-union alignas(32) server_interval_msg_t {
+union alignas(32) server_internal_msg_t {
     char raw[32];
     struct {
         uint32_t pingid;    // 4B

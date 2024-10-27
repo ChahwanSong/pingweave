@@ -1,5 +1,6 @@
 #pragma once
 #include "rdma_common.hpp"
+#include "timedmap.hpp"
 
 // global variables
 std::atomic<bool> server_rx_thread_running(false);
@@ -66,7 +67,8 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                     throw std::runtime_error(
                         "ibv_start_poll must have an entry.");
                 }
-            
+                /** TODO: ibv_next_poll gets the next item of batch (~16
+                 * items).*/
                 // if (ibv_next_poll(ctx_rx.cq_s.cq_ex) == ENOENT) {
                 //     spdlog::get(logname)->error("CQE event does not exist");
                 //     throw std::runtime_error("CQE event does not exist");
@@ -119,23 +121,24 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                                 sizeof(ping_msg_t));
 
                     // msg to make response
-                    union server_interval_msg_t internal_msg;
+                    union server_internal_msg_t internal_msg;
                     internal_msg.x.pingid = ping_msg.x.pingid;
                     internal_msg.x.qpn = ping_msg.x.qpn;
                     internal_msg.x.gid = grh->sgid;
-                    internal_msg.x.time = 0;
+                    internal_msg.x.time = cqe_time;
 
-                    char parsed_gid[33];
-                    inet_ntop(AF_INET6, &internal_msg.x.gid, parsed_gid,
-                              sizeof(parsed_gid));
-                    spdlog::get(logname)->debug(
-                        "  -> id : {}, gid: {}, qpn: {}, time: {}",
-                        internal_msg.x.pingid, parsed_gid, internal_msg.x.qpn,
-                        internal_msg.x.time);
+                    // // for debugging
+                    // char parsed_gid[33];
+                    // inet_ntop(AF_INET6, &internal_msg.x.gid, parsed_gid,
+                    //           sizeof(parsed_gid));
+                    // spdlog::get(logname)->debug(
+                    //     "  -> id : {}, gid: {}, qpn: {}, time: {}",
+                    //     internal_msg.x.pingid, parsed_gid,
+                    //     internal_msg.x.qpn, internal_msg.x.time);
 
                     if (!server_queue->try_enqueue(internal_msg)) {
                         spdlog::get(logname)->error(
-                            "Failed to enqueue ping message: {}", parsed_gid);
+                            "Failed to enqueue ping message");
                         throw std::runtime_error(
                             "Failed to enqueue ping message");
                     }
@@ -171,6 +174,9 @@ void rdma_server(const std::string& ipv4) {
     const std::string logname = "rdma_server_" + ipv4;
     auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER);
 
+    // initialize wr_id which monotonically increases
+    uint64_t pong_wr_id = 1;
+
     // RDMA context
     struct pingweave_context ctx_tx;
 
@@ -182,21 +188,50 @@ void rdma_server(const std::string& ipv4) {
         raise;
     }
 
-    // RX 스레드 초기화
+    // Start RX thread
     std::thread rx_thread(server_rx_thread, ipv4, logname, &server_queue);
+
+    // Create the table (entry timeout = 1 second)
+    TimedMap timedMap(1);
+    // uint32_t key = 42;
+    // std::vector<std::string> value = {"Hello", "World", "Timed", "Map"};
+    // timedMap.insert(key, value);
 
     // 메인 스레드 루프 - 메시지 처리
     logger->info("Running main thread...");
     while (true) {
-        server_interval_msg_t internal_msg;
+        // Send response (i.e., PONG message)
+        server_internal_msg_t internal_msg;
         if (server_queue.try_dequeue(internal_msg)) {
             auto pingid = internal_msg.x.pingid;
             auto qpn = internal_msg.x.qpn;
             auto time = internal_msg.x.time;
+            auto gid = internal_msg.x.gid;
+
+            char parsed_gid[33];
+            inet_ntop(AF_INET6, &gid, parsed_gid, sizeof(parsed_gid));
             logger->info(
-                "Internal queue received a msg - pingid: {}, qpn: {}, time: {}",
-                pingid, qpn, time);
+                "Internal queue received a msg - pingid: {}, qpn: {}, gid: {}, "
+                "time: {}",
+                pingid, qpn, parsed_gid, time);
+
+            /**
+             * SEND response (Pong)
+             * Memorize the wr_id (monotonic) -> {pingid, qpn, gid, time_ping}
+             */
+            timedMap.insert(pong_wr_id++, {})
+
+            /**
+             * CQE of Pong -> SEND
+             * Get time_pong and calculate delay (pong - ping)
+             * Send and remove entry from table
+             */
+
+            /**
+             * CQE of ACK -> do nothing
+             */
         }
+
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 

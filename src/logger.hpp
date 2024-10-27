@@ -17,7 +17,7 @@
 // spdlog
 const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
 const int LOG_FILE_EXTRA_NUM = 0;            // only one rating-log file
-const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%e][%l] %v";
+const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
 const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::trace;
 const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::trace;
 const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::trace;
