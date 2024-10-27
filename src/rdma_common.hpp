@@ -38,7 +38,7 @@
     snprintf(out, 100, "%s : %d : " msg, __FILE__, __LINE__, ##args);
 
 // internal queue typedef
-typedef moodycamel::ReaderWriterQueue<union server_internal_msg_t> ServerQueue;
+typedef moodycamel::ReaderWriterQueue<union ping_msg_t> InterThreadQueue;
 
 // constants
 const static int MESSAGE_SIZE = 64;           // Message size of 64 B
@@ -107,16 +107,7 @@ union rdma_addr {
     } x;
 };
 
-union alignas(8) ping_msg_t {
-    char raw[8];
-    struct {
-        uint32_t pingid;  // 4B
-        uint32_t qpn;     // 4B
-    } x;
-};
-
-// Server's internal message format
-union alignas(32) server_internal_msg_t {
+union alignas(32) ping_msg_t {
     char raw[32];
     struct {
         uint32_t pingid;    // 4B
@@ -130,7 +121,7 @@ union alignas(32) server_internal_msg_t {
 
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid);
 void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
-
+std::string parsed_gid(union ibv_gid *gid);
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx);
 int get_context_by_ip(struct pingweave_context *ctx);

@@ -25,6 +25,12 @@ void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]) {
     }
 }
 
+std::string parsed_gid(union ibv_gid *gid) {
+    char parsed_gid[33];
+    inet_ntop(AF_INET6, gid, parsed_gid, sizeof(parsed_gid));
+    return std::string(parsed_gid);
+}
+
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     char path[512];

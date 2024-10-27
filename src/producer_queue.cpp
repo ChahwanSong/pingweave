@@ -5,7 +5,6 @@ ProducerQueue::ProducerQueue(const std::string& prefix_name,
                              const std::string& shm_name)
     : shm_name(shm_name), messages_in_batch(0) {
     // initialize logger
-    spdlog::drop_all();
     auto log_path = get_source_directory() + "/../logs/" + prefix_name +
                     "_producer_" + shm_name + ".log";
     logger = spdlog::rotating_logger_mt("producer_" + shm_name, log_path,

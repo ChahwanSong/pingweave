@@ -2,31 +2,19 @@
 #include "rdma_common.hpp"
 #include "timedmap.hpp"
 
-// global variables
-std::atomic<bool> server_rx_thread_running(false);
-
 void server_rx_thread(const std::string& ipv4, const std::string& logname,
-                      ServerQueue* server_queue) {
-    server_rx_thread_running = true;
+                      InterThreadQueue* server_queue,
+                      struct pingweave_context* ctx_rx) {
     int ret = 0;
     spdlog::get(logname)->info("Running RX thread...");
 
-    struct pingweave_context ctx_rx;
     try {
-        spdlog::get(logname)->info("Initializing server RX device for {}",
-                                   ipv4);
-        if (make_ctx(&ctx_rx, ipv4, logname, true, true)) {
-            spdlog::get(logname)->error("Failed to make RX device info: {}",
-                                        ipv4);
-            throw std::runtime_error("Failed to make RX device info");
-        }
-
         // post 1 RECV WR
-        if (post_recv(&ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
+        if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
             spdlog::get(logname)->warn("RECV post is failed.");
         }
         // register an event alarm of cq
-        if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
+        if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             spdlog::get(logname)->error("Couldn't register CQE notification");
             throw std::runtime_error("Couldn't register CQE notification");
         }
@@ -39,52 +27,55 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             spdlog::get(logname)->info("");
             spdlog::get(logname)->info(
                 "Wait polling RX RECV CQE on device {}...",
-                ctx_rx.context->device->name);
+                ctx_rx->context->device->name);
 
             // Event-driven polling via completion channel.
             struct ibv_cq* ev_cq;
             void* ev_ctx;
-            if (ibv_get_cq_event(ctx_rx.channel, &ev_cq, &ev_ctx)) {
+            if (ibv_get_cq_event(ctx_rx->channel, &ev_cq, &ev_ctx)) {
                 spdlog::get(logname)->error("Failed to get cq_event");
                 throw std::runtime_error("Failed to get cq_event");
             }
 
             // ACK the CQ events
-            ibv_ack_cq_events(pingweave_cq(&ctx_rx), 1);
+            ibv_ack_cq_events(pingweave_cq(ctx_rx), 1);
             // check the cqe is from a correct CQ
-            if (ev_cq != pingweave_cq(&ctx_rx)) {
+            if (ev_cq != pingweave_cq(ctx_rx)) {
                 spdlog::get(logname)->error("CQ event for unknown CQ");
                 throw std::runtime_error("CQ event for unknown CQ");
             }
 
             struct ibv_poll_cq_attr attr = {};
-            if (ctx_rx.rnic_hw_ts) {  // RNIC timestamping
+            if (ctx_rx->rnic_hw_ts) {  // RNIC timestamping
                 // initialize polling CQ in case of HW timestamp usage
-                ret = ibv_start_poll(ctx_rx.cq_s.cq_ex, &attr);
+                ret = ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr);
                 if (ret == ENOENT) {
                     spdlog::get(logname)->error(
                         "ibv_start_poll must have an entry.");
                     throw std::runtime_error(
                         "ibv_start_poll must have an entry.");
                 }
-                /** TODO: ibv_next_poll gets the next item of batch (~16
-                 * items).*/
-                // if (ibv_next_poll(ctx_rx.cq_s.cq_ex) == ENOENT) {
+                /** TODO:
+                 * ibv_next_poll gets the next item of batch (~16
+                 * items). (for further performance optimization)
+                 **/
+
+                // if (ibv_next_poll(ctx_rx->cq_s.cq_ex) == ENOENT) {
                 //     spdlog::get(logname)->error("CQE event does not exist");
                 //     throw std::runtime_error("CQE event does not exist");
                 // }
                 wc = {0};
-                wc.status = ctx_rx.cq_s.cq_ex->status;
-                wc.wr_id = ctx_rx.cq_s.cq_ex->wr_id;
-                wc.opcode = ibv_wc_read_opcode(ctx_rx.cq_s.cq_ex);
-                wc.byte_len = ibv_wc_read_byte_len(ctx_rx.cq_s.cq_ex);
-                cqe_time = ibv_wc_read_completion_ts(ctx_rx.cq_s.cq_ex);
+                wc.status = ctx_rx->cq_s.cq_ex->status;
+                wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
+                wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
+                wc.byte_len = ibv_wc_read_byte_len(ctx_rx->cq_s.cq_ex);
+                cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
 
                 // finish polling CQ
-                ibv_end_poll(ctx_rx.cq_s.cq_ex);
+                ibv_end_poll(ctx_rx->cq_s.cq_ex);
 
             } else {  // app-layer timestamping
-                if (ibv_poll_cq(pingweave_cq(&ctx_rx), 1, &wc) != 1) {
+                if (ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc) != 1) {
                     spdlog::get(logname)->error("CQE poll receives nothing");
                     throw std::runtime_error("CQE poll receives nothing");
                 }
@@ -103,40 +94,29 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                     spdlog::get(logname)->info("[CQE] RECV (wr_id: {})",
                                                wc.wr_id);
                     // post 1 RECV WR
-                    if (post_recv(&ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
+                    if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
                         spdlog::get(logname)->warn("RECV post is failed.");
                     }
 
-                    // GRH header parsing
+                    // GRH header parsing (for debugging)
                     struct ibv_grh* grh =
-                        reinterpret_cast<struct ibv_grh*>(ctx_rx.buf);
-                    char parsed_sgid[33];
-                    inet_ntop(AF_INET6, &grh->sgid, parsed_sgid,
-                              sizeof(parsed_sgid));
-                    spdlog::get(logname)->debug("  -> from: {}", parsed_sgid);
+                        reinterpret_cast<struct ibv_grh*>(ctx_rx->buf);
+                    spdlog::get(logname)->debug("  -> from: {}",
+                                                parsed_gid(&grh->sgid));
 
                     // ping message parsing
                     union ping_msg_t ping_msg;
-                    std::memcpy(&ping_msg, ctx_rx.buf + GRH_SIZE,
+                    std::memcpy(&ping_msg, ctx_rx->buf + GRH_SIZE,
                                 sizeof(ping_msg_t));
+                    ping_msg.x.time = cqe_time;
 
-                    // msg to make response
-                    union server_internal_msg_t internal_msg;
-                    internal_msg.x.pingid = ping_msg.x.pingid;
-                    internal_msg.x.qpn = ping_msg.x.qpn;
-                    internal_msg.x.gid = grh->sgid;
-                    internal_msg.x.time = cqe_time;
+                    // for debugging
+                    spdlog::get(logname)->debug(
+                        "  -> id : {}, gid: {}, qpn: {}, time: {}",
+                        ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                        ping_msg.x.qpn, ping_msg.x.time);
 
-                    // // for debugging
-                    // char parsed_gid[33];
-                    // inet_ntop(AF_INET6, &internal_msg.x.gid, parsed_gid,
-                    //           sizeof(parsed_gid));
-                    // spdlog::get(logname)->debug(
-                    //     "  -> id : {}, gid: {}, qpn: {}, time: {}",
-                    //     internal_msg.x.pingid, parsed_gid,
-                    //     internal_msg.x.qpn, internal_msg.x.time);
-
-                    if (!server_queue->try_enqueue(internal_msg)) {
+                    if (!server_queue->try_enqueue(ping_msg)) {
                         spdlog::get(logname)->error(
                             "Failed to enqueue ping message");
                         throw std::runtime_error(
@@ -155,7 +135,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             }
 
             // re-register an event alarm of cq
-            if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
+            if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
                 spdlog::get(logname)->error(
                     "Couldn't register CQE notification");
                 throw std::runtime_error("Couldn't register CQE notification");
@@ -163,63 +143,63 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
         }
     } catch (const std::exception& e) {
         spdlog::get(logname)->error("RX thread exits unexpectedly.");
-        ibv_end_poll(ctx_rx.cq_s.cq_ex);
-        server_rx_thread_running = false;
         throw;  // Propagate exception
     }
 }
 
 void rdma_server(const std::string& ipv4) {
     // logger
+    spdlog::drop_all();
     const std::string logname = "rdma_server_" + ipv4;
     auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER);
 
-    // initialize wr_id which monotonically increases
-    uint64_t pong_wr_id = 1;
+    // internal queue
+    InterThreadQueue server_queue(QUEUE_SIZE);
 
     // RDMA context
-    struct pingweave_context ctx_tx;
-
-    // internal queue
-    ServerQueue server_queue(QUEUE_SIZE);
-
+    struct pingweave_context ctx_tx, ctx_rx;
     if (make_ctx(&ctx_tx, ipv4, logname, true, false)) {
         logger->error("Failed to make TX device info: {}", ipv4);
         raise;
     }
 
+    if (make_ctx(&ctx_rx, ipv4, logname, true, true)) {
+        logger->error("Failed to make RX device info: {}", ipv4);
+        raise;
+    }
+
     // Start RX thread
-    std::thread rx_thread(server_rx_thread, ipv4, logname, &server_queue);
+    std::thread rx_thread(server_rx_thread, ipv4, logname, &server_queue,
+                          &ctx_rx);
+
+    /*********************************************************************/
+
+    // initialize wr_id which monotonically increases
+    uint64_t pongid = 1;
 
     // Create the table (entry timeout = 1 second)
     TimedMap timedMap(1);
-    // uint32_t key = 42;
-    // std::vector<std::string> value = {"Hello", "World", "Timed", "Map"};
-    // timedMap.insert(key, value);
 
-    // 메인 스레드 루프 - 메시지 처리
-    logger->info("Running main thread...");
+    // main thread loop - handle messages
+    logger->info("Running main (TX) thread...");
     while (true) {
         // Send response (i.e., PONG message)
-        server_internal_msg_t internal_msg;
-        if (server_queue.try_dequeue(internal_msg)) {
-            auto pingid = internal_msg.x.pingid;
-            auto qpn = internal_msg.x.qpn;
-            auto time = internal_msg.x.time;
-            auto gid = internal_msg.x.gid;
+        ping_msg_t msg;
+        if (server_queue.try_dequeue(msg)) {
+            auto pingid = msg.x.pingid;
+            auto qpn = msg.x.qpn;
+            auto gid = msg.x.gid;
+            auto time = msg.x.time;
 
-            char parsed_gid[33];
-            inet_ntop(AF_INET6, &gid, parsed_gid, sizeof(parsed_gid));
             logger->info(
                 "Internal queue received a msg - pingid: {}, qpn: {}, gid: {}, "
                 "time: {}",
-                pingid, qpn, parsed_gid, time);
+                pingid, qpn, parsed_gid(msg.x.gid), time);
 
             /**
              * SEND response (Pong)
              * Memorize the wr_id (monotonic) -> {pingid, qpn, gid, time_ping}
              */
-            timedMap.insert(pong_wr_id++, {})
 
             /**
              * CQE of Pong -> SEND
@@ -235,7 +215,7 @@ void rdma_server(const std::string& ipv4) {
         std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 
-    // 스레드 종료 처리
+    // thread handling
     if (rx_thread.joinable()) {
         rx_thread.join();
     }
