@@ -1,9 +1,13 @@
+#include <cstring>
 #include <iostream>
+#include <thread>
+#include <vector>
 
 #include "timedmap.hpp"
 
 int main() {
-    TimedMap timedMap(5);  // 엔트리의 유효 기간을 5초로 설정
+    TimedMap<std::vector<std::string>> timedMap(
+        5);  // 엔트리의 유효 기간을 5초로 설정
 
     uint32_t key = 42;
     std::vector<std::string> value = {"Hello", "World", "Timed", "Map"};

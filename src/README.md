@@ -7,3 +7,9 @@
 - client RX (sender) C++ -> python shmem 메시지큐 테스트
     - 성공
 - server가 핑 16개 이상 받고는, 그이상은 WQ 안뽑아냄
+    - ibv_start_poll, ibv_end_poll 사용
+- ping, pong message 구조체
+    - Done
+- Timestamp Bit overflow 이슈 (uint64_t)
+    -
+- alignas 구조체 적용

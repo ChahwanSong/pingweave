@@ -33,12 +33,11 @@
 
 #include "../libs/readerwriterqueue/readerwriterqueue.h"
 #include "logger.hpp"
-
-#define MSG_INPUT(out, msg, args...) \
-    snprintf(out, 100, "%s : %d : " msg, __FILE__, __LINE__, ##args);
+#include "timedmap.hpp"
 
 // internal queue typedef
-typedef moodycamel::ReaderWriterQueue<union ping_msg_t> InterThreadQueue;
+typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
+typedef moodycamel::ReaderWriterQueue<struct ping_info_t> ClientInternalQueue;
 
 // constants
 const static int MESSAGE_SIZE = 64;           // Message size of 64 B
@@ -62,7 +61,9 @@ const std::string PREFIX_SHMEM_NAME = "/pingweave_";  // Name of shared memory
 
 enum {
     PINGWEAVE_WRID_RECV = 1,
-    PINGWEAVE_WRID_SEND = 2,
+    PINGWEAVE_WRID_SEND,
+    PINGWEAVE_OPCODE_PONG,
+    PINGWEAVE_OPCODE_ACK,
 };
 
 struct pingweave_context {
@@ -107,14 +108,47 @@ union rdma_addr {
     } x;
 };
 
-union alignas(32) ping_msg_t {
-    char raw[32];
+union ping_msg_t {
+    char raw[36];
     struct {
-        uint32_t pingid;    // 4B
+        uint64_t pingid;    // 8B
         uint32_t qpn;       // 4B
         union ibv_gid gid;  // 16B
         uint64_t time;      // 8B
     } x;
+};
+
+union pong_msg_t {
+    char raw[20];
+    struct {
+        uint32_t opcode;        // PONG or ACK
+        uint64_t pingid;        // ping ID
+        uint64_t server_delay;  // server's process delay
+    } x;
+};
+
+struct ping_info_t {
+    uint64_t pingid;          // ping ID
+    uint32_t qpn;             // destination qpn
+    ibv_gid gid;              // destination gid
+    uint64_t time_ping_send;  // server-delay
+    uint64_t time_ping_cqe;   // network-delay
+    uint64_t time_client;     // client-delay
+
+    // Assignment operator
+    ping_info_t &operator=(const ping_info_t &other) {
+        if (this == &other) {
+            return *this;  // Self-assignment check
+        }
+        pingid = other.pingid;
+        qpn = other.qpn;
+        gid = other.gid;
+        time_ping_send = other.time_ping_send;
+        time_ping_cqe = other.time_ping_cqe;
+        time_client = other.time_client;
+
+        return *this;
+    }
 };
 
 // enum ibv_mtu pingweave_mtu_to_enum(int mtu);
@@ -122,9 +156,14 @@ union alignas(32) ping_msg_t {
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid);
 void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
 std::string parsed_gid(union ibv_gid *gid);
+
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx);
 int get_context_by_ip(struct pingweave_context *ctx);
+
+// clock
+uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
+                                      const uint64_t &mask);
 
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
@@ -136,9 +175,7 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
 // void get_local_info(struct pingweave_addr *rem_dest, int is_server);
 
 int init_ctx(struct pingweave_context *ctx);
-
 int prepare_ctx(struct pingweave_context *ctx);
-
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
              const std::string &logname, const int &is_server,
              const int &is_rx);

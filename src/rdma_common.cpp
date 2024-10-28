@@ -31,6 +31,18 @@ std::string parsed_gid(union ibv_gid *gid) {
     return std::string(parsed_gid);
 }
 
+// calculate time difference with considering bit wrap-around
+uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
+                                      const uint64_t &mask) {
+    uint64_t delta;
+    if (t2 >= t1) {  // no wrap around
+        delta = t2 - t1;
+    } else {  // wrap around
+        delta = (mask - t1 + 1) + t2;
+    }
+    return delta;
+}
+
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     char path[512];

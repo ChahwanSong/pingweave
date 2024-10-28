@@ -1,52 +1,46 @@
+#pragma once
+
 #include <chrono>
 #include <cstdint>
 #include <list>
-#include <string>
-#include <thread>
 #include <unordered_map>
-#include <vector>
 
-/**
-    연산	평균시간 복잡도	최악의 경우 시간복잡도
-    삽입	O(1)	O(1)
-    제거	O(1)	O(1)
-    조회	O(1)	O(n)
- */
-
+template <typename Value>
 class TimedMap {
    public:
-    using Key = uint32_t;
-    using Value = std::vector<std::string>;
+    using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
     explicit TimedMap(int thresholdSeconds = 1) : threshold(thresholdSeconds) {}
 
     bool insert(const Key& key, const Value& value) {
-        // already exists, return false
+        // if already exists, return false
         auto it = map.find(key);
         if (it != map.end()) {
-            // keyList.erase(it->second.listIter);
-            // map.erase(it);
             return false;
         }
 
-        // Add to end of list
+        // 리스트 끝에 추가
         auto listIter = keyList.emplace(keyList.end(), key);
 
-        // Add to map
+        // 맵에 추가
         TimePoint now = std::chrono::steady_clock::now();
         map[key] = {value, now, listIter};
         return true;
     }
 
     bool get(const Key& key, Value& value) {
-        expireEntries();  // 만료된 엔트리 제거
+        // if fail to find, return false
+
+        expireEntries();
 
         auto it = map.find(key);
         if (it != map.end()) {
+            // found
             value = it->second.value;
             return true;
         }
+        // failed
         return false;
     }
 
@@ -58,7 +52,7 @@ class TimedMap {
             const Key& key = keyList.front();
             auto it = map.find(key);
 
-            // if no entry in the map
+            // 맵에 항목이 없으면 리스트에서 제거
             if (it == map.end()) {
                 keyList.pop_front();
                 continue;
@@ -78,6 +72,7 @@ class TimedMap {
             map.erase(it);
             ++n_remove;
         }
+        return n_remove;
     }
 
     int remove(const Key& key) {
@@ -87,10 +82,12 @@ class TimedMap {
             map.erase(it);
             return true;
         }
+        // if nothing to remove
         return false;
     }
 
     bool empty() {
+        // if empty, return true
         expireEntries();
         return map.empty();
     }
@@ -104,10 +101,10 @@ class TimedMap {
     struct MapEntry {
         Value value;
         TimePoint timestamp;
-        std::list<Key>::iterator listIter;
+        typename std::list<Key>::iterator listIter;
     };
 
     std::unordered_map<Key, MapEntry> map;
     std::list<Key> keyList;
-    const int threshold;  // 임계값 (초 단위)
+    const int threshold;
 };

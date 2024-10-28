@@ -1,12 +1,15 @@
 #pragma once
 #include "rdma_common.hpp"
-#include "timedmap.hpp"
 
 void server_rx_thread(const std::string& ipv4, const std::string& logname,
-                      InterThreadQueue* server_queue,
+                      ServerInternalQueue* server_queue,
                       struct pingweave_context* ctx_rx) {
-    int ret = 0;
     spdlog::get(logname)->info("Running RX thread...");
+
+    int ret = 0;
+    uint64_t cqe_time = 0;
+    struct timespec cqe_ts;
+    struct ibv_wc wc = {};
 
     try {
         // post 1 RECV WR
@@ -20,16 +23,13 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
         }
 
         // Polling loop
-        uint64_t cqe_time = 0;
-        struct timespec cqe_ts;
-        struct ibv_wc wc = {};
         while (true) {
             spdlog::get(logname)->info("");
-            spdlog::get(logname)->info(
-                "Wait polling RX RECV CQE on device {}...",
-                ctx_rx->context->device->name);
+            spdlog::get(logname)->info("Wait polling RX RECV CQE...");
 
-            // Event-driven polling via completion channel.
+            /**
+             * IMPORTANT: Event-driven polling via completion channel.
+             **/
             struct ibv_cq* ev_cq;
             void* ev_ctx;
             if (ibv_get_cq_event(ctx_rx->channel, &ev_cq, &ev_ctx)) {
@@ -45,15 +45,22 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 throw std::runtime_error("CQ event for unknown CQ");
             }
 
+            // re-register an event alarm of cq
+            if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
+                spdlog::get(logname)->error(
+                    "Couldn't register CQE notification");
+                throw std::runtime_error("Couldn't register CQE notification");
+            }
+            /*------------------------------------------------------*/
+
             struct ibv_poll_cq_attr attr = {};
             if (ctx_rx->rnic_hw_ts) {  // RNIC timestamping
                 // initialize polling CQ in case of HW timestamp usage
                 ret = ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr);
-                if (ret == ENOENT) {
-                    spdlog::get(logname)->error(
-                        "ibv_start_poll must have an entry.");
-                    throw std::runtime_error(
-                        "ibv_start_poll must have an entry.");
+                if (ret) {
+                    spdlog::get(logname)->error("ibv_start_poll is failed: {}",
+                                                ret);
+                    throw std::runtime_error("ibv_start_poll is failed.");
                 }
                 /** TODO:
                  * ibv_next_poll gets the next item of batch (~16
@@ -87,12 +94,10 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 cqe_time = cqe_ts.tv_sec * 1000000000LL + cqe_ts.tv_nsec;
             }
 
-            spdlog::get(logname)->debug("Received CQ Event!");
-
             if (wc.status == IBV_WC_SUCCESS) {
                 if (wc.opcode == IBV_WC_RECV) {
-                    spdlog::get(logname)->info("[CQE] RECV (wr_id: {})",
-                                               wc.wr_id);
+                    spdlog::get(logname)->debug("[CQE] RECV (wr_id: {})",
+                                                wc.wr_id);
                     // post 1 RECV WR
                     if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
                         spdlog::get(logname)->warn("RECV post is failed.");
@@ -130,15 +135,9 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 }
             } else {
                 spdlog::get(logname)->warn(
-                    "  RX WR failure - status: {}, opcode: {}",
+                    "RX WR failure - status: {}, opcode: {}",
                     ibv_wc_status_str(wc.status), static_cast<int>(wc.opcode));
-            }
-
-            // re-register an event alarm of cq
-            if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
-                spdlog::get(logname)->error(
-                    "Couldn't register CQE notification");
-                throw std::runtime_error("Couldn't register CQE notification");
+                throw std::runtime_error("RX WR failure");
             }
         }
     } catch (const std::exception& e) {
@@ -154,7 +153,7 @@ void rdma_server(const std::string& ipv4) {
     auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER);
 
     // internal queue
-    InterThreadQueue server_queue(QUEUE_SIZE);
+    ServerInternalQueue server_queue(QUEUE_SIZE);
 
     // RDMA context
     struct pingweave_context ctx_tx, ctx_rx;
@@ -173,43 +172,243 @@ void rdma_server(const std::string& ipv4) {
                           &ctx_rx);
 
     /*********************************************************************/
-
-    // initialize wr_id which monotonically increases
-    uint64_t pongid = 1;
-
-    // Create the table (entry timeout = 1 second)
-    TimedMap timedMap(1);
-
     // main thread loop - handle messages
     logger->info("Running main (TX) thread...");
+
+    // Create the table (entry timeout = 1 second)
+    TimedMap<ping_msg_t> pong_table(1);
+
+    // variables
+    ping_msg_t ping_msg;
+    pong_msg_t pong_msg;
+    uint64_t cqe_time, var_time;
+    struct timespec cqe_ts, var_ts;
+    int ret;
+
     while (true) {
-        // Send response (i.e., PONG message)
-        ping_msg_t msg;
-        if (server_queue.try_dequeue(msg)) {
-            auto pingid = msg.x.pingid;
-            auto qpn = msg.x.qpn;
-            auto gid = msg.x.gid;
-            auto time = msg.x.time;
+        /**
+         * SEND response (PONG) once it receives PING
+         * Memorize the ping ID -> {pingid, qpn, gid, time_ping}
+         */
+        ping_msg = {0};
+        if (server_queue.try_dequeue(ping_msg)) {
+            logger->debug(
+                "Internal queue received a ping_msg - pingid: {}, qpn: {}, "
+                "gid: {}, "
+                "ping arrival time: {}",
+                ping_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
+                ping_msg.x.time);
 
-            logger->info(
-                "Internal queue received a msg - pingid: {}, qpn: {}, gid: {}, "
-                "time: {}",
-                pingid, qpn, parsed_gid(msg.x.gid), time);
+            // (1) memorize
+            pong_table.insert(ping_msg.x.pingid, ping_msg);
 
-            /**
-             * SEND response (Pong)
-             * Memorize the wr_id (monotonic) -> {pingid, qpn, gid, time_ping}
-             */
+            // (2) send the response (what / where)
+            pong_msg = {0};
+            pong_msg.x.opcode = PINGWEAVE_OPCODE_PONG;
+            pong_msg.x.pingid = ping_msg.x.pingid;
+            pong_msg.x.server_delay = 0;
 
-            /**
-             * CQE of Pong -> SEND
-             * Get time_pong and calculate delay (pong - ping)
-             * Send and remove entry from table
-             */
+            union rdma_addr dst_addr;
+            dst_addr.x.gid = ping_msg.x.gid;
+            dst_addr.x.qpn = ping_msg.x.qpn;
 
-            /**
-             * CQE of ACK -> do nothing
-             */
+            spdlog::get(logname)->debug(
+                "SEND post with PONG message of pingid: {} to qpn: {}, gid: {}",
+                pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid));
+            if (post_send(&ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
+                          pong_msg.x.pingid)) {
+                if (check_log(ctx_tx.log_msg)) {
+                    spdlog::get(logname)->error(ctx_tx.log_msg);
+                }
+                throw std::runtime_error("SEND PONG post is failed");
+            }
+        }
+
+        /**
+         * CQE capture
+         * IMPORTANT: we use non-blocking polling here.
+         *
+         * Case 1: CQE of Pong -> SEND
+         * Get CQE time of PONG SEND, and calculate delay
+         * Send ACK with the time and remove entry from pong_table
+         * wr_id is the ping ID
+         *
+         * Case 2: CQE of ACK -> ignore
+         * wr_id is PINGWEAVE_WRID_SEND
+         **/
+
+        struct ibv_poll_cq_attr attr = {};
+        struct ibv_wc wc = {};
+        int end_flag = false;
+        if (ctx_tx.rnic_hw_ts) {  // extension
+            // initialize polling CQ in case of HW timestamp usage
+            ret = ibv_start_poll(ctx_tx.cq_s.cq_ex, &attr);
+            while (!ret) {  // ret == 0 if success
+                end_flag = true;
+
+                /* do something */
+                wc = {0};
+                wc.status = ctx_tx.cq_s.cq_ex->status;  // status
+                wc.wr_id = ctx_tx.cq_s.cq_ex->wr_id;    // pingid
+                wc.opcode = ibv_wc_read_opcode(ctx_tx.cq_s.cq_ex);
+                cqe_time = ibv_wc_read_completion_ts(ctx_tx.cq_s.cq_ex);
+
+                if (wc.status == IBV_WC_SUCCESS) {
+                    if (wc.opcode == IBV_WC_SEND) {
+                        spdlog::get(logname)->debug("[CQE] SEND (wr_id: {})",
+                                                    wc.wr_id);
+                        if (wc.wr_id == PINGWEAVE_WRID_SEND) {  // ACK - ignore
+                            spdlog::get(logname)->debug(
+                                "CQE of ACK, so ignore this");
+                        } else {
+                            spdlog::get(logname)->debug("-> PONG's pingID: {}",
+                                                        wc.wr_id);
+                            ping_msg = {0};
+                            if (pong_table.get(wc.wr_id, ping_msg)) {
+                                // generate ACK message
+                                pong_msg = {0};
+                                pong_msg.x.opcode = PINGWEAVE_OPCODE_ACK;
+                                pong_msg.x.pingid = wc.wr_id;
+                                pong_msg.x.server_delay =
+                                    calc_time_delta_with_bitwrap(
+                                        ping_msg.x.time, cqe_time,
+                                        ctx_tx.completion_timestamp_mask);
+                                spdlog::get(logname)->debug(
+                                    "SEND post with ACK message pingid: {} to "
+                                    "qpn: "
+                                    "{}, gid: {}, delay: {}",
+                                    pong_msg.x.pingid, ping_msg.x.qpn,
+                                    parsed_gid(&ping_msg.x.gid),
+                                    pong_msg.x.server_delay);
+
+                                union rdma_addr dst_addr;
+                                dst_addr.x.gid = ping_msg.x.gid;
+                                dst_addr.x.qpn = ping_msg.x.qpn;
+
+                                if (post_send(&ctx_tx, dst_addr, pong_msg.raw,
+                                              sizeof(pong_msg_t),
+                                              PINGWEAVE_WRID_SEND)) {
+                                    if (check_log(ctx_tx.log_msg)) {
+                                        spdlog::get(logname)->error(
+                                            ctx_tx.log_msg);
+                                    }
+                                    throw std::runtime_error(
+                                        "SEND ACK post is failed");
+                                }
+                            } else {
+                                spdlog::get(logname)->warn(
+                                    "pingid {} entry does not exist (expired?)",
+                                    wc.wr_id);
+                            }
+                            // erase
+                            if (!pong_table.remove(wc.wr_id)) {
+                                spdlog::get(logname)->warn(
+                                    "Nothing to remove the id {} from timedMap",
+                                    wc.wr_id);
+                            }
+                        }
+                    } else {
+                        spdlog::get(logname)->error(
+                            "Unexpected opcode: {}",
+                            static_cast<int>(wc.opcode));
+                        throw std::runtime_error("Unexpected opcode");
+                    }
+                } else {
+                    spdlog::get(logname)->warn(
+                        "TX WR failure - status: {}, opcode: {}",
+                        ibv_wc_status_str(wc.status),
+                        static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
+                }
+
+                // next round
+                ret = ibv_next_poll(ctx_tx.cq_s.cq_ex);
+            }
+            if (end_flag) {
+                ibv_end_poll(ctx_tx.cq_s.cq_ex);
+            }
+        } else {  // original
+            ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
+            while (ret) {  // ret == 1 if success
+                // get current time
+                if (clock_gettime(CLOCK_MONOTONIC, &cqe_ts) == -1) {
+                    spdlog::get(logname)->error(
+                        "Failed to run clock_gettime()");
+                    throw std::runtime_error("clock_gettime is failed");
+                }
+                cqe_time = cqe_ts.tv_sec * 1000000000LL + cqe_ts.tv_nsec;
+
+                if (wc.status == IBV_WC_SUCCESS) {
+                    if (wc.opcode == IBV_WC_SEND) {
+                        spdlog::get(logname)->debug("[CQE] SEND (wr_id: {})",
+                                                    wc.wr_id);
+                        if (wc.wr_id == PINGWEAVE_WRID_SEND) {  // ACK - ignore
+                            spdlog::get(logname)->debug(
+                                "CQE of ACK, so ignore this");
+                        } else {
+                            spdlog::get(logname)->debug("-> pingID: {}",
+                                                        wc.wr_id);
+                            ping_msg = {0};
+                            if (pong_table.get(wc.wr_id, ping_msg)) {
+                                // generate ACK message
+                                pong_msg = {0};
+                                pong_msg.x.opcode = PINGWEAVE_OPCODE_ACK;
+                                pong_msg.x.pingid = wc.wr_id;
+                                pong_msg.x.server_delay =
+                                    calc_time_delta_with_bitwrap(
+                                        ping_msg.x.time, cqe_time,
+                                        ctx_tx.completion_timestamp_mask);
+                                spdlog::get(logname)->debug(
+                                    "SEND post with ACK message pingid: {} to "
+                                    "qpn: "
+                                    "{}, gid: {}, delay: {}",
+                                    pong_msg.x.pingid, ping_msg.x.qpn,
+                                    parsed_gid(&ping_msg.x.gid),
+                                    pong_msg.x.server_delay);
+
+                                union rdma_addr dst_addr;
+                                dst_addr.x.gid = ping_msg.x.gid;
+                                dst_addr.x.qpn = ping_msg.x.qpn;
+
+                                if (post_send(&ctx_tx, dst_addr, pong_msg.raw,
+                                              sizeof(pong_msg_t),
+                                              PINGWEAVE_WRID_SEND)) {
+                                    if (check_log(ctx_tx.log_msg)) {
+                                        spdlog::get(logname)->error(
+                                            ctx_tx.log_msg);
+                                    }
+                                    throw std::runtime_error(
+                                        "SEND ACK post is failed");
+                                }
+                            } else {
+                                spdlog::get(logname)->warn(
+                                    "pingid {} entry does not exist (expired?)",
+                                    wc.wr_id);
+                            }
+                            // erase
+                            if (!pong_table.remove(wc.wr_id)) {
+                                spdlog::get(logname)->warn(
+                                    "Nothing to remove the id {} from timedMap",
+                                    wc.wr_id);
+                            }
+                        }
+                    } else {
+                        spdlog::get(logname)->error(
+                            "Unexpected opcode: {}",
+                            static_cast<int>(wc.opcode));
+                        throw std::runtime_error("Unexpected opcode");
+                    }
+                } else {
+                    spdlog::get(logname)->warn(
+                        "TX WR failure - status: {}, opcode: {}",
+                        ibv_wc_status_str(wc.status),
+                        static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
+                }
+
+                // next round
+                ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(10));
