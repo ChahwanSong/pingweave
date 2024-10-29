@@ -75,7 +75,6 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 wc.status = ctx_rx->cq_s.cq_ex->status;
                 wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
-                wc.byte_len = ibv_wc_read_byte_len(ctx_rx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
 
                 // finish polling CQ
@@ -94,14 +93,15 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 cqe_time = cqe_ts.tv_sec * 1000000000LL + cqe_ts.tv_nsec;
             }
 
+            // post 1 RECV WR
+            if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
+                spdlog::get(logname)->warn("RECV post is failed.");
+            }
+
             if (wc.status == IBV_WC_SUCCESS) {
                 if (wc.opcode == IBV_WC_RECV) {
                     spdlog::get(logname)->debug("[CQE] RECV (wr_id: {})",
                                                 wc.wr_id);
-                    // post 1 RECV WR
-                    if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
-                        spdlog::get(logname)->warn("RECV post is failed.");
-                    }
 
                     // GRH header parsing (for debugging)
                     struct ibv_grh* grh =
@@ -176,14 +176,13 @@ void rdma_server(const std::string& ipv4) {
     logger->info("Running main (TX) thread...");
 
     // Create the table (entry timeout = 1 second)
-    TimedMap<ping_msg_t> pong_table(1);
+    PingMsgMap pong_table(1);
 
     // variables
-    ping_msg_t ping_msg;
-    pong_msg_t pong_msg;
+    union ping_msg_t ping_msg;
+    union pong_msg_t pong_msg;
     uint64_t cqe_time, var_time;
     struct timespec cqe_ts, var_ts;
-    int ret;
 
     while (true) {
         /**
@@ -200,7 +199,11 @@ void rdma_server(const std::string& ipv4) {
                 ping_msg.x.time);
 
             // (1) memorize
-            pong_table.insert(ping_msg.x.pingid, ping_msg);
+            if (!pong_table.insert(ping_msg.x.pingid, ping_msg)) {
+                spdlog::get(logname)->warn(
+                    "Failed to insert pingid {} into pong_table.",
+                    ping_msg.x.pingid);
+            }
 
             // (2) send the response (what / where)
             pong_msg = {0};
@@ -228,7 +231,7 @@ void rdma_server(const std::string& ipv4) {
          * CQE capture
          * IMPORTANT: we use non-blocking polling here.
          *
-         * Case 1: CQE of Pong -> SEND
+         * Case 1: CQE of Pong RECV -> ACK SEND
          * Get CQE time of PONG SEND, and calculate delay
          * Send ACK with the time and remove entry from pong_table
          * wr_id is the ping ID
@@ -240,9 +243,11 @@ void rdma_server(const std::string& ipv4) {
         struct ibv_poll_cq_attr attr = {};
         struct ibv_wc wc = {};
         int end_flag = false;
+        int ret;
         if (ctx_tx.rnic_hw_ts) {  // extension
             // initialize polling CQ in case of HW timestamp usage
             ret = ibv_start_poll(ctx_tx.cq_s.cq_ex, &attr);
+
             while (!ret) {  // ret == 0 if success
                 end_flag = true;
 
@@ -259,7 +264,7 @@ void rdma_server(const std::string& ipv4) {
                                                     wc.wr_id);
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {  // ACK - ignore
                             spdlog::get(logname)->debug(
-                                "CQE of ACK, so ignore this");
+                                "-> CQE of ACK, so ignore this");
                         } else {
                             spdlog::get(logname)->debug("-> PONG's pingID: {}",
                                                         wc.wr_id);
@@ -346,7 +351,7 @@ void rdma_server(const std::string& ipv4) {
                             spdlog::get(logname)->debug(
                                 "CQE of ACK, so ignore this");
                         } else {
-                            spdlog::get(logname)->debug("-> pingID: {}",
+                            spdlog::get(logname)->debug("-> PONG's pingID: {}",
                                                         wc.wr_id);
                             ping_msg = {0};
                             if (pong_table.get(wc.wr_id, ping_msg)) {
@@ -388,7 +393,8 @@ void rdma_server(const std::string& ipv4) {
                             // erase
                             if (!pong_table.remove(wc.wr_id)) {
                                 spdlog::get(logname)->warn(
-                                    "Nothing to remove the id {} from timedMap",
+                                    "Nothing to remove the id {} from "
+                                    "pong_table",
                                     wc.wr_id);
                             }
                         }

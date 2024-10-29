@@ -33,7 +33,8 @@
 
 #include "../libs/readerwriterqueue/readerwriterqueue.h"
 #include "logger.hpp"
-#include "timedmap.hpp"
+#include "ping_info_map.hpp"
+#include "ping_msg_map.hpp"
 
 // internal queue typedef
 typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
@@ -106,49 +107,6 @@ union rdma_addr {
         uint32_t qpn;       // 4B
         union ibv_gid gid;  // 16B
     } x;
-};
-
-union ping_msg_t {
-    char raw[36];
-    struct {
-        uint64_t pingid;    // 8B
-        uint32_t qpn;       // 4B
-        union ibv_gid gid;  // 16B
-        uint64_t time;      // 8B
-    } x;
-};
-
-union pong_msg_t {
-    char raw[20];
-    struct {
-        uint32_t opcode;        // PONG or ACK
-        uint64_t pingid;        // ping ID
-        uint64_t server_delay;  // server's process delay
-    } x;
-};
-
-struct ping_info_t {
-    uint64_t pingid;          // ping ID
-    uint32_t qpn;             // destination qpn
-    ibv_gid gid;              // destination gid
-    uint64_t time_ping_send;  // server-delay
-    uint64_t time_ping_cqe;   // network-delay
-    uint64_t time_client;     // client-delay
-
-    // Assignment operator
-    ping_info_t &operator=(const ping_info_t &other) {
-        if (this == &other) {
-            return *this;  // Self-assignment check
-        }
-        pingid = other.pingid;
-        qpn = other.qpn;
-        gid = other.gid;
-        time_ping_send = other.time_ping_send;
-        time_ping_cqe = other.time_ping_cqe;
-        time_client = other.time_client;
-
-        return *this;
-    }
 };
 
 // enum ibv_mtu pingweave_mtu_to_enum(int mtu);

@@ -38,9 +38,6 @@ OBJS_TEST_PRODUCER_QUEUE = $(addprefix $(BIN_DIR)/, $(SRCS_TEST_PRODUCER_QUEUE:.
 SRCS_TEST_LOGGER = test_logger_main.cpp
 OBJS_TEST_LOGGER = $(addprefix $(BIN_DIR)/, $(SRCS_TEST_PRODUCER_QUEUE:.cpp=.o))
 
-SRCS_TEST_TIMEDMAP = test_timedmap.cpp
-OBJS_TEST_TIMEDMAP = $(addprefix $(BIN_DIR)/, $(SRCS_TEST_TIMEDMAP:.cpp=.o))
-
 # 메인용 소스 파일 및 오브젝트 파일
 SRCS_MAIN = rdma_main.cpp $(SRCS_COMMON)
 OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
@@ -48,7 +45,6 @@ OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
 # 출력 파일
 TARGET_TEST_PRODUCER_QUEUE = $(BIN_DIR)/test_producer_queue
 TARGET_TEST_LOGGER = $(BIN_DIR)/test_logger_main
-TARGET_TEST_TIMEDMAP = $(BIN_DIR)/test_timedmap
 TARGET_MAIN = $(BIN_DIR)/main
 
 # 기본 타겟
@@ -66,10 +62,6 @@ $(TARGET_TEST_PRODUCER_QUEUE): $(OBJS_TEST_PRODUCER_QUEUE)
 $(TARGET_TEST_LOGGER): $(OBJS_TEST_LOGGER)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) $(TEST_CXXFLAGS) $^ -o $@ $(LDFLAGS) $(TEST_LDLIBS)
-
-$(TARGET_TEST_TIMEDMAP): $(OBJS_TEST_TIMEDMAP)
-	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(TEST_CXXFLAGS) $^ -o $@ (LDFLAGS) $(TEST_LDLIBS)
 
 # 메인 빌드
 main: $(TARGET_MAIN)

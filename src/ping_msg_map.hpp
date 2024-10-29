@@ -1,20 +1,46 @@
 #pragma once
 
+#include <infiniband/verbs.h>
+
 #include <chrono>
 #include <cstdint>
 #include <list>
+#include <mutex>
+#include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
 #include <unordered_map>
 
-template <typename Value>
-class TimedMap {
+union ping_msg_t {
+    char raw[36];
+    struct {
+        uint64_t pingid;    // 8B
+        uint32_t qpn;       // 4B
+        union ibv_gid gid;  // 16B
+        uint64_t time;      // 8B
+    } x;
+};
+
+union pong_msg_t {
+    char raw[20];
+    struct {
+        uint32_t opcode;        // PONG or ACK
+        uint64_t pingid;        // ping ID
+        uint64_t server_delay;  // server's process delay
+    } x;
+};
+
+class PingMsgMap {
    public:
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    explicit TimedMap(int thresholdSeconds = 1) : threshold(thresholdSeconds) {}
+    explicit PingMsgMap(int thresholdSeconds = 1)
+        : threshold(thresholdSeconds) {}
 
-    bool insert(const Key& key, const Value& value) {
-        // if already exists, return false
+    // if already exists, return false
+    bool insert(const Key& key, const ping_msg_t& value) {
+        std::unique_lock lock(mutex_);
+        expireEntries();
+
         auto it = map.find(key);
         if (it != map.end()) {
             return false;
@@ -29,11 +55,9 @@ class TimedMap {
         return true;
     }
 
-    bool get(const Key& key, Value& value) {
-        // if fail to find, return false
-
-        expireEntries();
-
+    // if fail to find, return false
+    bool get(const Key& key, ping_msg_t& value) {
+        std::shared_lock lock(mutex_);
         auto it = map.find(key);
         if (it != map.end()) {
             // found
@@ -43,6 +67,37 @@ class TimedMap {
         // failed
         return false;
     }
+
+    int remove(const Key& key) {
+        std::unique_lock lock(mutex_);
+        auto it = map.find(key);
+        if (it != map.end()) {
+            keyList.erase(it->second.listIter);
+            map.erase(it);
+            return true;
+        }
+        // if nothing to remove
+        return false;
+    }
+
+    bool empty() {
+        std::shared_lock lock(mutex_);
+        expireEntries();
+        return map.empty();
+    }
+
+    size_t size() {
+        std::shared_lock lock(mutex_);
+        expireEntries();
+        return map.size();
+    }
+
+   private:
+    struct MapEntry {
+        ping_msg_t value;
+        TimePoint timestamp;
+        typename std::list<Key>::iterator listIter;
+    };
 
     int expireEntries() {
         TimePoint now = std::chrono::steady_clock::now();
@@ -75,36 +130,8 @@ class TimedMap {
         return n_remove;
     }
 
-    int remove(const Key& key) {
-        auto it = map.find(key);
-        if (it != map.end()) {
-            keyList.erase(it->second.listIter);
-            map.erase(it);
-            return true;
-        }
-        // if nothing to remove
-        return false;
-    }
-
-    bool empty() {
-        // if empty, return true
-        expireEntries();
-        return map.empty();
-    }
-
-    size_t size() {
-        expireEntries();
-        return map.size();
-    }
-
-   private:
-    struct MapEntry {
-        Value value;
-        TimePoint timestamp;
-        typename std::list<Key>::iterator listIter;
-    };
-
     std::unordered_map<Key, MapEntry> map;
     std::list<Key> keyList;
     const int threshold;
+    mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
 };
