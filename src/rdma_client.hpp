@@ -5,12 +5,14 @@
 void client_tx_thread(const std::string& ipv4, const std::string& logname,
                       PingInfoMap* ping_table, struct pingweave_context* ctx_tx,
                       const ibv_gid& rx_gid, const uint32_t& rx_qpn) {
-    spdlog::get(logname)->info("Running TX thread...");
+    spdlog::get(logname)->info("Run TX thread after 1 second (pid: {})...",
+                               getpid());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // initialize pingid which monotonically increases;
     // Note that it should be higher than 2 (PINGWEAVE_WRID_SEND)
     // to distinguish between PONG and ACK at server
-    uint64_t c_pingid = rand();
+    uint64_t c_pingid = PING_ID_INIT;
 
     // variables
     int ret = 0;
@@ -19,6 +21,9 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
     /**
      * TODO: Schedule SEND PING with multiple destinations
+     * pinglist (ipv4) -> get the corresponding (gid, qpn) list
+     *
+     * a kind of ring with (ip, gid, qpn) and timestamp to send
      */
 
     try {
@@ -39,6 +44,14 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
         msg.x.pingid = c_pingid++;
         msg.x.qpn = rx_qpn;
         msg.x.gid = rx_gid;
+
+        // sanity check: wr_id must be large enough
+        if (msg.x.pingid < 100) {
+            // ref: server uses PINGWEAVE_WRID_SEND
+            spdlog::get(logname)->error("Pingid must be large but given: {}",
+                                        msg.x.pingid);
+            throw std::runtime_error("pingid must be large");
+        }
 
         // Before SEND, record the start time
         if (clock_gettime(CLOCK_MONOTONIC, &var_ts) == -1) {
@@ -171,15 +184,10 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 }
 
 void rdma_client(const std::string& ipv4) {
-    sleep(1);
-
     // init logger
     spdlog::drop_all();
     const std::string logname = "rdma_client_" + ipv4;
     auto logger = initialize_custom_logger(logname, LOG_LEVEL_CLIENT);
-
-    // // internal queue
-    // ClientInternalQueue client_queue(QUEUE_SIZE);
 
     // ping table
     PingInfoMap ping_table(1);
@@ -202,7 +210,8 @@ void rdma_client(const std::string& ipv4) {
 
     /*********************************************************************/
 
-    spdlog::get(logname)->info("Running main (RX) thread...");
+    spdlog::get(logname)->info("Running main (RX) thread (pid: {})...",
+                               getpid());
 
     // inter-process queue
     ProducerQueue producer_queue("rdma", ipv4);
@@ -229,8 +238,7 @@ void rdma_client(const std::string& ipv4) {
         /**
          * IMPORTANT: Event-driven polling via completion channel.
          **/
-        spdlog::get(logname)->info("");
-        spdlog::get(logname)->info("Wait polling RX RECV CQE...");
+        spdlog::get(logname)->debug("Wait polling RX RECV CQE...");
 
         struct ibv_cq* ev_cq;
         void* ev_ctx;
@@ -347,7 +355,7 @@ void rdma_client(const std::string& ipv4) {
                                 }
 
                                 // debugging
-                                spdlog::get(logname)->info(
+                                spdlog::get(logname)->debug(
                                     "-> client-delay: {}, network-rtt: {}",
                                     time_send_el, time_cqe_el);
 
@@ -369,10 +377,14 @@ void rdma_client(const std::string& ipv4) {
                                 // for debugging
                                 if (ping_table.get(pong_msg.x.pingid,
                                                    ping_info)) {
-                                    spdlog::get(logname)->critical(
-                                        "Final PING RTT is {}",
+                                    auto ping_net_rtt =
                                         ping_info.time_ping_cqe -
-                                            ping_info.time_server);
+                                        ping_info.time_server;
+                                    spdlog::get(logname)->critical(
+                                        "PING NETWORK RTT is {}", ping_net_rtt);
+                                    producer_queue.sendMessage(
+                                        ipv4 + "," +
+                                        std::to_string(ping_net_rtt));
                                 } else {
                                     spdlog::get(logname)->error(
                                         "Final line error");
@@ -397,7 +409,6 @@ void rdma_client(const std::string& ipv4) {
                             spdlog::get(logname)->error("Error: {}", e.what());
                             throw std::runtime_error(e.what());
                         }
-
                     } else {
                         spdlog::get(logname)->error(
                             "Unexpected opcode: {}",

@@ -4,7 +4,7 @@
 void server_rx_thread(const std::string& ipv4, const std::string& logname,
                       ServerInternalQueue* server_queue,
                       struct pingweave_context* ctx_rx) {
-    spdlog::get(logname)->info("Running RX thread...");
+    spdlog::get(logname)->info("Running RX thread (pid: {})...", getpid());
 
     int ret = 0;
     uint64_t cqe_time = 0;
@@ -24,8 +24,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
 
         // Polling loop
         while (true) {
-            spdlog::get(logname)->info("");
-            spdlog::get(logname)->info("Wait polling RX RECV CQE...");
+            spdlog::get(logname)->debug("Wait polling RX RECV CQE...");
 
             /**
              * IMPORTANT: Event-driven polling via completion channel.
@@ -173,7 +172,7 @@ void rdma_server(const std::string& ipv4) {
 
     /*********************************************************************/
     // main thread loop - handle messages
-    logger->info("Running main (TX) thread...");
+    logger->info("Running main (TX) thread (pid: {})...", getpid());
 
     // Create the table (entry timeout = 1 second)
     PingMsgMap pong_table(1);

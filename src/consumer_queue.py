@@ -2,7 +2,7 @@ import time
 from multiprocessing import shared_memory
 from multiprocessing import resource_tracker
 import ctypes
-from logger import consumer_logger
+from logger import initialize_logger
 
 MESSAGE_SIZE = 64  # Message size of 64 bytes
 BATCH_SIZE = 1000  # Process messages in batches of 10
@@ -25,7 +25,8 @@ class ConsumerQueue:
     shm = None
     shared_data = None
 
-    def __init__(self, shm_name):
+    def __init__(self, prefix, shm_name):
+        self.prefix = prefix
         self.shm_name = shm_name
         # free the resource if pre-allocated
         if self.shm is not None:
@@ -34,7 +35,8 @@ class ConsumerQueue:
             except Exception as e:
                 print(f"Error during cleanup: {e}")
 
-        consumer_logger.debug(f"[{self.shm_name}] Created the ConsumerQueue.")
+        self.consumer_logger = initialize_logger(prefix, shm_name)
+        self.consumer_logger.debug(f"[{self.shm_name}] Created the ConsumerQueue.")
         self.load_memory()
 
     def load_memory(self):
@@ -45,16 +47,16 @@ class ConsumerQueue:
             self.shared_data = SharedData.from_buffer(self.shm.buf)
             # Disable resource_tracker for shared memory
             resource_tracker.unregister(self.shm._name, "shared_memory")
-            consumer_logger.debug("(re)loaded the shared memory.")
+            self.consumer_logger.debug("(re)loaded the shared memory.")
         except FileNotFoundError as e:
-            consumer_logger.error(
+            self.consumer_logger.error(
                 f"[{self.shm_name}] Shared memory '{self.shm_name}' not found. Ensure the producer is running."
             )
             self.shm = None
             raise e
 
     def reload_memory(self):
-        consumer_logger.warning(
+        self.consumer_logger.warning(
             f"[{self.shm_name}] Reload the shared memory at /dev/shm/{self.shm_name}"
         )
         self.clean_up()
@@ -94,9 +96,11 @@ class ConsumerQueue:
                 self.shm.close()  # 메모리 맵핑 해제
                 # self.shm.unlink()  # 공유 메모리 삭제 생략
             except BufferError as e:
-                consumer_logger.error(f"[{self.shm_name}] Error during cleanup: {e}")
+                self.consumer_logger.error(
+                    f"[{self.shm_name}] Error during cleanup: {e}"
+                )
             except Exception as e:
-                consumer_logger.error(
+                self.consumer_logger.error(
                     f"[{self.shm_name}] Unexpected error during cleanup: {e}"
                 )
 

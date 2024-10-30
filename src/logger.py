@@ -11,13 +11,13 @@ if not os.path.exists(log_dir):
 
 
 # Initialize a logger object and return
-def initialize_logger(logname):
+def initialize_logger(prefix, ipv4):
     # Set up the logger
-    logger = logging.getLogger(logname)
+    logger = logging.getLogger(f"{prefix}_consumer_{ipv4}")
     logger.setLevel(queue_log_level)  # Set the log level
 
     # Create a rotating file handler for the logger
-    log_file = os.path.join(log_dir, f"{logname}.log")
+    log_file = os.path.join(log_dir, f"{prefix}_consumer_{ipv4}.log")
 
     # Set maxBytes to 5MB (5 * 1024 * 1024) and backupCount to 3 (maximum 3 files)
     file_handler = RotatingFileHandler(
@@ -41,7 +41,3 @@ def initialize_logger(logname):
     # logger.debug("This is a debug message")
     # logger.error("This is an error message")
     return logger
-
-
-# Initialize the logger
-consumer_logger = initialize_logger("consumer")

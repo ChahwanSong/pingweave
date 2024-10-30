@@ -235,84 +235,6 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
     return ctx->rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
 }
 
-// void put_local_info(struct pingweave_addr *my_dest, int is_server,
-//                     std::string ip) {
-//     std::string filepath = "local_table.csv";
-//     std::string line, lid, gid, qpn;
-//     std::vector<std::string> lines;
-//     char wgid[33];
-
-//     lid = std::to_string(my_dest->lid);
-//     qpn = std::to_string(my_dest->qpn);
-//     gid_to_wire_gid(&my_dest->gid, wgid);
-//     gid = std::string(wgid);
-
-//     std::ifstream csv_file(filepath);
-//     while (std::getline(csv_file, line)) {
-//         lines.push_back(line);
-//     }
-//     csv_file.close();
-
-//     std::string new_line = ip + "," + lid + "," + qpn + "," + gid;
-//     int line_num = 2 - is_server;
-//     if (lines.size() > (size_t)line_num) {
-//         lines[line_num] = new_line;
-//     } else {
-//         lines.push_back(new_line);
-//     }
-
-//     std::ofstream csv_output_file(filepath, std::ios::trunc);
-//     for (const auto &csv_line : lines) {
-//         csv_output_file << csv_line << "\n";
-//     }
-//     csv_output_file.close();
-
-//     printf("Finished writing a line to local_table.csv\n");
-// }
-
-// void get_local_info(struct pingweave_addr *rem_dest, int is_server) {
-//     std::string line, ip, lid, gid, qpn;
-
-//     std::ifstream file("local_table.csv");
-//     if (!file.is_open()) {
-//         std::cerr << "Error opening file." << std::endl;
-//         exit(1);
-//     }
-
-//     std::getline(file, line);
-
-//     if (is_server) {
-//         std::getline(file, line);
-//     }
-
-//     if (std::getline(file, line)) {
-//         std::istringstream ss(line);
-
-//         std::getline(ss, ip, ',');
-//         std::getline(ss, lid, ',');
-//         std::getline(ss, qpn, ',');
-//         std::getline(ss, gid, ',');
-
-//         std::cout << "Remote Info: " << ip << ", " << lid << ", " << qpn <<
-//         ", "
-//                   << gid << std::endl;
-//     } else {
-//         std::cerr << "Error reading second line." << std::endl;
-//     }
-
-//     file.close();
-
-//     try {
-//         rem_dest->lid = std::stoi(lid);
-//         rem_dest->qpn = std::stoi(qpn);
-//         wire_gid_to_gid(gid.c_str(), &rem_dest->gid);
-//     } catch (const std::invalid_argument &e) {
-//         std::cerr << "Invalid argument: " << e.what() << std::endl;
-//     } catch (const std::out_of_range &e) {
-//         std::cerr << "Out of range: " << e.what() << std::endl;
-//     }
-// }
-
 int init_ctx(struct pingweave_context *ctx) {
     // initialize
     ctx->rnic_hw_ts = false;
@@ -619,4 +541,93 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
         append_log(ctx->log_msg, "SEND post is failed\n");
     }
     return ret;
+}
+
+std::set<std::string> get_all_local_ips() {
+    std::set<std::string> local_ips;
+    struct ifaddrs *interfaces, *ifa;
+    char ip[INET_ADDRSTRLEN];
+
+    if (getifaddrs(&interfaces) == -1) {
+        std::cerr << "Error getting interfaces." << std::endl;
+        return local_ips;
+    }
+
+    for (ifa = interfaces; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) continue;
+
+        std::string ifa_name = ifa->ifa_name;
+
+        // Ignore interfaces starting with "virbr", "docker" or same as "lo"
+        if (ifa_name == "lo" || ifa_name.rfind("virbr", 0) == 0 ||
+            ifa_name.rfind("docker", 0) == 0) {
+            continue;
+        }
+
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            struct sockaddr_in *addr =
+                reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
+            inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
+            local_ips.insert(ip);
+        }
+    }
+
+    freeifaddrs(interfaces);
+    return local_ips;
+}
+
+void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
+    YAML::Node config = YAML::LoadFile(filename);
+
+    // Get the RDMA category groups
+    if (!config["rdma"]) {
+        std::cerr << "No 'rdma' category found in the YAML file." << std::endl;
+        return;
+    }
+
+    std::set<std::string> local_ips =
+        get_all_local_ips();  // Retrieve the node's IP addresses
+
+    for (const auto &group : config["rdma"]) {
+        for (const auto &ip : group.second) {
+            // If IP is on the current node, add it to myaddr
+            std::string ip_addr = ip.as<std::string>();
+            if (local_ips.find(ip_addr) != local_ips.end()) {
+                myaddr.insert(ip_addr);
+            }
+        }
+    }
+}
+
+void parse_pinglist(const std::string &filename, std::set<std::string> &myaddr,
+                    std::vector<std::string> &pinglist) {
+    /**
+     * @param
+     * filename: file path of pinglist.yaml
+     * myaddr: Addresses on the current node
+     * pinglist: All addresses in the rdma category
+     */
+
+    YAML::Node config = YAML::LoadFile(filename);
+
+    // Get the RDMA category groups
+    if (!config["rdma"]) {
+        std::cerr << "No 'rdma' category found in the YAML file." << std::endl;
+        return;
+    }
+
+    std::set<std::string> local_ips =
+        get_all_local_ips();  // Retrieve the node's IP addresses
+
+    for (const auto &group : config["rdma"]) {
+        for (const auto &ip : group.second) {
+            std::string ip_addr = ip.as<std::string>();
+            pinglist.push_back(ip_addr);
+
+            // If IP is on the current node, add it to myaddr
+            if (local_ips.find(ip_addr) != local_ips.end()) {
+                myaddr.insert(ip_addr);
+            }
+        }
+    }
 }

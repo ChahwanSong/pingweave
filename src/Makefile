@@ -7,7 +7,7 @@ CXX = g++
 CXXFLAGS = -std=c++17 -I ../libs -O2 -pthread -DSOURCE_DIR=\"$(SOURCE_DIR)\"
 
 # 공통 링크 플래그
-LDFLAGS = -l ibverbs
+LDFLAGS = -l ibverbs -L/usr/lib/x86_64-linux-gnu -l yaml-cpp
 
 # 공통 라이브러리
 LDLIBS =

@@ -15,8 +15,7 @@ struct ProcessInfo {
 };
 
 // Global variables
-const int n_processes = 2;
-ProcessInfo processes[n_processes];
+std::vector<ProcessInfo> processes;
 bool running = true;
 
 int main() {
@@ -26,23 +25,27 @@ int main() {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    // Example IP address (you can modify this based on your requirements)
-    std::string server_ip = "10.200.200.3";
-    std::string client_ip = "10.200.200.3";
+    // get ip addresses of this node
+    const std::string config_path =
+        get_source_directory() + "/../config/pinglist.yaml";
+    std::set<std::string> myaddr;
+    get_my_addr(config_path, myaddr);
 
-    // Start each function in a separate process with IP address as input
-    processes[0] = {
-        start_process([&] { rdma_server(server_ip); }, "rdma_server"),
-        std::bind(rdma_server, server_ip), "rdma_server"};
-    processes[1] = {
-        start_process([&] { rdma_client(client_ip); }, "rdma_client"),
-        std::bind(rdma_client, client_ip), "rdma_client"};
+    // run server/client processes in parallel
+    for (auto addr : myaddr) {
+        processes.push_back(
+            {start_process([&] { rdma_server(addr); }, "rdma_server"),
+             std::bind(rdma_server, addr), "rdma_server"});
+        processes.push_back(
+            {start_process([&] { rdma_client(addr); }, "rdma_client"),
+             std::bind(rdma_client, addr), "rdma_client"});
+    }
 
     // Monitor processes for every second and restart them if they exit
     while (running) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        for (int i = 0; i < n_processes; ++i) {
+        for (int i = 0; i < processes.size(); ++i) {
             int status;
             pid_t result = waitpid(processes[i].pid, &status, WNOHANG);
             if (result == 0) {
@@ -88,7 +91,7 @@ pid_t start_process(std::function<void()> func, const char* name) {
 void signal_handler(int sig) {
     running = false;
     spdlog::critical("*** Main thread exits. ***");
-    for (int i = 0; i < n_processes; ++i) {
+    for (int i = 0; i < processes.size(); ++i) {
         kill(processes[i].pid, SIGTERM);
     }
     exit(0);

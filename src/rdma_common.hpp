@@ -6,14 +6,17 @@
 #include <ifaddrs.h>
 #include <infiniband/verbs.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <signal.h>  // For kill(), signal()
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>  // 디렉토리 확인 및 생성
 #include <sys/types.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
 #include <unistd.h>  // For fork(), sleep()
 #include <unistd.h>
+#include <yaml-cpp/yaml.h>
 
 #include <atomic>  // std::atomic
 #include <cerrno>  // errno
@@ -25,6 +28,7 @@
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -43,6 +47,7 @@ typedef moodycamel::ReaderWriterQueue<struct ping_info_t> ClientInternalQueue;
 // constants
 const static int MESSAGE_SIZE = 64;           // Message size of 64 B
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
+const static uint64_t PING_ID_INIT = 1000000000;  // start id
 
 // RDMA parameters
 const static int TX_DEPTH = 1;       // only 1 SEND to have data consistency
@@ -52,7 +57,7 @@ const static int SERVICE_LEVEL = 0;  // by default 0
 const static int USE_EVENT = 1;  // 1: event-based polling, 2: active polling
 
 // Params for internal message queue btw threads (RX <-> TX)
-const static int QUEUE_SIZE = 100;
+const static int QUEUE_SIZE = 1000;
 
 // Params for IPC (inter-processor communication)
 const static int BATCH_SIZE = 1000;             // Process messages in batches
@@ -144,3 +149,9 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
 
 int save_device_info(struct pingweave_context *ctx);
 int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);
+
+std::set<std::string> get_all_local_ips();
+
+void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
+void parse_pinglist(const std::string &filename, std::set<std::string> &myaddr,
+                    std::vector<std::string> &pinglist);
