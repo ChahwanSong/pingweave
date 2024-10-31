@@ -1,6 +1,16 @@
 import os
 import asyncio
-import aiohttp
+import sys
+import subprocess
+
+try:
+    import aiohttp
+except ImportError:
+    print("Module 'aiohttp' is not found. Installing...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp"])
+    import aiohttp
+
+import asyncio
 from aiohttp import web
 import yaml
 

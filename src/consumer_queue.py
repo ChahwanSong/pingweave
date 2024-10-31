@@ -2,7 +2,7 @@ import time
 from multiprocessing import shared_memory
 from multiprocessing import resource_tracker
 import ctypes
-from logger import initialize_logger
+from logger import initialize_consumer_logger
 
 MESSAGE_SIZE = 64  # Message size of 64 bytes
 BATCH_SIZE = 1000  # Process messages in batches of 10
@@ -35,7 +35,7 @@ class ConsumerQueue:
             except Exception as e:
                 print(f"Error during cleanup: {e}")
 
-        self.consumer_logger = initialize_logger(prefix, shm_name)
+        self.consumer_logger = initialize_consumer_logger(prefix, shm_name)
         self.consumer_logger.debug(f"[{self.shm_name}] Created the ConsumerQueue.")
         self.load_memory()
 

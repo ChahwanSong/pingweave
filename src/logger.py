@@ -11,7 +11,7 @@ if not os.path.exists(log_dir):
 
 
 # Initialize a logger object and return
-def initialize_logger(prefix, ipv4):
+def initialize_consumer_logger(prefix, ipv4):
     # Set up the logger
     logger = logging.getLogger(f"{prefix}_consumer_{ipv4}")
     logger.setLevel(queue_log_level)  # Set the log level

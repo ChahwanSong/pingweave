@@ -43,6 +43,18 @@ uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
     return delta;
 }
 
+// get current time in 32 bits
+uint32_t get_current_time() {
+    // Get the current time point from the system clock
+    auto now = std::chrono::system_clock::now();
+    // Convert to time since epoch in seconds
+    auto epoch_seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch())
+            .count();
+    // Cast to uint32_t
+    return static_cast<uint32_t>(epoch_seconds);
+}
+
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     char path[512];
@@ -177,8 +189,13 @@ int save_device_info(struct pingweave_context *ctx) {
         return 1;
     }
 
-    // save as lines (GID, QPN)
-    outfile << ctx->wired_gid << "\n" << ctx->qp->qp_num;  // GID, QPN
+    // get a current time
+    uint32_t now = get_current_time();
+
+    // save as lines (GID, QPN, TIME)
+    outfile << ctx->wired_gid << "\n"
+            << ctx->qp->qp_num << "\n"
+            << now;  // GID, QPN, TIME
 
     // check error
     if (!outfile) {
@@ -191,6 +208,7 @@ int save_device_info(struct pingweave_context *ctx) {
     return 0;
 }
 
+// for testing
 int load_device_info(union rdma_addr *dst_addr, const std::string &filepath) {
     std::string line, gid, qpn;
 

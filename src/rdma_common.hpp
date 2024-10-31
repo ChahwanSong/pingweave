@@ -127,6 +127,7 @@ int get_context_by_ip(struct pingweave_context *ctx);
 // clock
 uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
                                       const uint64_t &mask);
+uint32_t get_current_time();
 
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
@@ -148,6 +149,7 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
               const char *msg, const size_t &msg_len, const uint64_t &wr_id);
 
 int save_device_info(struct pingweave_context *ctx);
+// for testing
 int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);
 
 std::set<std::string> get_all_local_ips();

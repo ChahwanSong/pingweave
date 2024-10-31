@@ -12,7 +12,7 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
     // initialize pingid which monotonically increases;
     // Note that it should be higher than 2 (PINGWEAVE_WRID_SEND)
     // to distinguish between PONG and ACK at server
-    uint64_t c_pingid = PING_ID_INIT;
+    uint64_t it_pingid = PING_ID_INIT;
 
     // variables
     int ret = 0;
@@ -25,6 +25,14 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
      *
      * a kind of ring with (ip, gid, qpn) and timestamp to send
      */
+
+    // every 1 minutes, load the pinglist
+    // client ip -> {group, [server ip list]}
+
+    // scheduling -> calculate IPT (inter-ping time)
+    // set time_to_send, target_ip -> (gid, qpn)
+
+    // every 10 seconds, load the map {ip -> (gid, qpn)}
 
     try {
         /** TODO: update the code based on scheduling */
@@ -41,7 +49,7 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
         /** TODO: update the msg info */
         union ping_msg_t msg = {0};
-        msg.x.pingid = c_pingid++;
+        msg.x.pingid = it_pingid++;
         msg.x.qpn = rx_qpn;
         msg.x.gid = rx_gid;
 
