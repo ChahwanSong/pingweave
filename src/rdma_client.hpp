@@ -1,5 +1,5 @@
 #pragma once
-#include "producer_queue.hpp"
+// #include "producer_queue.hpp"
 #include "rdma_common.hpp"
 
 void client_tx_thread(const std::string& ipv4, const std::string& logname,
@@ -26,18 +26,11 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
      * a kind of ring with (ip, gid, qpn) and timestamp to send
      */
 
-    // every 1 minutes, load the pinglist
-    // client ip -> {group, [server ip list]}
-
-    // scheduling -> calculate IPT (inter-ping time)
-    // set time_to_send, target_ip -> (gid, qpn)
-
-    // every 10 seconds, load the map {ip -> (gid, qpn)}
-
     try {
         /** TODO: update the code based on scheduling */
+        std::string tgt_ip = "10.200.200.3";
         const std::string filepath =
-            get_source_directory() + "/../local/10.200.200.3";
+            get_source_directory() + "/../local/" + tgt_ip;
         union rdma_addr dst_addr;
         load_device_info(&dst_addr, filepath);
 
@@ -67,8 +60,9 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
             throw std::runtime_error("clock_gettime is failed");
         }
         var_time = var_ts.tv_sec * 1000000000LL + var_ts.tv_nsec;
-        if (!ping_table->insert(msg.x.pingid, {msg.x.pingid, msg.x.qpn,
-                                               msg.x.gid, var_time, 0, 0})) {
+        if (!ping_table->insert(
+                msg.x.pingid,
+                {msg.x.pingid, msg.x.qpn, msg.x.gid, tgt_ip, var_time, 0, 0})) {
             spdlog::get(logname)->warn("Failed to insert pingid {} into table.",
                                        msg.x.pingid);
         }
@@ -86,6 +80,10 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
         // SEND CQE message loop
         while (true) {
+            /**
+             * TODO: Scheduler pops the next message to send.
+             */
+
             /**
              * IMPORTANT: Here we use non-blocking polling
              * and do not use event-driven polling.
@@ -202,14 +200,14 @@ void rdma_client(const std::string& ipv4) {
 
     // RDMA context
     struct pingweave_context ctx_tx, ctx_rx;
-    if (make_ctx(&ctx_tx, ipv4, logname, false, false)) {
+    if (make_ctx(&ctx_tx, ipv4, logname, false)) {
         logger->error("Failed to make TX device info: {}", ipv4);
-        raise;
+        throw std::runtime_error("make_ctx is failed.");
     }
 
-    if (make_ctx(&ctx_rx, ipv4, logname, false, true)) {
+    if (make_ctx(&ctx_rx, ipv4, logname, true)) {
         logger->error("Failed to make RX device info: {}", ipv4);
-        raise;
+        throw std::runtime_error("make_ctx is failed.");
     }
 
     // Start TX thread
@@ -222,7 +220,7 @@ void rdma_client(const std::string& ipv4) {
                                getpid());
 
     // inter-process queue
-    ProducerQueue producer_queue("rdma", ipv4);
+    // ProducerQueue producer_queue("rdma", ipv4);
 
     // variables
     struct ping_info_t ping_info;
@@ -389,10 +387,11 @@ void rdma_client(const std::string& ipv4) {
                                         ping_info.time_ping_cqe -
                                         ping_info.time_server;
                                     spdlog::get(logname)->critical(
-                                        "PING NETWORK RTT is {}", ping_net_rtt);
-                                    producer_queue.sendMessage(
-                                        ipv4 + "," +
-                                        std::to_string(ping_net_rtt));
+                                        "PING NETWORK RTT to {} is {}",
+                                        ping_info.dstip, ping_net_rtt);
+                                    // producer_queue.sendMessage(
+                                    //     ipv4 + "," +
+                                    //     std::to_string(ping_net_rtt));
                                 } else {
                                     spdlog::get(logname)->error(
                                         "Final line error");

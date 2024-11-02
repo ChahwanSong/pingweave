@@ -10,10 +10,11 @@
 #include <unordered_map>
 
 struct ping_info_t {
-    uint64_t pingid;  // ping ID
-    uint32_t qpn;     // destination qpn
-    ibv_gid gid;      // destination gid
-    /** TODO: add IP address */
+    uint64_t pingid;    // ping ID
+    uint32_t qpn;       // destination qpn
+    ibv_gid gid;        // destination gid
+    std::string dstip;  // destination IP addr
+
     uint64_t time_ping_send;  // client-delay
     uint64_t time_ping_cqe;   // network-delay
     uint64_t time_server;     // server-delay
@@ -26,6 +27,7 @@ struct ping_info_t {
         pingid = other.pingid;
         qpn = other.qpn;
         gid = other.gid;
+        dstip = other.dstip;
         time_ping_send = other.time_ping_send;
         time_ping_cqe = other.time_ping_cqe;
         time_server = other.time_server;

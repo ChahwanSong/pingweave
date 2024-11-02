@@ -44,7 +44,7 @@ uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
 }
 
 // get current time in 32 bits
-uint32_t get_current_time() {
+uint32_t get_current_time_int() {
     // Get the current time point from the system clock
     auto now = std::chrono::system_clock::now();
     // Convert to time since epoch in seconds
@@ -53,6 +53,18 @@ uint32_t get_current_time() {
             .count();
     // Cast to uint32_t
     return static_cast<uint32_t>(epoch_seconds);
+}
+
+// Get current time as a formatted string
+std::string get_current_time_string() {
+    // Get the current time point from the system clock
+    auto now = std::chrono::system_clock::now();
+    // Convert to time_t for formatting
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    // Format the time as a string
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
+    return oss.str();
 }
 
 // Helper function to find RDMA device by matching network interface
@@ -189,10 +201,11 @@ int save_device_info(struct pingweave_context *ctx) {
         return 1;
     }
 
-    // get a current time
-    uint32_t now = get_current_time();
+    // 4. get a current time
+    // uint32_t now = get_current_time_int();
+    std::string now = get_current_time_string();
 
-    // save as lines (GID, QPN, TIME)
+    // 5. save as lines (GID, QPN, TIME)
     outfile << ctx->wired_gid << "\n"
             << ctx->qp->qp_num << "\n"
             << now;  // GID, QPN, TIME
@@ -424,8 +437,7 @@ int prepare_ctx(struct pingweave_context *ctx) {
 }
 
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-             const std::string &logname, const int &is_server,
-             const int &is_rx) {
+             const std::string &logname, const int &is_rx) {
     ctx->log_msg = "";
     ctx->ipv4 = ipv4;
     ctx->is_rx = is_rx;
@@ -467,16 +479,10 @@ int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
     gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
     inet_ntop(AF_INET6, &ctx->gid, ctx->parsed_gid, sizeof(ctx->parsed_gid));
 
-    if (is_server && is_rx) {
-        // Save Server's RX connection info (ip, qpn, gid) as file
-        save_device_info(ctx);
-    }
-
-    std::string ctx_node_type = is_server ? "Server" : "Client";
     std::string ctx_send_type = is_rx ? "RX" : "TX";
     spdlog::get(logname)->info(
-        "[{} {}] IP: {} has Queue pair with GID: {}, QPN: {}", ctx_node_type,
-        ctx_send_type, ipv4, ctx->parsed_gid, ctx->qp->qp_num);
+        "[{}] IP: {} has Queue pair with GID: {}, QPN: {}", ctx_send_type, ipv4,
+        ctx->parsed_gid, ctx->qp->qp_num);
     return 0;
 }
 
@@ -594,8 +600,30 @@ std::set<std::string> get_all_local_ips() {
     return local_ips;
 }
 
+// If error occurs, myaddr returned is empty set.
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
-    YAML::Node config = YAML::LoadFile(filename);
+    YAML::Node config;
+    myaddr.clear();
+
+    try {
+        config = YAML::LoadFile(filename);
+        // successful
+        spdlog::debug("Configuration file loaded successfully.");
+    } catch (const YAML::BadFile &e) {
+        spdlog::error("Error: Unable to open or find the file {}: {}", filename,
+                      e.what());
+
+        return;
+    } catch (const YAML::ParserException &e) {
+        spdlog::error("Error: Failed to parse the file {}: {}", filename,
+                      e.what());
+        return;
+    } catch (const std::exception &e) {
+        spdlog::error(
+            "Error: An unexpected error occurred while loading the file {}: {}",
+            filename, e.what());
+        return;
+    }
 
     // Get the RDMA category groups
     if (!config["rdma"]) {
@@ -603,12 +631,12 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
         return;
     }
 
-    std::set<std::string> local_ips =
-        get_all_local_ips();  // Retrieve the node's IP addresses
+    // Retrieve the node's IP addresses
+    std::set<std::string> local_ips = get_all_local_ips();
 
-    for (const auto &group : config["rdma"]) {
+    for (const auto &group : config["rdma"]) {  // for any group
         for (const auto &ip : group.second) {
-            // If IP is on the current node, add it to myaddr
+            // If IP is on the current node, add it
             std::string ip_addr = ip.as<std::string>();
             if (local_ips.find(ip_addr) != local_ips.end()) {
                 myaddr.insert(ip_addr);
@@ -617,35 +645,36 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
     }
 }
 
-void parse_pinglist(const std::string &filename, std::set<std::string> &myaddr,
-                    std::vector<std::string> &pinglist) {
-    /**
-     * @param
-     * filename: file path of pinglist.yaml
-     * myaddr: Addresses on the current node
-     * pinglist: All addresses in the rdma category
-     */
+// void parse_rdma_pinglist(const std::string &filename,
+//                          std::set<std::string> &myaddr,
+//                          std::vector<std::string> &pinglist) {
+//     /**
+//      * @param
+//      * filename: file path of pinglist.yaml
+//      * myaddr: Addresses on the current node
+//      * pinglist: All addresses in the rdma category
+//      */
 
-    YAML::Node config = YAML::LoadFile(filename);
+//     YAML::Node config = YAML::LoadFile(filename);
 
-    // Get the RDMA category groups
-    if (!config["rdma"]) {
-        std::cerr << "No 'rdma' category found in the YAML file." << std::endl;
-        return;
-    }
+//     // Get the RDMA category groups
+//     if (!config["rdma"]) {
+//         std::cerr << "No 'rdma' category found in the YAML file." <<
+//         std::endl; return;
+//     }
 
-    std::set<std::string> local_ips =
-        get_all_local_ips();  // Retrieve the node's IP addresses
+//     std::set<std::string> local_ips =
+//         get_all_local_ips();  // Retrieve the node's IP addresses
 
-    for (const auto &group : config["rdma"]) {
-        for (const auto &ip : group.second) {
-            std::string ip_addr = ip.as<std::string>();
-            pinglist.push_back(ip_addr);
+//     for (const auto &group : config["rdma"]) {
+//         for (const auto &ip : group.second) {
+//             std::string ip_addr = ip.as<std::string>();
+//             pinglist.push_back(ip_addr);
 
-            // If IP is on the current node, add it to myaddr
-            if (local_ips.find(ip_addr) != local_ips.end()) {
-                myaddr.insert(ip_addr);
-            }
-        }
-    }
-}
+//             // If IP is on the current node, add it to myaddr
+//             if (local_ips.find(ip_addr) != local_ips.end()) {
+//                 myaddr.insert(ip_addr);
+//             }
+//         }
+//     }
+// }

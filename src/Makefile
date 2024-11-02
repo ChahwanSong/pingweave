@@ -39,13 +39,13 @@ SRCS_TEST_LOGGER = test_logger_main.cpp
 OBJS_TEST_LOGGER = $(addprefix $(BIN_DIR)/, $(SRCS_TEST_PRODUCER_QUEUE:.cpp=.o))
 
 # 메인용 소스 파일 및 오브젝트 파일
-SRCS_MAIN = rdma_main.cpp $(SRCS_COMMON)
+SRCS_MAIN = pingweave.cpp $(SRCS_COMMON)
 OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
 
 # 출력 파일
 TARGET_TEST_PRODUCER_QUEUE = $(BIN_DIR)/test_producer_queue
 TARGET_TEST_LOGGER = $(BIN_DIR)/test_logger_main
-TARGET_MAIN = $(BIN_DIR)/main
+TARGET_MAIN = $(BIN_DIR)/pingweave
 
 # 기본 타겟
 .PHONY: all test main clean

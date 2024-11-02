@@ -10,7 +10,7 @@
 #include <signal.h>  // For kill(), signal()
 #include <sys/mman.h>
 #include <sys/socket.h>
-#include <sys/stat.h>  // 디렉토리 확인 및 생성
+#include <sys/stat.h>  // directory
 #include <sys/types.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
@@ -18,11 +18,11 @@
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <atomic>  // std::atomic
 #include <cerrno>  // errno
 #include <chrono>
-#include <condition_variable>  // std::scoped_lock
-#include <cstring>             // strerror
+#include <cstring>  // strerror
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +32,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -141,8 +142,7 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
 int init_ctx(struct pingweave_context *ctx);
 int prepare_ctx(struct pingweave_context *ctx);
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-             const std::string &logname, const int &is_server,
-             const int &is_rx);
+             const std::string &logname, const int &is_rx);
 
 int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id);
 int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
@@ -155,5 +155,6 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);
 std::set<std::string> get_all_local_ips();
 
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
-void parse_pinglist(const std::string &filename, std::set<std::string> &myaddr,
-                    std::vector<std::string> &pinglist);
+// void parse_rdma_pinglist(const std::string &filename,
+//                          std::set<std::string> &myaddr,
+//                          std::vector<std::string> &pinglist);

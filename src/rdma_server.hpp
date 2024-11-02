@@ -156,14 +156,18 @@ void rdma_server(const std::string& ipv4) {
 
     // RDMA context
     struct pingweave_context ctx_tx, ctx_rx;
-    if (make_ctx(&ctx_tx, ipv4, logname, true, false)) {
+    if (make_ctx(&ctx_tx, ipv4, logname, false)) {
         logger->error("Failed to make TX device info: {}", ipv4);
-        raise;
+        throw std::runtime_error("make_ctx is failed.");
     }
 
-    if (make_ctx(&ctx_rx, ipv4, logname, true, true)) {
+    if (make_ctx(&ctx_rx, ipv4, logname, true)) {
         logger->error("Failed to make RX device info: {}", ipv4);
-        raise;
+        throw std::runtime_error("make_ctx is failed.");
+    }
+    if (save_device_info(&ctx_rx)) {
+        logger->error(ctx_rx.log_msg);
+        throw std::runtime_error("save_device_info is failed.");
     }
 
     // Start RX thread
