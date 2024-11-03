@@ -1,10 +1,11 @@
 #pragma once
 // #include "producer_queue.hpp"
 #include "rdma_common.hpp"
+#include "rdma_scheduler.hpp"
 
 void client_tx_thread(const std::string& ipv4, const std::string& logname,
                       PingInfoMap* ping_table, struct pingweave_context* ctx_tx,
-                      const ibv_gid& rx_gid, const uint32_t& rx_qpn) {
+                      const union ibv_gid& rx_gid, const uint32_t& rx_qpn) {
     spdlog::get(logname)->info("Run TX thread after 1 second (pid: {})...",
                                getpid());
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -21,68 +22,81 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
     /**
      * TODO: Schedule SEND PING with multiple destinations
-     * pinglist (ipv4) -> get the corresponding (gid, qpn) list
-     *
-     * a kind of ring with (ip, gid, qpn) and timestamp to send
+     * pinglist (ipv4) -> get the corresponding (ip, qpn, gid)
      */
+    MsgScheduler scheduler(ipv4, logname);
 
     try {
-        /** TODO: update the code based on scheduling */
-        std::string tgt_ip = "10.200.200.3";
-        const std::string filepath =
-            get_source_directory() + "/../local/" + tgt_ip;
+        // Variables for msg scheduling
+        std::tuple<std::string, uint32_t, std::string> dst_next;
         union rdma_addr dst_addr;
-        load_device_info(&dst_addr, filepath);
-
-        // for debugging
-        spdlog::get(logname)->debug("Remote GID: {}, QPN: {}",
-                                    parsed_gid(&dst_addr.x.gid),
-                                    dst_addr.x.qpn);
-        /*----------------------------------------------*/
-
-        /** TODO: update the msg info */
-        union ping_msg_t msg = {0};
-        msg.x.pingid = it_pingid++;
+        union ping_msg_t msg;
         msg.x.qpn = rx_qpn;
         msg.x.gid = rx_gid;
-
-        // sanity check: wr_id must be large enough
-        if (msg.x.pingid < 100) {
-            // ref: server uses PINGWEAVE_WRID_SEND
-            spdlog::get(logname)->error("Pingid must be large but given: {}",
-                                        msg.x.pingid);
-            throw std::runtime_error("pingid must be large");
-        }
-
-        // Before SEND, record the start time
-        if (clock_gettime(CLOCK_MONOTONIC, &var_ts) == -1) {
-            spdlog::get(logname)->error("Failed to run clock_gettime()");
-            throw std::runtime_error("clock_gettime is failed");
-        }
-        var_time = var_ts.tv_sec * 1000000000LL + var_ts.tv_nsec;
-        if (!ping_table->insert(
-                msg.x.pingid,
-                {msg.x.pingid, msg.x.qpn, msg.x.gid, tgt_ip, var_time, 0, 0})) {
-            spdlog::get(logname)->warn("Failed to insert pingid {} into table.",
-                                       msg.x.pingid);
-        }
-
-        spdlog::get(logname)->debug(
-            "SEND post with message (pingid: {}, rx's qpn: {}, rx's gid: {})",
-            msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid));
-        if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
-                      msg.x.pingid)) {
-            if (check_log(ctx_tx->log_msg)) {
-                spdlog::get(logname)->error(ctx_tx->log_msg);
-            }
-            throw std::runtime_error("SEND post is failed");
-        }
+        msg.x.time = 0;
+        msg.x.pingid = 0;
 
         // SEND CQE message loop
         while (true) {
             /**
-             * TODO: Scheduler pops the next message to send.
+             * SEND: Scheduler pops the next message to send.
              */
+            if (scheduler.next(dst_next)) {  // if success
+                std::string dst_ip = std::get<0>(dst_next);
+                uint32_t dst_qpn = std::get<1>(dst_next);
+                std::string dst_gid = std::get<2>(dst_next);
+
+                // for debugging
+                spdlog::get(logname)->debug("Target IP: {}, GID: {}, QPN: {}",
+                                            dst_ip, parsed_gid(&dst_addr.x.gid),
+                                            dst_addr.x.qpn);
+                /*----------------------------------------------*/
+
+                // target address (i.e., destination)
+                dst_addr = {0};
+                dst_addr.x.qpn = dst_qpn;                           // qpn
+                wire_gid_to_gid(dst_gid.c_str(), &dst_addr.x.gid);  // gid
+
+                // message to send
+                msg.x.pingid = it_pingid++;
+
+                // sanity check: wr_id must be large enough
+                if (msg.x.pingid < 100) {
+                    // ref: server uses PINGWEAVE_WRID_SEND
+                    spdlog::get(logname)->error(
+                        "Pingid must be large but given: {}", msg.x.pingid);
+                    throw std::runtime_error("pingid must be large");
+                }
+
+                // Before SEND, record the start time
+                if (clock_gettime(CLOCK_MONOTONIC, &var_ts) == -1) {
+                    spdlog::get(logname)->error(
+                        "Failed to run clock_gettime()");
+                    throw std::runtime_error("clock_gettime is failed");
+                }
+                var_time = var_ts.tv_sec * 1000000000LL + var_ts.tv_nsec;
+
+                // insert to table
+                if (!ping_table->insert(msg.x.pingid,
+                                        {msg.x.pingid, msg.x.qpn, msg.x.gid,
+                                         dst_ip, var_time, 0, 0})) {
+                    spdlog::get(logname)->warn(
+                        "Failed to insert pingid {} into table.", msg.x.pingid);
+                }
+
+                // send to target
+                spdlog::get(logname)->debug(
+                    "SEND post with message (pingid: {}, rx's qpn: {}, rx's "
+                    "gid: {})",
+                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid));
+                if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
+                              msg.x.pingid)) {
+                    if (check_log(ctx_tx->log_msg)) {
+                        spdlog::get(logname)->error(ctx_tx->log_msg);
+                    }
+                    throw std::runtime_error("SEND post is failed");
+                }
+            }
 
             /**
              * IMPORTANT: Here we use non-blocking polling

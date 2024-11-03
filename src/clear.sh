@@ -3,4 +3,6 @@
 make clean
 
 rm $(pwd)/../logs/*
-rm $(pwd)/../bin/*
+# rm $(pwd)/../bin/*
+rm $(pwd)/../download/*
+rm $(pwd)/../upload/*

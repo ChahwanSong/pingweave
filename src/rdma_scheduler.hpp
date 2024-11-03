@@ -12,13 +12,12 @@ class MsgScheduler {
           addr_idx(0) {}
     ~MsgScheduler() {}
 
-    int next(std::tuple<std::string, std::string, int>& result) {
+    int next(std::tuple<std::string, uint32_t, std::string>& result) {
         auto now = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
             now - last_access_time);
         auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
             now - last_load_time);
-        auto y = std::chrono::steady_clock::now().time_since_epoch().count();
 
         // Check if 10 minutes have passed to call load()
         if (loadDuration.count() >= load_interval_min) {
@@ -32,20 +31,20 @@ class MsgScheduler {
             if (!addressInfo.empty()) {
                 result = addressInfo[addr_idx];
                 addr_idx = (addr_idx + 1) % addressInfo.size();
-                return 0;  // Success
+                return 1;  // Success
             } else {
-                return 1;  // Failure: No address information available
+                return 0;  // Failure: No address information available
             }
         } else {
-            return 1;  // Failure: Called too soon
+            return 0;  // Failure: Called too soon
         }
     }
 
     void print() const {
         for (const auto& entry : addressInfo) {
             std::string ip = std::get<0>(entry);
-            std::string gid = std::get<1>(entry);
-            int qpn = std::get<2>(entry);
+            uint32_t qpn = std::get<1>(entry);
+            std::string gid = std::get<2>(entry);
 
             spdlog::get(logname)->info("IP: {}, GID: {}, QPN: {}", ip, gid,
                                        qpn);
@@ -53,7 +52,7 @@ class MsgScheduler {
     }
 
    private:
-    std::vector<std::tuple<std::string, std::string, int>>
+    std::vector<std::tuple<std::string, uint32_t, std::string>>
         addressInfo;  // Vector to store (IP, GID, QPN)
     uint64_t pingid;
     std::string ipaddr;
@@ -62,8 +61,8 @@ class MsgScheduler {
     std::chrono::steady_clock::time_point last_load_time;
     uint64_t ping_interval_us = 10;   // 10 microseconds btw each ping
     uint64_t load_interval_min = 10;  // 10 minutes to load yaml
-    const uint64_t second_to_us = 1000000;
-    const std::string yaml_dir = "../download/";
+    const uint64_t total_interval_us = 1000000;
+    const std::string download_dir = "../download/";
     std::string logname;
 
     void load() {
@@ -73,7 +72,8 @@ class MsgScheduler {
             addr_idx = 0;
 
             // Load pinglist.yaml
-            YAML::Node pinglist = YAML::LoadFile(yaml_dir + "pinglist.yaml");
+            YAML::Node pinglist =
+                YAML::LoadFile(download_dir + "pinglist.yaml");
             std::vector<std::string> relevantIps;
 
             if (pinglist["rdma"]) {
@@ -92,7 +92,7 @@ class MsgScheduler {
 
             // Load address_store.yaml
             YAML::Node addressStore =
-                YAML::LoadFile(yaml_dir + "address_store.yaml");
+                YAML::LoadFile(download_dir + "address_store.yaml");
             addressInfo.clear();  // Clear existing data
 
             for (const auto& it : addressStore) {
@@ -100,9 +100,9 @@ class MsgScheduler {
                 if (std::find(relevantIps.begin(), relevantIps.end(), ip) !=
                     relevantIps.end()) {
                     std::string gid = it.second[0].as<std::string>();
-                    int qpn = it.second[1].as<int>();
+                    uint32_t qpn = it.second[1].as<uint32_t>();
 
-                    addressInfo.emplace_back(ip, gid, qpn);
+                    addressInfo.emplace_back(ip, qpn, gid);
                 }
             }
 
@@ -110,7 +110,7 @@ class MsgScheduler {
                 "Loaded {} relevant addresses from YAML.", addressInfo.size());
 
             if (!addressInfo.empty()) {
-                ping_interval_us = second_to_us / addressInfo.size();
+                ping_interval_us = total_interval_us / addressInfo.size();
             } else {
                 ping_interval_us = 10;
             }
