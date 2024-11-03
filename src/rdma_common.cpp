@@ -178,7 +178,7 @@ int find_active_port(struct pingweave_context *ctx) {
 }
 
 int save_device_info(struct pingweave_context *ctx) {
-    const std::string directory = get_source_directory() + "/../local";
+    const std::string directory = get_source_directory() + DIR_UPLOAD_PATH;
     struct stat st = {0};
 
     if (stat(directory.c_str(), &st) == -1) {

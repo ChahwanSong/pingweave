@@ -35,18 +35,13 @@ int main() {
 
     // Monitor processes for every second and restart them if they exit
     while (running) {
-        std::this_thread::sleep_for(
-            std::chrono::seconds(main_check_period_seconds));
-
         /* 1. Load my IP addresses periodically (pinglist_abs_path) */
         std::set<std::string> myaddr;
         get_my_addr(pinglist_abs_path, myaddr);
 
         // if loading pinglist is failed, myaddr will be empty.
-        spdlog::info("My address number: {}", myaddr.size());
+        spdlog::debug("Myaddr size: {}", myaddr.size());
 
-        spdlog::info("Press Enter to continue (1)...");
-        getchar();
         /* 2. Check and restart if threads are exited */
         for (int i = 0; i < processes.size(); ++i) {
             int status;
@@ -65,8 +60,6 @@ int main() {
             }
         }
 
-        spdlog::info("Press Enter to continue (2)...");
-        getchar();
         /* 3. Terminate threads which are not in pinglist */
         std::set<std::string> running;
         for (auto it = processes.begin(); it != processes.end();) {
@@ -87,8 +80,6 @@ int main() {
             }
         }
 
-        spdlog::info("Press Enter to continue (3)...");
-        getchar();
         /* 4. Start new threads which are added to pinglist */
         for (auto it = myaddr.begin(); it != myaddr.end(); ++it) {
             if (running.find(*it) == running.end()) {
@@ -102,8 +93,9 @@ int main() {
             }
         }
 
-        spdlog::info("Press Enter to continue (4)...");
-        getchar();
+        // sleep for a while to save CPU resource
+        std::this_thread::sleep_for(
+            std::chrono::seconds(main_check_period_seconds));
     }
 
     return 0;

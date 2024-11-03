@@ -18,9 +18,9 @@
 const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
 const int LOG_FILE_EXTRA_NUM = 0;            // only one rating-log file
 const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
-const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::trace;
-const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::trace;
-const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::trace;
+const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
+const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::debug;
+const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::debug;
 
 // get a absolute path of source directory
 inline std::string get_source_directory() { return SOURCE_DIR; }

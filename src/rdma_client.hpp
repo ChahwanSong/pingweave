@@ -87,8 +87,8 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 // send to target
                 spdlog::get(logname)->debug(
                     "SEND post with message (pingid: {}, rx's qpn: {}, rx's "
-                    "gid: {})",
-                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid));
+                    "gid: {}), send time: {}",
+                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), var_time);
                 if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
                               msg.x.pingid)) {
                     if (check_log(ctx_tx->log_msg)) {
@@ -302,7 +302,7 @@ void rdma_client(const std::string& ipv4) {
             while (!ret) {  // ret == 0 if success
                 end_flag = true;
 
-                spdlog::get(logname)->debug(
+                spdlog::get(logname)->trace(
                     "CQE event with wr_id: {}, status: {}",
                     ctx_rx.cq_s.cq_ex->wr_id, (int)ctx_rx.cq_s.cq_ex->status);
 
@@ -383,16 +383,17 @@ void rdma_client(const std::string& ipv4) {
                                        PINGWEAVE_OPCODE_ACK) {
                                 assert(pong_msg.x.server_delay > 0);
 
+                                spdlog::get(logname)->debug(
+                                    "-> ACK with server-delay: {}",
+                                    pong_msg.x.server_delay);
+
                                 if (!ping_table.update_time_server(
                                         pong_msg.x.pingid,
                                         pong_msg.x.server_delay)) {
                                     spdlog::get(logname)->error(
                                         "update_time_server is failed.");
-                                    throw;
+                                    // throw;
                                 }
-                                spdlog::get(logname)->debug(
-                                    "-> ACK with server-delay: {}",
-                                    pong_msg.x.server_delay);
 
                                 // for debugging
                                 if (ping_table.get(pong_msg.x.pingid,

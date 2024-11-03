@@ -115,7 +115,8 @@ class MsgScheduler {
                 ping_interval_us = 10;
             }
 
-            spdlog::get(logname)->info("Ping interval: {}", ping_interval_us);
+            spdlog::get(logname)->debug("Ping interval: {} microseconds",
+                                        ping_interval_us);
         } catch (const YAML::Exception& e) {
             spdlog::get(logname)->error("Failed to load YAML file: {}",
                                         e.what());

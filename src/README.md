@@ -11,5 +11,5 @@
 - ping, pong message 구조체
     - Done
 - Timestamp Bit overflow 이슈 (uint64_t)
-    -
-- alignas 구조체 적용
+    - Done
+- Out-of-order PONG / ACK
