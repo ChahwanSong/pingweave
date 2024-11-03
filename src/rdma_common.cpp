@@ -627,7 +627,7 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
 
     // Get the RDMA category groups
     if (!config["rdma"]) {
-        std::cerr << "No 'rdma' category found in the YAML file." << std::endl;
+        spdlog::error("No 'rdma' category found in the YAML file.");
         return;
     }
 

@@ -43,7 +43,10 @@ int main() {
         get_my_addr(pinglist_abs_path, myaddr);
 
         // if loading pinglist is failed, myaddr will be empty.
+        spdlog::info("My address number: {}", myaddr.size());
 
+        spdlog::info("Press Enter to continue (1)...");
+        getchar();
         /* 2. Check and restart if threads are exited */
         for (int i = 0; i < processes.size(); ++i) {
             int status;
@@ -62,12 +65,15 @@ int main() {
             }
         }
 
+        spdlog::info("Press Enter to continue (2)...");
+        getchar();
         /* 3. Terminate threads which are not in pinglist */
         std::set<std::string> running;
         for (auto it = processes.begin(); it != processes.end();) {
             if (myaddr.find(it->host) == myaddr.end()) {
                 spdlog::info(
-                    "IP %s is not in pinglist anymore. Exit the thread.");
+                    "IP {} is not in pinglist anymore. Exit the thread.",
+                    it->host);
                 int result = kill(it->pid, SIGTERM);
                 if (result != 0) {
                     spdlog::error("Faile dto send signal to PID {}: {}",
@@ -81,10 +87,12 @@ int main() {
             }
         }
 
+        spdlog::info("Press Enter to continue (3)...");
+        getchar();
         /* 4. Start new threads which are added to pinglist */
-        for (auto it = myaddr.begin(); it != myaddr.end();) {
+        for (auto it = myaddr.begin(); it != myaddr.end(); ++it) {
             if (running.find(*it) == running.end()) {
-                spdlog::info("IP %s is new. Run the threads.");
+                spdlog::info("IP {} is new. Run the threads.", *it);
                 processes.push_back(
                     {start_process([&] { rdma_server(*it); }, "rdma_server"),
                      std::bind(rdma_server, *it), "rdma_server", *it});
@@ -93,6 +101,9 @@ int main() {
                      std::bind(rdma_client, *it), "rdma_client", *it});
             }
         }
+
+        spdlog::info("Press Enter to continue (4)...");
+        getchar();
     }
 
     return 0;
