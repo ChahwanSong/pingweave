@@ -9,6 +9,11 @@
 #include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
 #include <unordered_map>
 
+enum {
+    PINGWEAVE_RECV_PONG = 1,
+    PINGWEAVE_RECV_ACK = 1 << 1,
+};
+
 struct ping_info_t {
     uint64_t pingid;    // ping ID
     uint32_t qpn;       // destination qpn
@@ -18,6 +23,8 @@ struct ping_info_t {
     uint64_t time_ping_send;  // client-delay
     uint64_t time_ping_cqe;   // network-delay
     uint64_t time_server;     // server-delay
+
+    int recv_flag;  // ACK | PONG
 
     // Assignment operator
     ping_info_t& operator=(const ping_info_t& other) {
@@ -31,6 +38,7 @@ struct ping_info_t {
         time_ping_send = other.time_ping_send;
         time_ping_cqe = other.time_ping_cqe;
         time_server = other.time_server;
+        recv_flag = other.recv_flag;
 
         return *this;
     }
@@ -76,17 +84,6 @@ class PingInfoMap {
         return false;
     }
 
-    bool update_time_send(const Key& key, const uint64_t& x) {
-        std::unique_lock lock(mutex_);
-        auto it = map.find(key);
-        if (it == map.end()) {
-            return false;
-        }
-
-        it->second.value.time_ping_send = x;
-        return true;
-    }
-
     bool update_time_cqe(const Key& key, const uint64_t& x) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
@@ -98,18 +95,40 @@ class PingInfoMap {
         return true;
     }
 
-    bool update_time_server(const Key& key, const uint64_t& x) {
+    bool update_pong_info(const Key& key, const uint64_t& time_send_elapsed,
+                          const uint64_t& time_cqe_elapsed) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
             return false;
         }
 
-        it->second.value.time_server = x;
+        // update times
+        it->second.value.time_ping_send = time_send_elapsed;
+        it->second.value.time_ping_cqe = time_cqe_elapsed;
+
+        // update recv flag
+        it->second.value.recv_flag |= PINGWEAVE_RECV_PONG;
         return true;
     }
 
-    int remove(const Key& key) {
+    bool update_ack_info(const Key& key, const uint64_t& x) {
+        std::unique_lock lock(mutex_);
+        auto it = map.find(key);
+        if (it == map.end()) {
+            return false;
+        }
+
+        // update times
+        it->second.value.time_server = x;
+
+        // update recv flag
+        it->second.value.recv_flag |= PINGWEAVE_RECV_ACK;
+
+        return true;
+    }
+
+    bool remove(const Key& key) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it != map.end()) {

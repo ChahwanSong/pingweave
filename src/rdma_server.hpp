@@ -61,7 +61,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                                                 ret);
                     throw std::runtime_error("ibv_start_poll is failed.");
                 }
-                /** TODO:
+                /**
                  * ibv_next_poll gets the next item of batch (~16
                  * items). (for further performance optimization)
                  **/
@@ -268,7 +268,7 @@ void rdma_server(const std::string& ipv4) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {  // ACK - ignore
                             spdlog::get(logname)->debug(
                                 "-> CQE of ACK, so ignore this");
-                        } else {
+                        } else {  // PONG CQE - send ACK
                             spdlog::get(logname)->debug("-> PONG's pingID: {}",
                                                         wc.wr_id);
                             ping_msg = {0};
@@ -334,9 +334,18 @@ void rdma_server(const std::string& ipv4) {
             }
             if (end_flag) {
                 ibv_end_poll(ctx_tx.cq_s.cq_ex);
+            } else {  // no event to poll
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                continue;
             }
         } else {  // original
             ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
+
+            if (!ret) {  // no event to poll
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                continue;
+            }
+
             while (ret) {  // ret == 1 if success
                 // get current time
                 if (clock_gettime(CLOCK_MONOTONIC, &cqe_ts) == -1) {
@@ -419,8 +428,6 @@ void rdma_server(const std::string& ipv4) {
                 ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
             }
         }
-
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 
     // thread handling

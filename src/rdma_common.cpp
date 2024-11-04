@@ -644,37 +644,3 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
         }
     }
 }
-
-// void parse_rdma_pinglist(const std::string &filename,
-//                          std::set<std::string> &myaddr,
-//                          std::vector<std::string> &pinglist) {
-//     /**
-//      * @param
-//      * filename: file path of pinglist.yaml
-//      * myaddr: Addresses on the current node
-//      * pinglist: All addresses in the rdma category
-//      */
-
-//     YAML::Node config = YAML::LoadFile(filename);
-
-//     // Get the RDMA category groups
-//     if (!config["rdma"]) {
-//         std::cerr << "No 'rdma' category found in the YAML file." <<
-//         std::endl; return;
-//     }
-
-//     std::set<std::string> local_ips =
-//         get_all_local_ips();  // Retrieve the node's IP addresses
-
-//     for (const auto &group : config["rdma"]) {
-//         for (const auto &ip : group.second) {
-//             std::string ip_addr = ip.as<std::string>();
-//             pinglist.push_back(ip_addr);
-
-//             // If IP is on the current node, add it to myaddr
-//             if (local_ips.find(ip_addr) != local_ips.end()) {
-//                 myaddr.insert(ip_addr);
-//             }
-//         }
-//     }
-// }

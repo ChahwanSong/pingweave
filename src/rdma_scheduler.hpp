@@ -9,7 +9,9 @@ class MsgScheduler {
           logname(logname),
           last_access_time(std::chrono::steady_clock::now()),
           last_load_time(std::chrono::steady_clock::now()),
-          addr_idx(0) {}
+          addr_idx(0) {
+        this->logger = spdlog::get(logname);
+    }
     ~MsgScheduler() {}
 
     int next(std::tuple<std::string, uint32_t, std::string>& result) {
@@ -46,8 +48,7 @@ class MsgScheduler {
             uint32_t qpn = std::get<1>(entry);
             std::string gid = std::get<2>(entry);
 
-            spdlog::get(logname)->info("IP: {}, GID: {}, QPN: {}", ip, gid,
-                                       qpn);
+            logger->info("IP: {}, GID: {}, QPN: {}", ip, gid, qpn);
         }
     }
 
@@ -64,6 +65,7 @@ class MsgScheduler {
     const uint64_t total_interval_us = 1000000;
     const std::string download_dir = "../download/";
     std::string logname;
+    std::shared_ptr<spdlog::logger> logger;
 
     void load() {
         try {
@@ -106,8 +108,8 @@ class MsgScheduler {
                 }
             }
 
-            spdlog::get(logname)->info(
-                "Loaded {} relevant addresses from YAML.", addressInfo.size());
+            logger->info("Loaded {} relevant addresses from YAML.",
+                         addressInfo.size());
 
             if (!addressInfo.empty()) {
                 ping_interval_us = total_interval_us / addressInfo.size();
@@ -115,11 +117,9 @@ class MsgScheduler {
                 ping_interval_us = 10;
             }
 
-            spdlog::get(logname)->debug("Ping interval: {} microseconds",
-                                        ping_interval_us);
+            logger->info("Ping interval: {} microseconds", ping_interval_us);
         } catch (const YAML::Exception& e) {
-            spdlog::get(logname)->error("Failed to load YAML file: {}",
-                                        e.what());
+            logger->error("Failed to load YAML file: {}", e.what());
             addressInfo.clear();  // If failed, ring becomes empty
         }
     }

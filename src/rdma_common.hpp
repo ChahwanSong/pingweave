@@ -158,6 +158,3 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);
 std::set<std::string> get_all_local_ips();
 
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
-// void parse_rdma_pinglist(const std::string &filename,
-//                          std::set<std::string> &myaddr,
-//                          std::vector<std::string> &pinglist);

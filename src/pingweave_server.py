@@ -1,8 +1,8 @@
 import os
 import sys
 import subprocess
-import configparser
-import asyncio
+import configparser  # default library
+import asyncio  # default library
 
 try:
     import yaml
@@ -27,7 +27,8 @@ DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 # Variables to save pinglist
 pinglist_in_memory = {}
 address_store = {}  # ip -> (gid, qpn)
-data_lock = asyncio.Lock()
+pinglist_lock = asyncio.Lock()
+address_store_lock = asyncio.Lock()
 
 # ConfigParser object
 config = configparser.ConfigParser()
@@ -66,7 +67,7 @@ async def load_pinglist():
 
     try:
         # use a lock to hold client request during file loading
-        async with data_lock:
+        async with pinglist_lock:
             if os.path.isfile(PINGLIST_PATH):
                 with open(PINGLIST_PATH, "r") as file:
                     # YAML -> dictionary (parsing)
@@ -86,35 +87,50 @@ async def load_pinglist_periodically():
 
 async def handle_client(reader, writer):
     try:
-        # get client address
         client_address = writer.get_extra_info("peername")
         if client_address:
             client_ip, client_port = client_address
 
-        request = await reader.read(512)  # Set a sufficient buffer size
+        request = await reader.read(512)
+
         if request.startswith(b"GET /pinglist"):
-            async with data_lock:
+            async with pinglist_lock:  # pinglist_in_memory에 대한 잠금
                 response = str(pinglist_in_memory).encode()
                 writer.write(response)
                 await writer.drain()
                 logger.info(
                     f"(SEND) pinglist data to client: {client_ip}:{client_port}"
                 )
-        elif request.startswith(b"GET /address_store"):
-            response = str(address_store).encode()
-            writer.write(response)
-            await writer.drain()
-            logger.info(f"(SEND) address_store to client: {client_ip}:{client_port}")
-        elif request.startswith(b"POST /address"):
-            content = request.decode().splitlines()[1:]  # ignore the first line
-            if len(content) == 4:  # IP, GID, QPN, Version
-                ip_address, gid, qpn, version = content
 
-                # save data (IP -> [GID, QPN])
-                address_store[ip_address] = [gid, int(qpn)]
+        elif request.startswith(b"GET /address_store"):
+            async with address_store_lock:  # address_store에 대한 별도 잠금
+                response = str(address_store).encode()
+                writer.write(response)
+                await writer.drain()
                 logger.info(
-                    f"(RECV) POST from {client_ip}:{client_port} and updated the store."
+                    f"(SEND) address_store to client: {client_ip}:{client_port}"
                 )
+
+        elif request.startswith(b"POST /address"):
+            content = request.decode().splitlines()[1:]  # 첫 줄 무시
+            if len(content) == 4:  # IP, GID, QPN, datetime
+                ip_address, gid, qpn, dtime = content
+
+                async with address_store_lock:  # address_store 업데이트에 대한 잠금
+                    address_store[ip_address] = [gid, int(qpn)]
+                    logger.info(
+                        f"(RECV) POST from {client_ip}:{client_port} and updated the store."
+                    )
+
+                    if len(address_store) > 10000:
+                        logger.error(
+                            f"Too many registered ip->gid entries: {len(address_store)}"
+                        )
+                        logger.critical(
+                            "Clean up the address_store. Check your config."
+                        )
+                        address_store.clear()
+
             else:
                 logger.warning(
                     f"(RECV) POST format is incorrect from {client_ip}:{client_port}"

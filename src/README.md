@@ -7,9 +7,13 @@
 - client RX (sender) C++ -> python shmem 메시지큐 테스트
     - 성공
 - server가 핑 16개 이상 받고는, 그이상은 WQ 안뽑아냄
-    - ibv_start_poll, ibv_end_poll 사용
+    - ibv_next 의 batch size = 16. 대신, ibv_start_poll, ibv_end_poll 사용
 - ping, pong message 구조체
     - Done
 - Timestamp Bit overflow 이슈 (uint64_t)
     - Done
+- Inter-thread message queue 오버헤드 (tail latency) - slower than RDMA latency
+    - mutex 로 해결
 - Out-of-order PONG / ACK
+    - 
+- 
