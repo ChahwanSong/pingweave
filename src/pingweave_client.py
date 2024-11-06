@@ -81,13 +81,11 @@ async def send_gid_files(ip, port):
             with open(filepath, "r") as file:
                 lines = file.read().splitlines()
                 if len(lines) == 3:
-                    gid, qpn, version = lines
+                    gid, qpn, times = lines
                     ip_address = filename
 
                     # send POST to server
-                    data_to_send = (
-                        f"POST /address\n{ip_address}\n{gid}\n{qpn}\n{version}"
-                    )
+                    data_to_send = f"POST /address\n{ip_address}\n{gid}\n{qpn}\n{times}"
                     try:
                         reader, writer = await asyncio.open_connection(ip, port)
                         writer.write(data_to_send.encode())

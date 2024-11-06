@@ -207,7 +207,9 @@ int save_device_info(struct pingweave_context *ctx) {
 
     // 5. save as lines (GID, QPN, TIME)
     outfile << ctx->wired_gid << "\n"
-            << ctx->qp->qp_num << "\n"
+            << ctx->qp->qp_num
+            << "\n"
+            // << ctx->portinfo.lid << "\n"
             << now;  // GID, QPN, TIME
 
     // check error
