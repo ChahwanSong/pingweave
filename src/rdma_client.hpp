@@ -65,17 +65,21 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
                     const std::string& logname) {
     auto logger = spdlog::get(logname);
 
-    struct ibv_wc wc = {};
     uint64_t cqe_time = 0;
-    bool has_cqe = false;
+    struct ibv_wc wc = {};
     int ret = 0;
+    bool has_events = false;
+
+    /**
+     * IMPORTANT: Use non-blocking polling
+     */
 
     if (ctx_tx->rnic_hw_ts) {
         // Use extended CQ polling for hardware timestamping
         struct ibv_poll_cq_attr attr = {};
 
         if (ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr) == 0) {  // success
-            has_cqe = true;
+            has_events = true;
 
             // Process the current CQE
             wc.status = ctx_tx->cq_s.cq_ex->status;
@@ -89,14 +93,14 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
     } else {
         // Standard CQ polling
         if (ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc) == 1) {  // success
-            has_cqe = true;
+            has_events = true;
 
             // Get current time
             cqe_time = get_current_timestamp_steady();
         }
     }
 
-    if (has_cqe) {
+    if (has_events) {
         if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND) {
             logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
                           wc.wr_id, cqe_time);
@@ -122,7 +126,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
 
     struct ibv_wc wc = {};
     uint64_t cqe_time = 0, recv_time = 0;
-    bool has_cqe = false;
+    bool has_events = false;
     int ret = 0;
     union pong_msg_t pong_msg = {};
 
@@ -131,7 +135,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
         struct ibv_poll_cq_attr attr = {};
 
         if (ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr) == 0) {  // success
-            has_cqe = true;
+            has_events = true;
 
             // Parse the received message
             std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
@@ -151,7 +155,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
     } else {
         // Standard CQ polling
         if (ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc) > 0) {  // success
-            has_cqe = true;
+            has_events = true;
 
             // Parse the received message
             std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
@@ -162,7 +166,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
         }
     }
 
-    if (has_cqe) {
+    if (has_events) {
         if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
             // Handle the received message (PONG or ACK)
             handle_received_message(ctx_rx, pong_msg, ping_table, recv_time,
