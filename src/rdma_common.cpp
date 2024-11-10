@@ -609,3 +609,33 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
         }
     }
 }
+
+
+// Utility function: Wait for CQ event and handle it
+bool wait_for_cq_event(const std::string& logname,
+                       struct pingweave_context* ctx) {
+    struct ibv_cq* ev_cq;
+    void* ev_ctx;
+
+    if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
+        spdlog::get(logname)->error("Failed to get cq_event");
+        return false;
+    }
+
+    // Acknowledge the CQ event
+    ibv_ack_cq_events(pingweave_cq(ctx), 1);
+
+    // Verify that the event is from the correct CQ
+    if (ev_cq != pingweave_cq(ctx)) {
+        spdlog::get(logname)->error("CQ event for unknown CQ");
+        return false;
+    }
+
+    // Re-register for CQ event notifications
+    if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
+        spdlog::get(logname)->error("Couldn't register CQE notification");
+        return false;
+    }
+
+    return true;
+}

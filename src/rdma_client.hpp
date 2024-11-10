@@ -5,14 +5,6 @@
 #include "rdma_common.hpp"
 #include "rdma_scheduler.hpp"
 
-/**
- * NOTE: Event-driven polling makes a buffer over-written (i.e., msg loss).
- * This is because of RDMA UD - unreliable protocol.
- */
-#ifndef PINGWEAVE_CLIENT_RX_EVENT_DRIVEN
-#define PINGWEAVE_CLIENT_RX_EVENT_DRIVEN (0)  // 1: event-driven polling
-#endif
-
 // Function to handle received messages
 void handle_received_message(pingweave_context* ctx_rx,
                              const union pong_msg_t& pong_msg,
@@ -68,17 +60,19 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
     uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
-    bool has_events = false;
 
     /**
-     * IMPORTANT: Use non-blocking polling
+     * IMPORTANT: Use non-blocking polling.
+     * Otherwise, scheduling the next message to send will be blocked.
      */
 
     if (ctx_tx->rnic_hw_ts) {
         // Use extended CQ polling for hardware timestamping
         struct ibv_poll_cq_attr attr = {};
+        ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
+        bool has_events = false;
 
-        if (ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr) == 0) {  // success
+        while (!ret) {
             has_events = true;
 
             // Process the current CQE
@@ -87,35 +81,62 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
             wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
 
-            // End the polling session
-            ibv_end_poll(ctx_tx->cq_s.cq_ex);
-        }
-    } else {
-        // Standard CQ polling
-        if (ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc) == 1) {  // success
-            has_events = true;
-
-            // Get current time
-            cqe_time = get_current_timestamp_steady();
-        }
-    }
-
-    if (has_events) {
-        if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND) {
-            logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
-                          wc.wr_id, cqe_time);
-            if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
-                logger->error(
-                    "Failed to update send completion time for ping ID {}.",
-                    wc.wr_id);
+            if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND) {
+                logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
+                              wc.wr_id, cqe_time);
+                if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
+                    logger->warn(
+                        "Failed to update send completion time for ping ID {}.",
+                        wc.wr_id);
+                }
+            } else {
+                logger->error("TX WR failure - status: {}, opcode: {}",
+                              ibv_wc_status_str(wc.status),
+                              static_cast<int>(wc.opcode));
+                throw std::runtime_error("TX WR failure");
             }
+
+            // poll next event
+            ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
+        }
+
+        if (has_events) {
+            ibv_end_poll(ctx_tx->cq_s.cq_ex);
         } else {
-            logger->warn("TX WR failure - status: {}, opcode: {}",
-                         ibv_wc_status_str(wc.status),
-                         static_cast<int>(wc.opcode));
+            // nothing to poll. add a small jittering.
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            return;
         }
     } else {
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
+        ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
+
+        if (!ret) {
+            // nothing to poll. add a small jittering.
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            return;
+        }
+
+        while (ret) {
+            cqe_time = get_current_timestamp_steady();
+
+            if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND) {
+                logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
+                              wc.wr_id, cqe_time);
+                if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
+                    logger->warn(
+                        "Failed to update send completion time for ping ID {}.",
+                        wc.wr_id);
+                }
+            } else {
+                logger->error("TX WR failure - status: {}, opcode: {}",
+                              ibv_wc_status_str(wc.status),
+                              static_cast<int>(wc.opcode));
+                throw std::runtime_error("TX WR failure");
+            }
+
+            // poll next event
+            ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
+        }
     }
 }
 
@@ -124,68 +145,103 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                     const std::string& logname) {
     auto logger = spdlog::get(logname);
 
-    struct ibv_wc wc = {};
     uint64_t cqe_time = 0, recv_time = 0;
-    bool has_events = false;
+    struct ibv_wc wc = {};
     int ret = 0;
     union pong_msg_t pong_msg = {};
+    try {
+        if (ctx_rx->rnic_hw_ts) {
+            // Use extended CQ polling for hardware timestamping
+            struct ibv_poll_cq_attr attr = {};
+            ret = ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr);
+            bool has_events = false;
 
-    if (ctx_rx->rnic_hw_ts) {
-        // Use extended CQ polling for hardware timestamping
-        struct ibv_poll_cq_attr attr = {};
+            while (!ret) {
+                has_events = true;
 
-        if (ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr) == 0) {  // success
-            has_events = true;
+                // Parse the received message
+                std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE,
+                            sizeof(pong_msg_t));
 
-            // Parse the received message
-            std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
+                // get recv time
+                recv_time = get_current_timestamp_steady();
 
-            // get recv time
-            recv_time = get_current_timestamp_steady();
+                // Process the current CQE
+                wc.status = ctx_rx->cq_s.cq_ex->status;
+                wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
+                wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
+                cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
 
-            // Process the current CQE
-            wc.status = ctx_rx->cq_s.cq_ex->status;
-            wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
-            wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
-            cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
+                if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
+                    // Handle the received message (PONG or ACK)
+                    handle_received_message(ctx_rx, pong_msg, ping_table,
+                                            recv_time, cqe_time, logname);
 
-            // End the polling session
-            ibv_end_poll(ctx_rx->cq_s.cq_ex);
-        }
-    } else {
-        // Standard CQ polling
-        if (ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc) > 0) {  // success
-            has_events = true;
+                    // Post the next RECV WR
+                    if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
+                        logger->error("Failed to post the next RECV WR.");
+                        throw std::runtime_error("RX RECV post failed");
+                    }
+                } else {
+                    logger->error("RX WR failure - status: {}, opcode: {}",
+                                  ibv_wc_status_str(wc.status),
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
+                }
 
-            // Parse the received message
-            std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
+                ret = ibv_next_poll(ctx_rx->cq_s.cq_ex);
+            }
 
-            // Get current time
-            cqe_time = get_current_timestamp_steady();
-            recv_time = cqe_time;
-        }
-    }
-
-    if (has_events) {
-        if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
-            // Handle the received message (PONG or ACK)
-            handle_received_message(ctx_rx, pong_msg, ping_table, recv_time,
-                                    cqe_time, logname);
-
-            // Post the next RECV WR
-            if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
-                logger->warn("Failed to post the next RECV WR.");
+            if (has_events) {
+                // End the polling session
+                ibv_end_poll(ctx_rx->cq_s.cq_ex);
+            } else {
+                // nothing to poll. add a small jittering.
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                return;
             }
         } else {
-            logger->warn("RX WR failure - status: {}, opcode: {}",
-                         ibv_wc_status_str(wc.status),
-                         static_cast<int>(wc.opcode));
+            ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
+
+            if (!ret) {
+                // nothing to poll. add a small jittering.
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                return;
+            }
+
+            while (ret) {
+                // Parse the received message
+                std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE,
+                            sizeof(pong_msg_t));
+
+                // Get current time
+                cqe_time = get_current_timestamp_steady();
+                recv_time = cqe_time;
+
+                if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
+                    // Handle the received message (PONG or ACK)
+                    handle_received_message(ctx_rx, pong_msg, ping_table,
+                                            recv_time, cqe_time, logname);
+
+                    // Post the next RECV WR
+                    if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
+                        logger->error("Failed to post the next RECV WR.");
+                        throw std::runtime_error("RX RECV post failed");
+                    }
+                } else {
+                    logger->error("RX WR failure - status: {}, opcode: {}",
+                                  ibv_wc_status_str(wc.status),
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
+                }
+
+                // poll next event
+                ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
+            }
         }
-    } else {
-#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN != 1)
-        // No CQE to process
-        std::this_thread::sleep_for(std::chrono::microseconds(10));
-#endif
+    } catch (const std::exception& e) {
+        logger->error("RX thread exits unexpectedly: {}", e.what());
+        throw;  // Propagate exception
     }
 }
 
@@ -247,11 +303,15 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 }
             }
 
+            /**
+             * NOTE: Client's TX loop must be non-blocking.
+             */
             // Process TX CQEs
             process_tx_cqe(ctx_tx, ping_table, logname);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
+        throw;  // Propagate exception
     }
 }
 
@@ -313,42 +373,25 @@ void rdma_client(const std::string& ipv4) {
         client_logger->warn("Failed to post RECV WRs.");
     }
 
-#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN == 1)
+    // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
-        throw std::runtime_error("Failed to register CQ event notifications.");
+        client_logger->error("Couldn't register CQE notification");
+        throw std::runtime_error("Couldn't register CQE notification");
     }
-#endif
 
     // Start the receive loop
     try {
         while (true) {
-#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN == 1)
             /**
-             * IMPORTANT: Event-driven polling via completion channel.
-             **/
-            spdlog::get(client_logname)->debug("Wait polling RX RECV CQE...");
-            struct ibv_cq* ev_cq;
-            void* ev_ctx;
-            if (ibv_get_cq_event(ctx_rx.channel, &ev_cq, &ev_ctx)) {
-                spdlog::get(client_logname)->error("Failed to get cq_event");
-                throw std::runtime_error("Failed to get cq_event");
+             * IMPORTANT: Use event-driven polling.
+             * To reduce CPU overhead.
+             */
+
+            // Wait for CQ event
+            if (!wait_for_cq_event(client_logname, &ctx_rx)) {
+                throw std::runtime_error("Failed during CQ event waiting");
             }
 
-            // ACK the CQ events
-            ibv_ack_cq_events(pingweave_cq(&ctx_rx), 1);
-            // check the cqe is from a correct CQ
-            if (ev_cq != pingweave_cq(&ctx_rx)) {
-                spdlog::get(client_logname)->error("CQ event for unknown CQ");
-                throw std::runtime_error("CQ event for unknown CQ");
-            }
-
-            // re-register an event alarm of cq
-            if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
-                spdlog::get(client_logname)
-                    ->error("Couldn't register CQE notification");
-                throw std::runtime_error("Couldn't register CQE notification");
-            }
-#endif
             // Process RX CQEs
             process_rx_cqe(&ctx_rx, &ping_table, client_logname);
         }

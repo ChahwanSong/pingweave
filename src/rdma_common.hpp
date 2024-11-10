@@ -122,6 +122,10 @@ std::set<std::string> get_all_local_ips();
 
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 
+// Utility function: Wait for CQ event and handle it
+bool wait_for_cq_event(const std::string &logname,
+                       struct pingweave_context *ctx);
+
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/
 /**************************************************************/

@@ -6,35 +6,6 @@
 
 typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
 
-// Utility function: Wait for CQ event and handle it
-bool wait_for_cq_event(const std::string& logname,
-                       struct pingweave_context* ctx) {
-    struct ibv_cq* ev_cq;
-    void* ev_ctx;
-
-    if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
-        spdlog::get(logname)->error("Failed to get cq_event");
-        return false;
-    }
-
-    // Acknowledge the CQ event
-    ibv_ack_cq_events(pingweave_cq(ctx), 1);
-
-    // Verify that the event is from the correct CQ
-    if (ev_cq != pingweave_cq(ctx)) {
-        spdlog::get(logname)->error("CQ event for unknown CQ");
-        return false;
-    }
-
-    // Re-register for CQ event notifications
-    if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
-        spdlog::get(logname)->error("Couldn't register CQE notification");
-        return false;
-    }
-
-    return true;
-}
-
 // Utility function: Post RECV WR
 bool post_recv_wr(const std::string& logname, struct pingweave_context* ctx) {
     if (post_recv(ctx, 1, PINGWEAVE_WRID_RECV) == 0) {
@@ -98,7 +69,7 @@ bool process_pong_cqe(const std::string& logname,
          * Small jittering to prevent buffer override at client-side.
          * This can happen as we use RDMA UC communication.
          **/
-        // std::this_thread::sleep_for(std::chrono::microseconds(1));
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
 
         if (post_send(&ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                       PINGWEAVE_WRID_SEND)) {
@@ -340,7 +311,8 @@ void rdma_server(const std::string& ipv4) {
         }
 
         /**
-         * IMPORTANT: Use non-blocking polling
+         * IMPORTANT: Use non-blocking polling.
+         * Otherwise, getting msg from server_queue will be blocked.
          */
         // Capture and process CQE
         if (ctx_tx.rnic_hw_ts) {

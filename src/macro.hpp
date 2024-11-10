@@ -12,9 +12,8 @@ const static uint64_t PING_ID_INIT = 1000000000;  // start id
 // RDMA parameters
 const static int TX_DEPTH = 16;      // only 1 SEND to have data consistency
 const static int RX_DEPTH = 32;      // enough?
-const static int GID_INDEX = 0;      // by default 0
-const static int SERVICE_LEVEL = 0;  // by default 0
-const static int USE_EVENT = 1;  // 1: event-based polling, 2: active polling
+const static int GID_INDEX = 0;      // by default 0 (infiniband & RoCE)
+const static int SERVICE_LEVEL = 3;  // by default 3 (TC = 3)
 
 // Params for IPC (inter-processor communication)
 const static int BATCH_SIZE = 16;               // Process messages in batches
