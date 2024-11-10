@@ -1,5 +1,17 @@
 #pragma once
 
+#include <signal.h>  // For kill(), signal()
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/stat.h>  // directory
+
+#include <atomic>  // std::atomic
+#include <cerrno>  // errno
+#include <chrono>
+#include <future>
+#include <string>
+
+#include "logger.hpp"
 #include "rdma_common.hpp"
 
 struct SharedData {
@@ -23,7 +35,6 @@ class ProducerQueue {
     bool sendMessage(const std::string& message);
     void flushBatch();
     std::chrono::time_point<std::chrono::steady_clock> getLastFlushTime();
-    std::shared_ptr<spdlog::logger> get_logger();
 
    private:
     std::shared_ptr<spdlog::logger> logger;

@@ -27,7 +27,7 @@ class MsgScheduler {
             last_load_time = now;
         }
 
-        if (duration.count() >= ping_interval_us) {
+        if (duration.count() >= inter_ping_interval_us) {
             last_access_time = now;
 
             if (!addressInfo.empty()) {
@@ -60,10 +60,8 @@ class MsgScheduler {
     size_t addr_idx;
     std::chrono::steady_clock::time_point last_access_time;
     std::chrono::steady_clock::time_point last_load_time;
-    uint64_t ping_interval_us = 10;   // 10 microseconds btw each ping
-    uint64_t load_interval_min = 10;  // 10 minutes to load yaml
-    const uint64_t total_interval_us = 1000000;
-    const std::string download_dir = "../download/";
+    uint64_t load_interval_min = 10;         // 10 minutes to load yaml
+    uint64_t inter_ping_interval_us = 1000;  // interval btw each ping
     std::string logname;
     std::shared_ptr<spdlog::logger> logger;
 
@@ -74,8 +72,8 @@ class MsgScheduler {
             addr_idx = 0;
 
             // Load pinglist.yaml
-            YAML::Node pinglist =
-                YAML::LoadFile(download_dir + "pinglist.yaml");
+            YAML::Node pinglist = YAML::LoadFile(
+                get_source_directory() + DIR_DOWNLOAD_PATH + "pinglist.yaml");
             std::vector<std::string> relevantIps;
 
             if (pinglist["rdma"]) {
@@ -94,7 +92,8 @@ class MsgScheduler {
 
             // Load address_store.yaml
             YAML::Node addressStore =
-                YAML::LoadFile(download_dir + "address_store.yaml");
+                YAML::LoadFile(get_source_directory() + DIR_DOWNLOAD_PATH +
+                               "address_store.yaml");
             addressInfo.clear();  // Clear existing data
 
             for (const auto& it : addressStore) {
@@ -112,12 +111,13 @@ class MsgScheduler {
                          addressInfo.size());
 
             if (!addressInfo.empty()) {
-                ping_interval_us = total_interval_us / addressInfo.size();
+                inter_ping_interval_us = PING_INTERVAL_US / addressInfo.size();
             } else {
-                ping_interval_us = 10;
+                inter_ping_interval_us = 1000;
             }
 
-            logger->info("Ping interval: {} microseconds", ping_interval_us);
+            logger->debug("Interval btw ping: {} microseconds",
+                          inter_ping_interval_us);
         } catch (const YAML::Exception& e) {
             logger->error("Failed to load YAML file: {}", e.what());
             addressInfo.clear();  // If failed, ring becomes empty

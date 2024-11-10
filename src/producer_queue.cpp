@@ -74,7 +74,6 @@ ProducerQueue::~ProducerQueue() {
 // Write a message to the shared memory queue
 bool ProducerQueue::writeMessage(const std::string& message) {
     int next_tail = (data->tail.load() + 1) % BUFFER_SIZE;
-
     if (next_tail == data->head.load()) {
         return false;  // Queue is full
     }
@@ -99,7 +98,8 @@ bool ProducerQueue::sendMessage(const std::string& message) {
                             .count();
 
     // if > batch size or timeout, then flush
-    if (messages_in_batch >= BATCH_SIZE || time_elapsed >= BATCH_TIMEOUT_MS) {
+    if (messages_in_batch >= BATCH_SIZE ||
+        time_elapsed >= BATCH_FLUSH_TIMEOUT_MS) {
         flushBatch();
     }
 
@@ -110,9 +110,28 @@ bool ProducerQueue::sendMessage(const std::string& message) {
 void ProducerQueue::flushBatch() {
     if (messages_in_batch > 0) {
         data->message_ready.store(true);
+
+        auto wait_start_time = std::chrono::steady_clock::now();
+
         while (data->message_ready.load()) {
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            auto now = std::chrono::steady_clock::now();
+            auto time_elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - wait_start_time)
+                    .count();
+
+            if (time_elapsed_ms > CONSUMER_WAIT_TIMEOUT_MS) {
+                // Timeout exceeded
+                logger->error(
+                    "Consumer did not respond within timeout ({} ms). "
+                    "Proceeding without consumer acknowledgement.",
+                    CONSUMER_WAIT_TIMEOUT_MS);
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
+
         messages_in_batch = 0;
         last_flush_time = std::chrono::steady_clock::now();
     }
@@ -124,5 +143,3 @@ ProducerQueue::getLastFlushTime() {
 }
 
 uint64_t ProducerQueue::getNumDroppedMsgs() { return n_dropped_msgs; }
-
-std::shared_ptr<spdlog::logger> ProducerQueue::get_logger() { return logger; }

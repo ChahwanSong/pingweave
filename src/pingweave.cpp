@@ -1,10 +1,9 @@
 #include <functional>
 
 #include "rdma_client.hpp"
-#include "rdma_common.hpp"
 #include "rdma_server.hpp"
 
-const std::string pinglist_rel_path = "/../download/pinglist.yaml";
+const std::string pinglist_rel_path = DIR_DOWNLOAD_PATH + "pinglist.yaml";
 const uint32_t main_check_period_seconds = 10;
 
 pid_t start_process(std::function<void()> func, const char* name);

@@ -1,5 +1,10 @@
 #pragma once
+
+#include "ping_info_map.hpp"
+#include "ping_msg_map.hpp"
 #include "rdma_common.hpp"
+
+typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
 
 // Utility function: Wait for CQ event and handle it
 bool wait_for_cq_event(const std::string& logname,
@@ -53,12 +58,7 @@ bool poll_cq(const std::string& logname, struct pingweave_context* ctx,
             spdlog::get(logname)->error("CQE poll receives nothing");
             return false;
         }
-        struct timespec cqe_ts;
-        if (clock_gettime(CLOCK_MONOTONIC, &cqe_ts) == -1) {
-            spdlog::get(logname)->error("Failed to run clock_gettime()");
-            return false;
-        }
-        cqe_time = cqe_ts.tv_sec * 1000000000LL + cqe_ts.tv_nsec;
+        cqe_time = get_current_timestamp_steady();
     }
     return true;
 }
@@ -121,6 +121,12 @@ bool process_pong_cqe(const std::string& logname,
         union rdma_addr dst_addr;
         dst_addr.x.gid = ping_msg.x.gid;
         dst_addr.x.qpn = ping_msg.x.qpn;
+
+        /**
+         * Small jittering to prevent buffer override at client-side.
+         * This can happen as we use RDMA UC communication.
+         **/
+        std::this_thread::sleep_for(std::chrono::microseconds(1));
 
         if (post_send(&ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                       PINGWEAVE_WRID_SEND)) {
@@ -212,7 +218,8 @@ void rdma_server(const std::string& ipv4) {
     // Initialize logger
     spdlog::drop_all();
     const std::string logname = "rdma_server_" + ipv4;
-    auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER);
+    auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER,
+                                           LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
 
     // Create internal queue
     ServerInternalQueue server_queue(QUEUE_SIZE);
@@ -276,6 +283,7 @@ void rdma_server(const std::string& ipv4) {
             dst_addr.x.gid = ping_msg.x.gid;
             dst_addr.x.qpn = ping_msg.x.qpn;
 
+            // send PONG message
             spdlog::get(logname)->debug(
                 "SEND post with PONG message of pingid: {} to qpn: {}, gid: {}",
                 pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid));
@@ -335,31 +343,30 @@ void rdma_server(const std::string& ipv4) {
 
                 // Poll next event
                 ret = ibv_next_poll(ctx_tx.cq_s.cq_ex);
+
+                if (!ret) {
+                    std::cout << "next poll success" << std::endl;
+                }
             }
             if (has_events) {
                 ibv_end_poll(ctx_tx.cq_s.cq_ex);
-            } else {
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            } else {  // nothing to poll
+                // to minize CPU overhead for polling
+                std::this_thread::sleep_for(std::chrono::microseconds(20));
                 continue;
             }
         } else {
             // Poll CQE when using application-level timestamping
             ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
 
-            if (!ret) {
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            if (!ret) {  // nothing to poll
+                // to minize CPU overhead for polling
+                std::this_thread::sleep_for(std::chrono::microseconds(20));
                 continue;
             }
 
             while (ret) {
-                struct timespec cqe_ts;
-                if (clock_gettime(CLOCK_MONOTONIC, &cqe_ts) == -1) {
-                    spdlog::get(logname)->error(
-                        "Failed to run clock_gettime()");
-                    throw std::runtime_error("clock_gettime failed");
-                }
-                cqe_time = cqe_ts.tv_sec * 1000000000LL + cqe_ts.tv_nsec;
-
+                cqe_time = get_current_timestamp_steady();
                 if (wc.status == IBV_WC_SUCCESS) {
                     if (wc.opcode == IBV_WC_SEND) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {

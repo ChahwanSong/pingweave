@@ -9,6 +9,8 @@
 #include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
 #include <unordered_map>
 
+#include "rdma_common.hpp"
+
 union ping_msg_t {
     char raw[36];
     struct {

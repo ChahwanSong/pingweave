@@ -1,14 +1,10 @@
-import os, sys
-
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# sys.path.append(os.path.join(current_dir, "../src"))
 from consumer_queue import *
 from logger import *
 
 
 # main_consumer.py
 def main():
-    consumer = ConsumerQueue("my_shared_memory_queue")
+    consumer = ConsumerQueue("rdma", "10.200.200.3")
 
     # check if no data for a long time
     wait_time = 0
@@ -29,7 +25,9 @@ def main():
                     wait_time = 0
 
             msg_list = consumer.process_batch()
-            print(f"Python: Last received message in batch: {msg_list[-1]}")
+            print(
+                f"Python: Last received message in batch: {msg_list[-1]}, num: {len(msg_list)}"
+            )
     except KeyboardInterrupt:
         logging.error(
             "KeyboardInterrupt detected. Cleaning up shared memory and exiting..."

@@ -1,19 +1,17 @@
 #pragma once
+
+#include "ping_info_map.hpp"
+#include "ping_msg_map.hpp"
 #include "rdma_common.hpp"
 #include "rdma_scheduler.hpp"
 
-#ifndef PINGWEAVE_RX_EVENT_DRIVEN
-#define PINGWEAVE_RX_EVENT_DRIVEN (0)
+/**
+ * NOTE: Event-driven polling makes a buffer over-written (i.e., msg loss).
+ * This is because of RDMA UD - unreliable protocol.
+ */
+#ifndef PINGWEAVE_CLIENT_RX_EVENT_DRIVEN
+#define PINGWEAVE_CLIENT_RX_EVENT_DRIVEN (0)  // 1: event-driven polling
 #endif
-
-// Function to get current timestamp
-uint64_t get_current_timestamp() {
-    struct timespec ts = {};
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
-        throw std::runtime_error("Failed to call clock_gettime.");
-    }
-    return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000LL + ts.tv_nsec;
-}
 
 // Function to handle received messages
 void handle_received_message(pingweave_context* ctx_rx,
@@ -21,46 +19,27 @@ void handle_received_message(pingweave_context* ctx_rx,
                              PingInfoMap* ping_table, uint64_t recv_time,
                              uint64_t cqe_time, const std::string& logname) {
     auto logger = spdlog::get(logname);
-    ping_info_t ping_info = {};
-    if (!ping_table->get(pong_msg.x.pingid, ping_info)) {
-        logger->error("Cannot find information for ping ID {} in ping_table.",
-                      pong_msg.x.pingid);
-        return;
-    }
 
     if (pong_msg.x.opcode == PINGWEAVE_OPCODE_PONG) {
         // Handle PONG message
-        uint64_t client_delay = calc_time_delta_with_bitwrap(
-            ping_info.time_ping_send, recv_time, UINT64_MAX);
-        uint64_t network_rtt =
-            calc_time_delta_with_bitwrap(ping_info.time_ping_cqe, cqe_time,
-                                         ctx_rx->completion_timestamp_mask);
-        ping_table->update_pong_info(pong_msg.x.pingid, client_delay,
-                                     network_rtt);
-        logger->debug(
-            "Received PONG - ping ID: {}, client delay: {}, network RTT: {}",
-            pong_msg.x.pingid, client_delay, network_rtt);
+        logger->debug("[CQE] Recv PONG ({}): recv_time {}, cqe_time:{}",
+                      pong_msg.x.pingid, recv_time, cqe_time);
+        if (!ping_table->update_pong_info(pong_msg.x.pingid, recv_time,
+                                          UINT64_MAX, cqe_time,
+                                          ctx_rx->completion_timestamp_mask)) {
+            logger->warn("PONG ({}): No entry in ping_table.",
+                         pong_msg.x.pingid);
+        }
+
     } else if (pong_msg.x.opcode == PINGWEAVE_OPCODE_ACK) {
         // Handle ACK message
-        ping_table->update_ack_info(pong_msg.x.pingid, pong_msg.x.server_delay);
-        logger->debug("Received ACK - ping ID: {}, server delay: {}",
+        logger->debug("[CQE] Recv PONG_ACK ({}): server_delay {}",
                       pong_msg.x.pingid, pong_msg.x.server_delay);
-
-        // Final result output or storage
-        uint64_t client_process_time =
-            ping_info.time_ping_send - ping_info.time_ping_cqe;
-        uint64_t server_process_time = pong_msg.x.server_delay;
-        uint64_t network_rtt = ctx_rx->rnic_hw_ts ? ping_info.time_ping_cqe -
-                                                        pong_msg.x.server_delay
-                                                  : ping_info.time_ping_cqe;
-
-        logger->info(
-            "[Summary] Latency to {}: client {}, server {}, network: {}",
-            ping_info.dstip, client_process_time, server_process_time,
-            network_rtt);
-
-        // Remove the entry from ping_table
-        ping_table->remove(pong_msg.x.pingid);
+        if (!ping_table->update_ack_info(pong_msg.x.pingid,
+                                         pong_msg.x.server_delay)) {
+            logger->warn("PONG_ACK ({}): No entry in ping_table.",
+                         pong_msg.x.pingid);
+        }
     } else {
         logger->error("Unknown opcode received: {}", pong_msg.x.opcode);
     }
@@ -89,13 +68,15 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
     struct ibv_wc wc = {};
     uint64_t cqe_time = 0;
     bool has_cqe = false;
+    int ret = 0;
 
     if (ctx_tx->rnic_hw_ts) {
         // Use extended CQ polling for hardware timestamping
         struct ibv_poll_cq_attr attr = {};
-        int ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
 
-        if (ret == 0) {
+        if (ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr) == 0) {  // success
+            has_cqe = true;
+
             // Process the current CQE
             wc.status = ctx_tx->cq_s.cq_ex->status;
             wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
@@ -104,29 +85,22 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
 
             // End the polling session
             ibv_end_poll(ctx_tx->cq_s.cq_ex);
-
-            has_cqe = true;
-        } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
     } else {
         // Standard CQ polling
-        int ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
-        if (ret == 1) {
-            // Get current time
-            cqe_time = get_current_timestamp();
+        if (ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc) == 1) {  // success
             has_cqe = true;
-        } else {
-            // No CQE to process
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+
+            // Get current time
+            cqe_time = get_current_timestamp_steady();
         }
     }
 
     if (has_cqe) {
         if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_SEND) {
-            logger->debug("Send completed (ping ID: {}), time: {}", wc.wr_id,
-                          cqe_time);
-            if (!ping_table->update_time_cqe(wc.wr_id, cqe_time)) {
+            logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
+                          wc.wr_id, cqe_time);
+            if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
                 logger->error(
                     "Failed to update send completion time for ping ID {}.",
                     wc.wr_id);
@@ -136,6 +110,8 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
                          ibv_wc_status_str(wc.status),
                          static_cast<int>(wc.opcode));
         }
+    } else {
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 }
 
@@ -147,15 +123,21 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
     struct ibv_wc wc = {};
     uint64_t cqe_time = 0, recv_time = 0;
     bool has_cqe = false;
+    int ret = 0;
+    union pong_msg_t pong_msg = {};
 
     if (ctx_rx->rnic_hw_ts) {
         // Use extended CQ polling for hardware timestamping
         struct ibv_poll_cq_attr attr = {};
-        int ret = ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr);
 
-        if (ret == 0) {
+        if (ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr) == 0) {  // success
+            has_cqe = true;
+
+            // Parse the received message
+            std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
+
             // get recv time
-            recv_time = get_current_timestamp();
+            recv_time = get_current_timestamp_steady();
 
             // Process the current CQE
             wc.status = ctx_rx->cq_s.cq_ex->status;
@@ -165,31 +147,23 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
 
             // End the polling session
             ibv_end_poll(ctx_rx->cq_s.cq_ex);
-
-            has_cqe = true;
-        } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
         }
     } else {
         // Standard CQ polling
-        int ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
-        if (ret > 0) {
-            // Get current time
-            cqe_time = get_current_timestamp();
-            recv_time = cqe_time;
+        if (ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc) > 0) {  // success
             has_cqe = true;
-        } else {
-            // No CQE to process
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+
+            // Parse the received message
+            std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
+
+            // Get current time
+            cqe_time = get_current_timestamp_steady();
+            recv_time = cqe_time;
         }
     }
 
     if (has_cqe) {
         if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
-            // Parse the received message
-            union pong_msg_t pong_msg = {};
-            std::memcpy(&pong_msg, ctx_rx->buf + GRH_SIZE, sizeof(pong_msg_t));
-
             // Handle the received message (PONG or ACK)
             handle_received_message(ctx_rx, pong_msg, ping_table, recv_time,
                                     cqe_time, logname);
@@ -203,6 +177,11 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                          ibv_wc_status_str(wc.status),
                          static_cast<int>(wc.opcode));
         }
+    } else {
+#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN != 1)
+        // No CQE to process
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
+#endif
     }
 }
 
@@ -241,10 +220,13 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 }
 
                 // Record the send time
-                uint64_t send_time = get_current_timestamp();
-                if (!ping_table->insert(msg.x.pingid,
-                                        {msg.x.pingid, msg.x.qpn, msg.x.gid,
-                                         dst_ip, send_time, 0, 0})) {
+                uint64_t send_time_system = get_current_timestamp_ns();
+                uint64_t send_time_steady = get_current_timestamp_steady();
+                if (!ping_table->insert(
+                        msg.x.pingid,
+                        {msg.x.pingid, msg.x.qpn, msg.x.gid, dst_ip,
+                         send_time_system, send_time_steady, 0, 0,
+                         PINGWEAVE_MASK_INIT})) {
                     logger->warn("Failed to insert ping ID {} into ping_table.",
                                  msg.x.pingid);
                 }
@@ -253,7 +235,8 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}), "
                     "time: {}",
-                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), send_time);
+                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid),
+                    send_time_steady);
                 if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
                               msg.x.pingid)) {
                     throw std::runtime_error("Failed to send PING message.");
@@ -268,45 +251,82 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
     }
 }
 
-void rdma_client(const std::string& ipv4) {
-    const std::string logname = "rdma_client_" + ipv4;
-    auto logger = initialize_custom_logger(logname, LOG_LEVEL_CLIENT);
+void client_result_thread(std::shared_ptr<spdlog::logger> logger,
+                          std::string ipv4, ClientInternalQueue* client_queue) {
+    logger->info("Starting result thread (PID: {})...", getpid());
 
-    PingInfoMap ping_table(1);  // Set timeout to 1 second
+    struct result_info_t result_info;
+    try {
+        while (true) {
+            // fully-blocking
+            client_queue->wait_dequeue(result_info);
+            logger->info("{}, {}, {}, {}, {}, {}, {}",
+                         timestamp_ns_to_string(result_info.time_ping_send),
+                         uint2ip(result_info.dstip), result_info.pingid,
+                         result_info.success, result_info.client_delay,
+                         result_info.network_delay, result_info.server_delay);
+        }
+    } catch (const std::exception& e) {
+        logger->error("Exception in result thread: {}", e.what());
+    }
+}
+
+void rdma_client(const std::string& ipv4) {
+    // Start the RX thread
+    const std::string client_logname = "rdma_client_" + ipv4;
+    std::shared_ptr<spdlog::logger> client_logger = initialize_custom_logger(
+        client_logname, LOG_LEVEL_CLIENT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    client_logger->info("Running main (RX) thread (PID: {})...", getpid());
+
+    // Inter-thread queue
+    const std::string result_logname = "rdma_" + ipv4;
+    std::shared_ptr<spdlog::logger> result_logger = initialize_result_logger(
+        result_logname, LOG_LEVEL_RESULT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    ClientInternalQueue client_queue(QUEUE_SIZE);
+    std::thread result_thread(client_result_thread, result_logger, ipv4,
+                              &client_queue);
+
+    // ping table (timeout =  1 second)
+    const std::string ping_table_logname = "rdma_table_" + ipv4;
+    std::shared_ptr<spdlog::logger> ping_table_logger =
+        initialize_custom_logger(ping_table_logname, LOG_LEVEL_PING_TABLE,
+                                 LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    PingInfoMap ping_table(ping_table_logger, &client_queue, 1);
 
     // Initialize RDMA contexts
     pingweave_context ctx_tx = {};
     pingweave_context ctx_rx = {};
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, logname)) {
+    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logname)) {
         throw std::runtime_error("Failed to initialize RDMA contexts.");
     }
 
     // Start the TX thread
-    std::thread tx_thread(client_tx_thread, ipv4, logname, &ping_table, &ctx_tx,
-                          ctx_rx.gid, ctx_rx.qp->qp_num);
-
-    logger->info("Running main (RX) thread (PID: {})...", getpid());
+    std::thread tx_thread(client_tx_thread, ipv4, client_logname, &ping_table,
+                          &ctx_tx, ctx_rx.gid, ctx_rx.qp->qp_num);
 
     // Post RECV WRs and register CQ event notifications
     if (post_recv(&ctx_rx, RX_DEPTH, PINGWEAVE_WRID_RECV) < RX_DEPTH) {
-        logger->warn("Failed to post RECV WRs.");
+        client_logger->warn("Failed to post RECV WRs.");
     }
+
+#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN == 1)
     if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
         throw std::runtime_error("Failed to register CQ event notifications.");
     }
+#endif
 
     // Start the receive loop
-    while (true) {
-        try {
-#if (PINGWEAVE_RX_EVENT_DRIVEN == 1)
+    try {
+        while (true) {
+#if (PINGWEAVE_CLIENT_RX_EVENT_DRIVEN == 1)
             /**
              * IMPORTANT: Event-driven polling via completion channel.
              **/
-            spdlog::get(logname)->debug("Wait polling RX RECV CQE...");
+            spdlog::get(client_logname)->debug("Wait polling RX RECV CQE...");
             struct ibv_cq* ev_cq;
             void* ev_ctx;
             if (ibv_get_cq_event(ctx_rx.channel, &ev_cq, &ev_ctx)) {
-                spdlog::get(logname)->error("Failed to get cq_event");
+                spdlog::get(client_logname)->error("Failed to get cq_event");
                 throw std::runtime_error("Failed to get cq_event");
             }
 
@@ -314,22 +334,22 @@ void rdma_client(const std::string& ipv4) {
             ibv_ack_cq_events(pingweave_cq(&ctx_rx), 1);
             // check the cqe is from a correct CQ
             if (ev_cq != pingweave_cq(&ctx_rx)) {
-                spdlog::get(logname)->error("CQ event for unknown CQ");
+                spdlog::get(client_logname)->error("CQ event for unknown CQ");
                 throw std::runtime_error("CQ event for unknown CQ");
             }
 
             // re-register an event alarm of cq
             if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
-                spdlog::get(logname)->error(
-                    "Couldn't register CQE notification");
+                spdlog::get(client_logname)
+                    ->error("Couldn't register CQE notification");
                 throw std::runtime_error("Couldn't register CQE notification");
             }
 #endif
             // Process RX CQEs
-            process_rx_cqe(&ctx_rx, &ping_table, logname);
-        } catch (const std::exception& e) {
-            logger->error("Exception in RX thread: {}", e.what());
+            process_rx_cqe(&ctx_rx, &ping_table, client_logname);
         }
+    } catch (const std::exception& e) {
+        client_logger->error("Exception in RX thread: {}", e.what());
     }
 
     if (tx_thread.joinable()) {

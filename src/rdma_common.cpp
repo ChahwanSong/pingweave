@@ -31,42 +31,6 @@ std::string parsed_gid(union ibv_gid *gid) {
     return std::string(parsed_gid);
 }
 
-// calculate time difference with considering bit wrap-around
-uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
-                                      const uint64_t &mask) {
-    uint64_t delta;
-    if (t2 >= t1) {  // no wrap around
-        delta = t2 - t1;
-    } else {  // wrap around
-        delta = (mask - t1 + 1) + t2;
-    }
-    return delta;
-}
-
-// get current time in 32 bits
-uint32_t get_current_time_int() {
-    // Get the current time point from the system clock
-    auto now = std::chrono::system_clock::now();
-    // Convert to time since epoch in seconds
-    auto epoch_seconds =
-        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch())
-            .count();
-    // Cast to uint32_t
-    return static_cast<uint32_t>(epoch_seconds);
-}
-
-// Get current time as a formatted string
-std::string get_current_time_string() {
-    // Get the current time point from the system clock
-    auto now = std::chrono::system_clock::now();
-    // Convert to time_t for formatting
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    // Format the time as a string
-    std::ostringstream oss;
-    oss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
-    return oss.str();
-}
-
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     char path[512];
@@ -202,8 +166,7 @@ int save_device_info(struct pingweave_context *ctx) {
     }
 
     // 4. get a current time
-    // uint32_t now = get_current_time_int();
-    std::string now = get_current_time_string();
+    std::string now = get_current_timestamp_string();
 
     // 5. save as lines (GID, QPN, TIME)
     outfile << ctx->wired_gid << "\n"

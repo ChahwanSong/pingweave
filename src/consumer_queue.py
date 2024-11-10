@@ -5,7 +5,7 @@ import ctypes
 from logger import initialize_consumer_logger
 
 MESSAGE_SIZE = 64  # Message size of 64 bytes
-BATCH_SIZE = 1000  # Process messages in batches of 10
+BATCH_SIZE = 16  # Process messages in batches of 16
 BUFFER_SIZE = BATCH_SIZE + 1  # Queue size
 PREFIX_SHMEM_NAME = "pingweave_"
 

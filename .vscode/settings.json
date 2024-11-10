@@ -75,6 +75,7 @@
         "valarray": "cpp",
         "variant": "cpp",
         "charconv": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "shared_mutex": "cpp"
     }
 }
