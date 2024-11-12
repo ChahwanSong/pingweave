@@ -8,7 +8,7 @@
 const static int MESSAGE_SIZE = 64;           // Message size of 64 B
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
 const static uint64_t PING_ID_INIT = 1000000000;  // start id
-
+const static int RDMA_TRAFFIC_CLASS = 3;          // traffic class
 // RDMA parameters
 const static int TX_DEPTH = 16;      // only 1 SEND to have data consistency
 const static int RX_DEPTH = 32;      // enough?

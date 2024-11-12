@@ -86,10 +86,11 @@ struct pingweave_context {
 };
 
 union rdma_addr {
-    char raw[20];
+    char raw[24];
     struct {
         uint32_t qpn;       // 4B
         union ibv_gid gid;  // 16B
+        uint32_t lid;       // 4B
     } x;
 };
 
@@ -117,9 +118,12 @@ int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id);
 int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
               const char *msg, const size_t &msg_len, const uint64_t &wr_id);
 
-int save_device_info(struct pingweave_context *ctx);
+int save_device_info(struct pingweave_context *ctx,
+                     std::shared_ptr<spdlog::logger> logger);
 // for testing
-int load_device_info(union rdma_addr *dst_addr, const std::string &filepath);
+int load_device_info(union rdma_addr *dst_addr,
+                     std::shared_ptr<spdlog::logger> logger,
+                     const std::string &filepath);
 
 std::set<std::string> get_all_local_ips();
 

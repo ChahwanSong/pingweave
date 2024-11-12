@@ -33,8 +33,9 @@ bool handle_ping_message(struct pingweave_context* ctx,
     ping_msg.x.time = cqe_time;
 
     // For debugging
-    logger->debug("  -> id: {}, gid: {}, qpn: {}, time: {}", ping_msg.x.pingid,
-                  parsed_gid(&ping_msg.x.gid), ping_msg.x.qpn, ping_msg.x.time);
+    logger->debug("  -> id: {}, gid: {}, lid: {}, qpn: {}, time: {}",
+                  ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                  ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
 
     if (!server_queue->try_enqueue(ping_msg)) {
         logger->error("Failed to enqueue ping message");
@@ -57,17 +58,18 @@ bool process_pong_cqe(struct pingweave_context* ctx_tx,
         pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
             ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
         logger->debug(
-            "SEND post with ACK message pingid: {} to qpn: {}, gid: {}, delay: "
-            "{}",
+            "SEND post with ACK message pingid: {} to qpn: {}, gid: {}, lid: "
+            "{}, delay: {}",
             pong_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
-            pong_msg.x.server_delay);
+            ping_msg.x.lid, pong_msg.x.server_delay);
 
         union rdma_addr dst_addr;
         dst_addr.x.gid = ping_msg.x.gid;
+        dst_addr.x.lid = ping_msg.x.lid;
         dst_addr.x.qpn = ping_msg.x.qpn;
 
         /**
-         * Small jittering to prevent buffer override at client-side.
+         * NOTE: Small jittering to prevent buffer override at client-side.
          * This can happen as we use RDMA UC communication.
          **/
         std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -247,9 +249,9 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
         if (server_queue->try_dequeue(ping_msg)) {
             logger->debug(
                 "Internal queue received a ping_msg - pingid: {}, qpn: {}, "
-                "gid: {}, ping arrival time: {}",
+                "gid: {}, lid: {}, ping arrival time: {}",
                 ping_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
-                ping_msg.x.time);
+                ping_msg.x.lid, ping_msg.x.time);
 
             // (1) Store in table
             if (!pong_table.insert(ping_msg.x.pingid, ping_msg)) {
@@ -265,12 +267,15 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
 
             union rdma_addr dst_addr;
             dst_addr.x.gid = ping_msg.x.gid;
+            dst_addr.x.lid = ping_msg.x.lid;
             dst_addr.x.qpn = ping_msg.x.qpn;
 
             // send PONG message
             logger->debug(
-                "SEND post with PONG message of pingid: {} to qpn: {}, gid: {}",
-                pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid));
+                "SEND post with PONG message of pingid: {} to qpn: {}, gid: "
+                "{}, lid: {}",
+                pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid),
+                dst_addr.x.lid);
             if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                           pong_msg.x.pingid)) {
                 if (check_log(ctx_tx->log_msg)) {
@@ -402,8 +407,8 @@ void rdma_server(const std::string& ipv4) {
         server_logger->error("Failed to make RX device info: {}", ipv4);
         throw std::runtime_error("make_ctx failed.");
     }
-    if (save_device_info(&ctx_rx)) {
-        server_logger->error(ctx_rx.log_msg);
+    if (save_device_info(&ctx_rx, server_logger)) {
+        server_logger->error("Failed to save device info: {}", ipv4);
         throw std::runtime_error("save_device_info failed.");
     }
 

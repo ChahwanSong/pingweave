@@ -21,7 +21,8 @@ const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
 const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
-const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
+const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE =
+    spdlog::level::debug;
 
 std::shared_ptr<spdlog::logger> initialize_custom_logger(
     const std::string &logname, enum spdlog::level::level_enum log_level,

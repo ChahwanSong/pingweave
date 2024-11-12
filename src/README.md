@@ -18,3 +18,8 @@
     - Event-driven & small jittering 으로 해결
 - spdlog의 logger loading latency 이슈
     - logname 말고 Logger 를 패스하게 함.
+- infiniband support
+    - LID 포함 (GID, LID, QPN) 시키기 -> 타입 string, string, integer 캐스팅.
+- Traffic class = 3
+    - post_send() 의 Grh 에 설정
+-

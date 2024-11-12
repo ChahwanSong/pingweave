@@ -14,7 +14,7 @@ class MsgScheduler {
     }
     ~MsgScheduler() {}
 
-    int next(std::tuple<std::string, uint32_t, std::string>& result) {
+    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
         auto now = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
             now - last_access_time);
@@ -45,16 +45,18 @@ class MsgScheduler {
     void print() const {
         for (const auto& entry : addressInfo) {
             std::string ip = std::get<0>(entry);
-            uint32_t qpn = std::get<1>(entry);
-            std::string gid = std::get<2>(entry);
+            std::string gid = std::get<1>(entry);
+            uint32_t lid = std::get<2>(entry);
+            uint32_t qpn = std::get<3>(entry);
 
-            logger->info("IP: {}, GID: {}, QPN: {}", ip, gid, qpn);
+            logger->info("IP: {}, GID: {}, LID: {}, QPN: {}", ip, gid, lid,
+                         qpn);
         }
     }
 
    private:
-    std::vector<std::tuple<std::string, uint32_t, std::string>>
-        addressInfo;  // Vector to store (IP, GID, QPN)
+    std::vector<std::tuple<std::string, std::string, uint32_t, uint32_t>>
+        addressInfo;  // Vector to store (IP, GID, LID, QPN)
     uint64_t pingid;
     std::string ipaddr;
     size_t addr_idx;
@@ -84,7 +86,7 @@ class MsgScheduler {
                                 relevantIps.push_back(
                                     targetIp.as<std::string>());
                             }
-                            break;
+                            break;  // move to next group
                         }
                     }
                 }
@@ -101,9 +103,10 @@ class MsgScheduler {
                 if (std::find(relevantIps.begin(), relevantIps.end(), ip) !=
                     relevantIps.end()) {
                     std::string gid = it.second[0].as<std::string>();
-                    uint32_t qpn = it.second[1].as<uint32_t>();
+                    uint32_t lid = it.second[1].as<uint32_t>();
+                    uint32_t qpn = it.second[2].as<uint32_t>();
 
-                    addressInfo.emplace_back(ip, qpn, gid);
+                    addressInfo.emplace_back(ip, gid, lid, qpn);
                 }
             }
 
@@ -113,7 +116,7 @@ class MsgScheduler {
             if (!addressInfo.empty()) {
                 inter_ping_interval_us = PING_INTERVAL_US / addressInfo.size();
             } else {
-                inter_ping_interval_us = 1000;
+                inter_ping_interval_us = 1000000;  // if nothing to send
             }
 
             logger->debug("Interval btw ping: {} microseconds",

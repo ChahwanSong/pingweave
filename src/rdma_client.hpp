@@ -240,32 +240,35 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
 
 void client_tx_thread(const std::string& ipv4, const std::string& logname,
                       PingInfoMap* ping_table, struct pingweave_context* ctx_tx,
-                      const union ibv_gid& rx_gid, const uint32_t& rx_qpn) {
+                      const union ibv_gid& rx_gid, const uint32_t& rx_lid,
+                      const uint32_t& rx_qpn) {
     auto logger = spdlog::get(logname);
     logger->info("Starting TX thread after 1 second (Thead ID: {})...",
                  get_thread_id());
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    uint64_t ping_id = PING_ID_INIT;
+    uint64_t ping_id = PING_ID_INIT;  // start with a large number (> 100)
     MsgScheduler scheduler(ipv4, logname);
 
     try {
         while (true) {
             // Retrieve the next destination for sending
-            std::tuple<std::string, uint32_t, std::string> dst_info;
+            std::tuple<std::string, std::string, uint32_t, uint32_t> dst_info;
             if (scheduler.next(dst_info)) {
-                const auto& [dst_ip, dst_qpn, dst_gid_str] = dst_info;
+                const auto& [dst_ip, dst_gid_str, dst_lid, dst_qpn] = dst_info;
 
                 // Set the destination address
                 union rdma_addr dst_addr = {};
                 dst_addr.x.qpn = dst_qpn;
                 wire_gid_to_gid(dst_gid_str.c_str(), &dst_addr.x.gid);
+                dst_addr.x.lid = dst_lid;
 
                 // Create the PING message
                 union ping_msg_t msg = {};
                 msg.x.pingid = ping_id++;
                 msg.x.qpn = rx_qpn;
                 msg.x.gid = rx_gid;
+                msg.x.lid = rx_lid;
 
                 if (msg.x.pingid < PING_ID_INIT) {
                     logger->error("Ping ID must be at least {}. Current: {}",
@@ -278,7 +281,7 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 uint64_t send_time_steady = get_current_timestamp_steady();
                 if (!ping_table->insert(
                         msg.x.pingid,
-                        {msg.x.pingid, msg.x.qpn, msg.x.gid, dst_ip,
+                        {msg.x.pingid, msg.x.qpn, msg.x.gid, msg.x.lid, dst_ip,
                          send_time_system, send_time_steady, 0, 0,
                          PINGWEAVE_MASK_INIT})) {
                     logger->warn("Failed to insert ping ID {} into ping_table.",
@@ -287,9 +290,10 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
                 // Send the PING message
                 logger->debug(
-                    "Sending PING message (ping ID: {}, QPN: {}, GID: {}), "
+                    "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
+                    "{}), "
                     "time: {}",
-                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid),
+                    msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
                     send_time_steady);
                 if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
                               msg.x.pingid)) {
@@ -470,7 +474,8 @@ void rdma_client(const std::string& ipv4) {
 
     // Start the TX thread
     std::thread tx_thread(client_tx_thread, ipv4, client_logname, &ping_table,
-                          &ctx_tx, ctx_rx.gid, ctx_rx.qp->qp_num);
+                          &ctx_tx, ctx_rx.gid, ctx_rx.portinfo.lid,
+                          ctx_rx.qp->qp_num);
 
     // termination
     if (tx_thread.joinable()) {

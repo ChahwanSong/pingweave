@@ -6,11 +6,12 @@
 #include <cstdint>
 
 union ping_msg_t {
-    char raw[36];
+    char raw[40];
     struct {
         uint64_t pingid;    // 8B
         uint32_t qpn;       // 4B
         union ibv_gid gid;  // 16B
+        uint32_t lid;       // 4B
         uint64_t time;      // 8B
     } x;
 };

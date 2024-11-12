@@ -80,12 +80,14 @@ async def send_gid_files(ip, port):
         ):  # Check file name is IP address
             with open(filepath, "r") as file:
                 lines = file.read().splitlines()
-                if len(lines) == 3:
-                    gid, qpn, times = lines
+                if len(lines) == 4:
+                    gid, lid, qpn, times = lines
                     ip_address = filename
 
                     # send POST to server
-                    data_to_send = f"POST /address\n{ip_address}\n{gid}\n{qpn}\n{times}"
+                    data_to_send = (
+                        f"POST /address\n{ip_address}\n{gid}\n{lid}\n{qpn}\n{times}"
+                    )
                     try:
                         reader, writer = await asyncio.open_connection(ip, port)
                         writer.write(data_to_send.encode())
@@ -97,7 +99,7 @@ async def send_gid_files(ip, port):
                         await writer.wait_closed()
                     except Exception as e:
                         logger.error(
-                            f"Failed to send POST gid address for {ip_address}: {e}"
+                            f"Failed to send POST gid/lid address for {ip_address}: {e}"
                         )
 
 

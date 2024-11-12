@@ -26,7 +26,7 @@ DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 
 # Variables to save pinglist
 pinglist_in_memory = {}
-address_store = {}  # ip -> (gid, qpn)
+address_store = {}  # ip -> (gid, lid, qpn)
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()
 
@@ -113,18 +113,18 @@ async def handle_client(reader, writer):
 
         elif request.startswith(b"POST /address"):
             content = request.decode().splitlines()[1:]  # 첫 줄 무시
-            if len(content) == 4:  # IP, GID, QPN, datetime
-                ip_address, gid, qpn, dtime = content
+            if len(content) == 5:  # IP, GID, LID, QPN, datetime
+                ip_address, gid, lid, qpn, dtime = content
 
                 async with address_store_lock:  # address_store 업데이트에 대한 잠금
-                    address_store[ip_address] = [gid, int(qpn)]
+                    address_store[ip_address] = [gid, lid, int(qpn)]
                     logger.info(
                         f"(RECV) POST from {client_ip}:{client_port} and updated the store."
                     )
 
                     if len(address_store) > 10000:
                         logger.error(
-                            f"Too many registered ip->gid entries: {len(address_store)}"
+                            f"Too many registered ip->(gid,lid) entries: {len(address_store)}"
                         )
                         logger.critical(
                             "Clean up the address_store. Check your config."

@@ -122,7 +122,7 @@ int get_context_by_ip(struct pingweave_context *ctx) {
 int find_active_port(struct pingweave_context *ctx) {
     ibv_device_attr device_attr;
     if (ibv_query_device(ctx->context, &device_attr)) {
-        std::cerr << "Failed to query device" << std::endl;
+        fprintf(stderr, "Failed to query device");
         return -1;
     }
 
@@ -141,15 +141,15 @@ int find_active_port(struct pingweave_context *ctx) {
     return -1;
 }
 
-int save_device_info(struct pingweave_context *ctx) {
+int save_device_info(struct pingweave_context *ctx,
+                     std::shared_ptr<spdlog::logger> logger) {
     const std::string directory = get_source_directory() + DIR_UPLOAD_PATH;
     struct stat st = {0};
 
     if (stat(directory.c_str(), &st) == -1) {
         // create a directory if not exists
         if (mkdir(directory.c_str(), 0744) != 0) {
-            append_log(ctx->log_msg, "Cannot create a directory %s\n",
-                       directory.c_str());
+            logger->error("Cannot create a directory {}", directory);
             return 1;
         }
     }
@@ -160,25 +160,23 @@ int save_device_info(struct pingweave_context *ctx) {
     // 3. save (overwrite)
     std::ofstream outfile(filename);
     if (!outfile.is_open()) {
-        append_log(ctx->log_msg, "Cannot open a file %s (%s)\n",
-                   filename.c_str(), strerror(errno));
+        logger->error("Cannot open a file {} ({})", filename, strerror(errno));
         return 1;
     }
 
     // 4. get a current time
     std::string now = get_current_timestamp_string();
 
-    // 5. save as lines (GID, QPN, TIME)
+    // 5. save as lines (GID, LID, QPN, TIME)
     outfile << ctx->wired_gid << "\n"
-            << ctx->qp->qp_num
-            << "\n"
-            // << ctx->portinfo.lid << "\n"
-            << now;  // GID, QPN, TIME
+            << ctx->portinfo.lid << "\n"
+            << ctx->qp->qp_num << "\n"
+            << now;  // GID, LID, QPN, TIME
 
     // check error
     if (!outfile) {
-        append_log(ctx->log_msg, "Error occued when writing a file %s (%s)\n",
-                   filename.c_str(), strerror(errno));
+        logger->error("Error occued when writing a file {} ({})", filename,
+                      strerror(errno));
         return 1;
     }
 
@@ -187,12 +185,14 @@ int save_device_info(struct pingweave_context *ctx) {
 }
 
 // for testing
-int load_device_info(union rdma_addr *dst_addr, const std::string &filepath) {
-    std::string line, gid, qpn;
+int load_device_info(union rdma_addr *dst_addr,
+                     std::shared_ptr<spdlog::logger> logger,
+                     const std::string &filepath) {
+    std::string line, gid, lid, qpn;
 
     std::ifstream file(filepath);
     if (!file.is_open()) {
-        std::cerr << "Error opening file." << std::endl;
+        logger->error("Error opening file.");
         return 1;
     }
 
@@ -200,7 +200,15 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath) {
     if (std::getline(file, line)) {
         gid = line;
     } else {
-        std::cerr << "Error reading first line." << std::endl;
+        logger->error("Error reading first line.");
+        return 1;
+    }
+
+    // read lid
+    if (std::getline(file, line)) {
+        lid = line;
+    } else {
+        logger->error("Error reading second line.");
         return 1;
     }
 
@@ -208,20 +216,21 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath) {
     if (std::getline(file, line)) {
         qpn = line;
     } else {
-        std::cerr << "Error reading second line." << std::endl;
+        logger->error("Error reading second line.");
         return 1;
     }
 
     file.close();
 
     try {
-        dst_addr->x.qpn = std::stoi(qpn);
         wire_gid_to_gid(gid.c_str(), &dst_addr->x.gid);
+        dst_addr->x.lid = std::stoi(lid);
+        dst_addr->x.qpn = std::stoi(qpn);
     } catch (const std::invalid_argument &e) {
-        std::cerr << "Invalid argument: " << e.what() << std::endl;
+        logger->error("Invalid argument: {}", e.what());
         return 1;
     } catch (const std::out_of_range &e) {
-        std::cerr << "Out of range: " << e.what() << std::endl;
+        logger->error("Out of range: {}", e.what());
         return 1;
     }
     return 0;
@@ -476,7 +485,7 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
     int ret = 0;
     struct ibv_ah_attr ah_attr = {};
     ah_attr.is_global = 0;
-    ah_attr.dlid = 0;
+    ah_attr.dlid = rem_dest.x.lid;
     ah_attr.sl = SERVICE_LEVEL;
     ah_attr.src_path_bits = 0;
     ah_attr.port_num = ctx->active_port;
@@ -486,6 +495,7 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
         ah_attr.grh.hop_limit = 3;
         ah_attr.grh.dgid = rem_dest.x.gid;
         ah_attr.grh.sgid_index = GID_INDEX;
+        ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;
     } else {
         append_log(ctx->log_msg, "PingWeave does not support LID");
         return 1;

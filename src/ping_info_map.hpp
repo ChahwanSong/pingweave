@@ -15,6 +15,7 @@ struct ping_info_t {
     uint64_t pingid;    // ping ID
     uint32_t qpn;       // destination qpn
     ibv_gid gid;        // destination gid
+    uint32_t lid;       // destination lid
     std::string dstip;  // destination IP addr
 
     uint64_t time_ping_send;  // timestamp of PING
@@ -34,6 +35,7 @@ struct ping_info_t {
         pingid = other.pingid;
         qpn = other.qpn;
         gid = other.gid;
+        lid = other.lid;
         dstip = other.dstip;
 
         time_ping_send = other.time_ping_send;
@@ -189,15 +191,15 @@ class PingInfoMap {
             uint64_t server_process_time = ping_info.server_delay;
 
             // logging
-            logger->debug("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
+            logger->trace("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
                           client_process_time, network_rtt,
                           server_process_time);
 
             // sanity check
             if (ping_info.recv_cnt != 3) {
-                logger->warn(
-                    "pingid {} (-> {}) recv count must be 3, but {}. "
-                    "Ignore this.",
+                logger->debug(
+                    "[Corrupted] pingid {} (-> {}) recv count must be 3, but "
+                    "{}. ",
                     ping_info.pingid, ping_info.dstip, ping_info.recv_cnt);
                 remove(ping_info.pingid);
                 return true;
@@ -209,13 +211,13 @@ class PingInfoMap {
                                      ping_info.time_ping_send,
                                      client_process_time, network_rtt,
                                      server_process_time, true})) {
-                logger->warn(
+                logger->debug(
                     "pingid {} (-> {}): Failed to enqueue to result queue",
                     ping_info.pingid, ping_info.dstip);
             }
 
             if (remove(ping_info.pingid)) {  // if failed to remove
-                logger->warn(
+                logger->debug(
                     "Entry for pingid {} does not exist, so cannot remove.",
                     ping_info.pingid);
             }
@@ -274,12 +276,11 @@ class PingInfoMap {
             // remove from map and list
             if (it->second.value.recv_cnt >= 3) {
                 // ignore the case of buffer override
-                logger->warn(
-                    "Pingid {} (-> {}) has recv count {}. Ignore this.",
-                    it->second.value.pingid, it->second.value.dstip,
-                    it->second.value.recv_cnt);
+                logger->debug("[Ignore] Pingid {} (-> {}) has recv count {}.",
+                              it->second.value.pingid, it->second.value.dstip,
+                              it->second.value.recv_cnt);
             } else {
-                logger->warn(
+                logger->debug(
                     "Pingid {} (-> {}) failure with recv cnt {} and bitmap {}.",
                     it->second.value.pingid, it->second.value.dstip,
                     it->second.value.recv_cnt, it->second.value.recv_bitmap);
@@ -289,7 +290,7 @@ class PingInfoMap {
                                          ip2uint(it->second.value.dstip),
                                          it->second.value.time_ping_send, 0, 0,
                                          0, false})) {
-                    logger->warn(
+                    logger->debug(
                         "Failed to enqueue (pingid {}, failed) to result "
                         "thread",
                         it->second.value.pingid);
