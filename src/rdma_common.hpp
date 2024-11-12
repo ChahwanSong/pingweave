@@ -22,11 +22,13 @@
 #include <atomic>  // std::atomic
 #include <cerrno>  // errno
 #include <chrono>
+#include <cstdint>
 #include <cstring>  // strerror
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <string>
@@ -35,10 +37,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include "format.hpp"
 #include "logger.hpp"
 
+// fully-blocking SPSC queue
+typedef moodycamel::BlockingReaderWriterQueue<struct result_msg_t>
+    ClientInternalQueue;
+
 enum {
-    PINGWEAVE_WRID_RECV = 1,
+    PINGWEAVE_WRID_RECV = 11,
     PINGWEAVE_WRID_SEND,
     PINGWEAVE_OPCODE_PONG,
     PINGWEAVE_OPCODE_ACK,
@@ -96,10 +103,6 @@ std::string parsed_gid(union ibv_gid *gid);
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx);
 int get_context_by_ip(struct pingweave_context *ctx);
 
-// clock
-uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
-                                      const uint64_t &mask);
-
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
 
@@ -125,6 +128,11 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 // Utility function: Wait for CQ event and handle it
 bool wait_for_cq_event(const std::string &logname,
                        struct pingweave_context *ctx);
+
+std::string get_thread_id();
+
+// statistics
+result_stat_t calculateStatistics(const std::vector<uint64_t> &delays);
 
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/

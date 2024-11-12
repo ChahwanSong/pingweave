@@ -1,4 +1,7 @@
-logs
-bin
+logs/*
+bin/*
+result/*
+download/*
+upload/*
 .vscode
 src/__pycache__

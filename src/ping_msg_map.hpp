@@ -11,25 +11,6 @@
 
 #include "rdma_common.hpp"
 
-union ping_msg_t {
-    char raw[36];
-    struct {
-        uint64_t pingid;    // 8B
-        uint32_t qpn;       // 4B
-        union ibv_gid gid;  // 16B
-        uint64_t time;      // 8B
-    } x;
-};
-
-union pong_msg_t {
-    char raw[20];
-    struct {
-        uint32_t opcode;        // PONG or ACK
-        uint64_t pingid;        // ping ID
-        uint64_t server_delay;  // server's process delay
-    } x;
-};
-
 class PingMsgMap {
    public:
     using Key = uint64_t;

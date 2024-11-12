@@ -14,7 +14,7 @@
 
 // spdlog
 const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
-const int LOG_FILE_EXTRA_NUM = 0;            // only one rating-log file
+const int LOG_FILE_EXTRA_NUM = 0;            // extra rotate-log files
 const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
 const std::string LOG_RESULT_FORMAT = "%v";
 const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
@@ -23,9 +23,6 @@ const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
 
-// get a absolute path of source directory
-inline std::string get_source_directory() { return SOURCE_DIR; }
-
 std::shared_ptr<spdlog::logger> initialize_custom_logger(
     const std::string &logname, enum spdlog::level::level_enum log_level,
     int file_size, int file_num);
@@ -33,6 +30,9 @@ std::shared_ptr<spdlog::logger> initialize_custom_logger(
 std::shared_ptr<spdlog::logger> initialize_result_logger(
     const std::string &logname, enum spdlog::level::level_enum log_level,
     int file_size, int file_num);
+
+// get a absolute path of source directory
+inline std::string get_source_directory() { return SOURCE_DIR; }
 
 // check log message
 inline bool check_log(std::string &ctx_log) { return !ctx_log.empty(); }

@@ -44,7 +44,7 @@ bool handle_ping_message(const std::string& logname,
 
 // Utility function: Process PONG CQE
 bool process_pong_cqe(const std::string& logname,
-                      struct pingweave_context& ctx_tx, struct ibv_wc& wc,
+                      struct pingweave_context* ctx_tx, struct ibv_wc& wc,
                       uint64_t cqe_time, PingMsgMap& pong_table) {
     spdlog::get(logname)->debug("-> PONG's pingID: {}", wc.wr_id);
     union ping_msg_t ping_msg = {};
@@ -54,7 +54,7 @@ bool process_pong_cqe(const std::string& logname,
         pong_msg.x.opcode = PINGWEAVE_OPCODE_ACK;
         pong_msg.x.pingid = wc.wr_id;
         pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
-            ping_msg.x.time, cqe_time, ctx_tx.completion_timestamp_mask);
+            ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
         spdlog::get(logname)->debug(
             "SEND post with ACK message pingid: {} to qpn: {}, gid: {}, delay: "
             "{}",
@@ -71,10 +71,10 @@ bool process_pong_cqe(const std::string& logname,
          **/
         std::this_thread::sleep_for(std::chrono::microseconds(10));
 
-        if (post_send(&ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
+        if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                       PINGWEAVE_WRID_SEND)) {
-            if (check_log(ctx_tx.log_msg)) {
-                spdlog::get(logname)->error(ctx_tx.log_msg);
+            if (check_log(ctx_tx->log_msg)) {
+                spdlog::get(logname)->error(ctx_tx->log_msg);
             }
             return false;
         }
@@ -95,7 +95,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                       ServerInternalQueue* server_queue,
                       struct pingweave_context* ctx_rx) {
     auto logger = spdlog::get(logname);
-    logger->info("Running RX thread (pid: {})...", getpid());
+    logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     try {
         // Initial RECV WR posting
@@ -103,9 +103,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             throw std::runtime_error("Initial RECV post failed");
         }
 
-        /**
-         * IMPORTANT: Use event-driven polling
-         */
+        /** IMPORTANT: Use event-driven polling to reduce CPU overhead */
         // Register for CQ event notifications
         if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             logger->error("Couldn't register CQE notification");
@@ -227,39 +225,13 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
     }
 }
 
-// RDMA server main function
-void rdma_server(const std::string& ipv4) {
-    // Initialize logger
-    spdlog::drop_all();
-    const std::string logname = "rdma_server_" + ipv4;
-    auto logger = initialize_custom_logger(logname, LOG_LEVEL_SERVER,
-                                           LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+void server_tx_thread(const std::string& ipv4, const std::string& logname,
+                      ServerInternalQueue* server_queue,
+                      struct pingweave_context* ctx_tx) {
+    auto logger = spdlog::get(logname);
 
-    // Create internal queue
-    ServerInternalQueue server_queue(QUEUE_SIZE);
-
-    // Initialize RDMA context
-    struct pingweave_context ctx_tx, ctx_rx;
-    if (make_ctx(&ctx_tx, ipv4, logname, false)) {
-        logger->error("Failed to make TX device info: {}", ipv4);
-        throw std::runtime_error("make_ctx failed.");
-    }
-
-    if (make_ctx(&ctx_rx, ipv4, logname, true)) {
-        logger->error("Failed to make RX device info: {}", ipv4);
-        throw std::runtime_error("make_ctx failed.");
-    }
-    if (save_device_info(&ctx_rx)) {
-        logger->error(ctx_rx.log_msg);
-        throw std::runtime_error("save_device_info failed.");
-    }
-
-    // Start RX thread
-    std::thread rx_thread(server_rx_thread, ipv4, logname, &server_queue,
-                          &ctx_rx);
-
-    // Main thread loop - handle messages
-    logger->info("Running main (TX) thread (pid: {})...", getpid());
+    // TX thread loop - handle messages
+    logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
     // Create the table (entry timeout = 1 second)
     PingMsgMap pong_table(1);
@@ -273,7 +245,7 @@ void rdma_server(const std::string& ipv4) {
 
     while (true) {
         // Receive and process PING message from internal queue
-        if (server_queue.try_dequeue(ping_msg)) {
+        if (server_queue->try_dequeue(ping_msg)) {
             logger->debug(
                 "Internal queue received a ping_msg - pingid: {}, qpn: {}, "
                 "gid: {}, ping arrival time: {}",
@@ -301,10 +273,10 @@ void rdma_server(const std::string& ipv4) {
             spdlog::get(logname)->debug(
                 "SEND post with PONG message of pingid: {} to qpn: {}, gid: {}",
                 pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid));
-            if (post_send(&ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
+            if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                           pong_msg.x.pingid)) {
-                if (check_log(ctx_tx.log_msg)) {
-                    spdlog::get(logname)->error(ctx_tx.log_msg);
+                if (check_log(ctx_tx->log_msg)) {
+                    spdlog::get(logname)->error(ctx_tx->log_msg);
                 }
                 throw std::runtime_error("SEND PONG post failed");
             }
@@ -315,20 +287,20 @@ void rdma_server(const std::string& ipv4) {
          * Otherwise, getting msg from server_queue will be blocked.
          */
         // Capture and process CQE
-        if (ctx_tx.rnic_hw_ts) {
+        if (ctx_tx->rnic_hw_ts) {
             // Poll CQE when using RNIC timestamping
             struct ibv_poll_cq_attr attr = {};
-            ret = ibv_start_poll(ctx_tx.cq_s.cq_ex, &attr);
+            ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
             bool has_events = false;
 
             while (!ret) {
                 has_events = true;
 
                 // Extract WC information
-                wc.status = ctx_tx.cq_s.cq_ex->status;
-                wc.wr_id = ctx_tx.cq_s.cq_ex->wr_id;
-                wc.opcode = ibv_wc_read_opcode(ctx_tx.cq_s.cq_ex);
-                cqe_time = ibv_wc_read_completion_ts(ctx_tx.cq_s.cq_ex);
+                wc.status = ctx_tx->cq_s.cq_ex->status;
+                wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
+                wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
+                cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
 
                 // Check WC status and handle
                 if (wc.status == IBV_WC_SUCCESS) {
@@ -360,10 +332,10 @@ void rdma_server(const std::string& ipv4) {
                 }
 
                 // Poll next event
-                ret = ibv_next_poll(ctx_tx.cq_s.cq_ex);
+                ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
             }
             if (has_events) {
-                ibv_end_poll(ctx_tx.cq_s.cq_ex);
+                ibv_end_poll(ctx_tx->cq_s.cq_ex);
             } else {  // nothing to poll
                 // to minize CPU overhead for polling
                 std::this_thread::sleep_for(std::chrono::microseconds(20));
@@ -371,7 +343,7 @@ void rdma_server(const std::string& ipv4) {
             }
         } else {
             // Poll CQE when using application-level timestamping
-            ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
+            ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
 
             if (!ret) {  // nothing to poll
                 // to minize CPU overhead for polling
@@ -410,13 +382,53 @@ void rdma_server(const std::string& ipv4) {
                 }
 
                 // Poll next event
-                ret = ibv_poll_cq(pingweave_cq(&ctx_tx), 1, &wc);
+                ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
             }
         }
     }
+}
 
-    // Handle RX thread termination
+// RDMA server main function
+void rdma_server(const std::string& ipv4) {
+    // Initialize logger
+    const std::string server_logname = "rdma_server_" + ipv4;
+    auto server_logger = initialize_custom_logger(
+        server_logname, LOG_LEVEL_SERVER, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    server_logger->info("RDMA Server is running on pid {}", getpid());
+
+    // Create internal queue
+    ServerInternalQueue server_queue(QUEUE_SIZE);
+
+    // Initialize RDMA context
+    struct pingweave_context ctx_tx, ctx_rx;
+    if (make_ctx(&ctx_tx, ipv4, server_logname, false)) {
+        server_logger->error("Failed to make TX device info: {}", ipv4);
+        throw std::runtime_error("make_ctx failed.");
+    }
+
+    if (make_ctx(&ctx_rx, ipv4, server_logname, true)) {
+        server_logger->error("Failed to make RX device info: {}", ipv4);
+        throw std::runtime_error("make_ctx failed.");
+    }
+    if (save_device_info(&ctx_rx)) {
+        server_logger->error(ctx_rx.log_msg);
+        throw std::runtime_error("save_device_info failed.");
+    }
+
+    // Start RX thread
+    std::thread rx_thread(server_rx_thread, ipv4, server_logname, &server_queue,
+                          &ctx_rx);
+
+    // Start TX thread
+    std::thread tx_thread(server_tx_thread, ipv4, server_logname, &server_queue,
+                          &ctx_tx);
+
+    // termination
     if (rx_thread.joinable()) {
         rx_thread.join();
+    }
+
+    if (tx_thread.joinable()) {
+        tx_thread.join();
     }
 }

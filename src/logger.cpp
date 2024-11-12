@@ -10,7 +10,7 @@ std::shared_ptr<spdlog::logger> initialize_custom_logger(
             file_size, file_num);
         logger->set_pattern(LOG_FORMAT);
         logger->set_level(log_level);
-        logger->flush_on(spdlog::level::info); /** TODO: */
+        logger->flush_on(spdlog::level::info);
         logger->info("Logger initialization (logname: {}, PID: {})", logname,
                      getpid());
     }
@@ -28,7 +28,7 @@ std::shared_ptr<spdlog::logger> initialize_result_logger(
             file_size, file_num);
         logger->set_pattern(LOG_RESULT_FORMAT);
         logger->set_level(log_level);
-        // logger->flush_on(log_level); /** TODO: */
+        logger->flush_on(log_level); /** TODO: */
         logger->debug("Result logger initialization (logname: {}, PID: {})",
                       logname, getpid());
     }

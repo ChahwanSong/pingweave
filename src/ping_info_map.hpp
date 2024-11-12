@@ -11,27 +11,6 @@
 
 #include "rdma_common.hpp"
 
-// result of ping
-struct result_info_t {
-    uint64_t pingid;
-    uint32_t dstip;
-
-    uint64_t time_ping_send;
-    uint64_t client_delay;
-    uint64_t network_delay;
-    uint64_t server_delay;
-    uint32_t success;  // 1: success, 0: failure
-};
-
-// fully-blocking SPSC queue
-typedef moodycamel::BlockingReaderWriterQueue<struct result_info_t>
-    ClientInternalQueue;
-
-enum {
-    PINGWEAVE_RECV_PONG = 1,
-    PINGWEAVE_RECV_ACK = 1 << 1,
-};
-
 struct ping_info_t {
     uint64_t pingid;    // ping ID
     uint32_t qpn;       // destination qpn
@@ -44,7 +23,8 @@ struct ping_info_t {
     uint64_t network_delay;  // pure network-side rtt
     uint64_t server_delay;   // server-side process delay
 
-    int recv_bitmap;  // ACK | PONG | CQE
+    uint32_t recv_cnt;  // 3: ping cqe + pong + pong_ack
+    int recv_bitmap;    // ACK | PONG | CQE
 
     // Assignment operator
     ping_info_t& operator=(const ping_info_t& other) {
@@ -61,6 +41,7 @@ struct ping_info_t {
         network_delay = other.network_delay;
         server_delay = other.server_delay;
 
+        recv_cnt = other.recv_cnt;
         recv_bitmap = other.recv_bitmap;
 
         return *this;
@@ -138,8 +119,9 @@ class PingInfoMap {
                 x, it->second.value.network_delay, 9223372036854775807LL);
         }
 
-        // update recv bimap
+        // update recv bimap and cnt
         it->second.value.recv_bitmap |= PINGWEAVE_MASK_RECV_PING_CQE;
+        ++it->second.value.recv_cnt;
 
         // condition to record
         logging(it->second.value);
@@ -167,8 +149,9 @@ class PingInfoMap {
             it->second.value.network_delay = cqe_time;
         }
 
-        // update recv bimap
+        // update recv bimap and cnt
         it->second.value.recv_bitmap |= PINGWEAVE_MASK_RECV_PONG;
+        ++it->second.value.recv_cnt;
 
         // condition to record
         logging(it->second.value);
@@ -185,8 +168,9 @@ class PingInfoMap {
         // update times
         it->second.value.server_delay = server_delay;
 
-        // update recv flag
+        // update recv bitmap and cnt
         it->second.value.recv_bitmap |= PINGWEAVE_MASK_RECV_ACK;
+        ++it->second.value.recv_cnt;
 
         // condition to record
         logging(it->second.value);
@@ -209,6 +193,16 @@ class PingInfoMap {
                           client_process_time, network_rtt,
                           server_process_time);
 
+            // sanity check
+            if (ping_info.recv_cnt != 3) {
+                logger->warn(
+                    "pingid {} (-> {}) recv count must be 3, but {}. "
+                    "Ignore this.",
+                    ping_info.pingid, ping_info.dstip, ping_info.recv_cnt);
+                remove(ping_info.pingid);
+                return true;
+            }
+
             // send out for analysis
             // ping_time, dstip, ping_time, {each entity's process delays}
             if (!q_ptr->try_enqueue({ping_info.pingid, ip2uint(ping_info.dstip),
@@ -216,8 +210,8 @@ class PingInfoMap {
                                      client_process_time, network_rtt,
                                      server_process_time, true})) {
                 logger->warn(
-                    "Failed to enqueue (pingid {}, success) to result thread",
-                    ping_info.pingid);
+                    "pingid {} (-> {}): Failed to enqueue to result queue",
+                    ping_info.pingid, ping_info.dstip);
             }
 
             if (remove(ping_info.pingid)) {  // if failed to remove
@@ -228,7 +222,7 @@ class PingInfoMap {
             return false;  // success
         }
 
-        return true;
+        return true;  // not complete
     }
 
     bool empty() {
@@ -278,16 +272,28 @@ class PingInfoMap {
             }
 
             // remove from map and list
-            logger->info("Remove the old entry: pingid {}, dstip: {}",
-                         it->second.value.pingid, it->second.value.dstip);
-
-            // failure (condition does not match)
-            if (!q_ptr->try_enqueue(
-                    {it->second.value.pingid, ip2uint(it->second.value.dstip),
-                     it->second.value.time_ping_send, 0, 0, 0, false})) {
+            if (it->second.value.recv_cnt >= 3) {
+                // ignore the case of buffer override
                 logger->warn(
-                    "Failed to enqueue (pingid {}, failed) to result thread",
-                    it->second.value.pingid);
+                    "Pingid {} (-> {}) has recv count {}. Ignore this.",
+                    it->second.value.pingid, it->second.value.dstip,
+                    it->second.value.recv_cnt);
+            } else {
+                logger->warn(
+                    "Pingid {} (-> {}) failure with recv cnt {} and bitmap {}.",
+                    it->second.value.pingid, it->second.value.dstip,
+                    it->second.value.recv_cnt, it->second.value.recv_bitmap);
+
+                // failure (packets might be lost)
+                if (!q_ptr->try_enqueue({it->second.value.pingid,
+                                         ip2uint(it->second.value.dstip),
+                                         it->second.value.time_ping_send, 0, 0,
+                                         0, false})) {
+                    logger->warn(
+                        "Failed to enqueue (pingid {}, failed) to result "
+                        "thread",
+                        it->second.value.pingid);
+                }
             }
 
             keyList.pop_front();

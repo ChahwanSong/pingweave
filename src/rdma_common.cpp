@@ -610,12 +610,11 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
     }
 }
 
-
 // Utility function: Wait for CQ event and handle it
-bool wait_for_cq_event(const std::string& logname,
-                       struct pingweave_context* ctx) {
-    struct ibv_cq* ev_cq;
-    void* ev_ctx;
+bool wait_for_cq_event(const std::string &logname,
+                       struct pingweave_context *ctx) {
+    struct ibv_cq *ev_cq;
+    void *ev_ctx;
 
     if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
         spdlog::get(logname)->error("Failed to get cq_event");
@@ -638,4 +637,39 @@ bool wait_for_cq_event(const std::string& logname,
     }
 
     return true;
+}
+
+// thread ID and cast to string
+std::string get_thread_id() {
+    std::stringstream ss;
+    ss << std::this_thread::get_id();
+    return ss.str();
+}
+
+// calculate stats from delay histroy
+result_stat_t calculateStatistics(const std::vector<uint64_t> &delays) {
+    if (delays.empty()) {
+        // 벡터가 비어 있을 때 -1 반환
+        return {static_cast<uint64_t>(-1), static_cast<uint64_t>(-1),
+                static_cast<uint64_t>(-1), static_cast<uint64_t>(-1),
+                static_cast<uint64_t>(-1)};
+    }
+
+    // 평균(mean)
+    uint64_t sum = std::accumulate(delays.begin(), delays.end(), uint64_t(0));
+    uint64_t mean = sum / delays.size();
+
+    // 최대값(max)
+    uint64_t max = *std::max_element(delays.begin(), delays.end());
+
+    // 백분위수를 계산하기 위해 벡터를 정렬
+    std::vector<uint64_t> sorted_delays = delays;
+    std::sort(sorted_delays.begin(), sorted_delays.end());
+
+    // 중간값(50-percentile), 95-percentile, 99-percentile 인덱스 계산
+    uint64_t percentile_50 = sorted_delays[sorted_delays.size() * 50 / 100];
+    uint64_t percentile_95 = sorted_delays[sorted_delays.size() * 95 / 100];
+    uint64_t percentile_99 = sorted_delays[sorted_delays.size() * 99 / 100];
+
+    return {mean, max, percentile_50, percentile_95, percentile_99};
 }

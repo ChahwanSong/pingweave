@@ -23,10 +23,12 @@ const static int CONSUMER_WAIT_TIMEOUT_MS = 1;  // Timeout in milliseconds
 const std::string PREFIX_SHMEM_NAME = "/pingweave_";  // Name of shared memory
 
 // Params for internal message queue btw threads
-const static int QUEUE_SIZE = 1000;
+const static int QUEUE_SIZE = 65536;         // large enough
+const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
 
-// Ping interval
-const static uint64_t PING_INTERVAL_US = 1000;  // microseconds
+// Ping interval / Report interval
+const static uint64_t PING_INTERVAL_US = 500;    // microseconds
+const static uint64_t REPORT_INTERVAL_SEC = 20;  // seconds
 
 // directory
 const std::string DIR_UPLOAD_PATH = "/../upload";

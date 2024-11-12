@@ -196,16 +196,14 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                 // End the polling session
                 ibv_end_poll(ctx_rx->cq_s.cq_ex);
             } else {
-                // nothing to poll. add a small jittering.
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                // nothing to poll
                 return;
             }
         } else {
             ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
 
             if (!ret) {
-                // nothing to poll. add a small jittering.
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                // nothing to poll
                 return;
             }
 
@@ -249,7 +247,8 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                       PingInfoMap* ping_table, struct pingweave_context* ctx_tx,
                       const union ibv_gid& rx_gid, const uint32_t& rx_qpn) {
     auto logger = spdlog::get(logname);
-    logger->info("Starting TX thread after 1 second (PID: {})...", getpid());
+    logger->info("Starting TX thread after 1 second (Thead ID: {})...",
+                 get_thread_id());
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     uint64_t ping_id = PING_ID_INIT;
@@ -315,20 +314,126 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
     }
 }
 
-void client_result_thread(std::shared_ptr<spdlog::logger> logger,
-                          std::string ipv4, ClientInternalQueue* client_queue) {
-    logger->info("Starting result thread (PID: {})...", getpid());
+void client_rx_thread(const std::string& ipv4, const std::string& logname,
+                      PingInfoMap* ping_table,
+                      struct pingweave_context* ctx_rx) {
+    auto logger = spdlog::get(logname);
+    logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
-    struct result_info_t result_info;
+    // Post RECV WRs and register CQ event notifications
+    if (post_recv(ctx_rx, RX_DEPTH, PINGWEAVE_WRID_RECV) < RX_DEPTH) {
+        logger->warn("Failed to post RECV WRs.");
+    }
+
+    // Register for CQ event notifications
+    if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
+        logger->error("Couldn't register CQE notification");
+        throw std::runtime_error("Couldn't register CQE notification");
+    }
+
+    // Start the receive loop
     try {
         while (true) {
-            // fully-blocking
-            client_queue->wait_dequeue(result_info);
-            logger->info("{}, {}, {}, {}, {}, {}, {}",
-                         timestamp_ns_to_string(result_info.time_ping_send),
-                         uint2ip(result_info.dstip), result_info.pingid,
-                         result_info.success, result_info.client_delay,
-                         result_info.network_delay, result_info.server_delay);
+            /** IMPORTANT: Use event-driven polling to reduce CPU overhead. */
+            if (!wait_for_cq_event(logname, ctx_rx)) {  // Wait for CQ event
+                throw std::runtime_error("Failed during CQ event waiting");
+            }
+
+            // Process RX CQEs
+            process_rx_cqe(ctx_rx, ping_table, logname);
+        }
+    } catch (const std::exception& e) {
+        logger->error("Exception in RX thread: {}", e.what());
+    }
+}
+
+void client_result_thread(const std::string& ipv4, const std::string& logname,
+                          const std::string& client_logname,
+                          ClientInternalQueue* client_queue) {
+    auto logger = spdlog::get(logname);
+    spdlog::get(client_logname)
+        ->info("Starting result thread (Thread ID: {})...", get_thread_id());
+
+    // dstip -> result history
+    std::unordered_map<uint32_t, struct result_info_t> dstip2result;
+
+    // msg from RX Thread
+    struct result_msg_t result_msg;
+
+    // result pointer
+    struct result_info_t* info;
+
+    // timer for report
+    auto last_report_time = std::chrono::steady_clock::now();
+
+    /** OUTPUT: (#success, #failure, mean, max, p50, p95, p99) */
+    try {
+        while (true) {
+            // fully-blocking with timeout (1 sec)
+            if (client_queue->wait_dequeue_timed(
+                    result_msg, std::chrono::seconds(WAIT_DEQUEUE_TIME_SEC))) {
+                logger->debug("{}, {}, {}, {}, {}, {}, {}",
+                              timestamp_ns_to_string(result_msg.time_ping_send),
+                              uint2ip(result_msg.dstip), result_msg.pingid,
+                              result_msg.client_delay, result_msg.network_delay,
+                              result_msg.server_delay, result_msg.success);
+                // load a result
+                info = &dstip2result[result_msg.dstip];
+                if (info->ts_start == 0) {
+                    info->ts_start = result_msg.time_ping_send;  // initialize
+                }
+                info->ts_end = result_msg.time_ping_send;
+
+                if (result_msg.success) {  // success
+                    ++info->n_success;
+                    info->client_delays.push_back(result_msg.client_delay);
+                    info->network_delays.push_back(result_msg.network_delay);
+                    info->server_delays.push_back(result_msg.server_delay);
+                } else {  // failure
+                    ++info->n_failure;
+                }
+            }
+
+            // report periodically for every 1 minute
+            auto current_time = std::chrono::steady_clock::now();
+            auto elapsed_time =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    current_time - last_report_time)
+                    .count();
+
+            if (elapsed_time >= REPORT_INTERVAL_SEC) {
+                for (auto& [dstip, result_info] : dstip2result) {
+                    result_stat_t client_stat =
+                        calculateStatistics(result_info.client_delays);
+                    result_stat_t network_stat =
+                        calculateStatistics(result_info.network_delays);
+                    result_stat_t server_stat =
+                        calculateStatistics(result_info.server_delays);
+
+                    // logging
+                    logger->info(
+                        "{},{},{},{},{},Client:{},{},{},{},{},Network:{},{},{},"
+                        "{},{},Server:{},{},{},{},{}",
+                        uint2ip(dstip),
+                        timestamp_ns_to_string(result_info.ts_start),
+                        timestamp_ns_to_string(result_info.ts_end),
+                        result_info.n_success, result_info.n_failure,
+                        client_stat.mean, client_stat.max,
+                        client_stat.percentile_50, client_stat.percentile_95,
+                        client_stat.percentile_99, network_stat.mean,
+                        network_stat.max, network_stat.percentile_50,
+                        network_stat.percentile_95, network_stat.percentile_99,
+                        server_stat.mean, server_stat.max,
+                        server_stat.percentile_50, server_stat.percentile_95,
+                        server_stat.percentile_99);
+                }
+
+                // clear the history
+                dstip2result.clear();
+
+                // update the last report time
+                last_report_time = current_time;
+            }
         }
     } catch (const std::exception& e) {
         logger->error("Exception in result thread: {}", e.what());
@@ -340,15 +445,13 @@ void rdma_client(const std::string& ipv4) {
     const std::string client_logname = "rdma_client_" + ipv4;
     std::shared_ptr<spdlog::logger> client_logger = initialize_custom_logger(
         client_logname, LOG_LEVEL_CLIENT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    client_logger->info("Running main (RX) thread (PID: {})...", getpid());
+    client_logger->info("RDMA Client is running on pid {}", getpid());
 
     // Inter-thread queue
     const std::string result_logname = "rdma_" + ipv4;
     std::shared_ptr<spdlog::logger> result_logger = initialize_result_logger(
         result_logname, LOG_LEVEL_RESULT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     ClientInternalQueue client_queue(QUEUE_SIZE);
-    std::thread result_thread(client_result_thread, result_logger, ipv4,
-                              &client_queue);
 
     // ping table (timeout =  1 second)
     const std::string ping_table_logname = "rdma_table_" + ipv4;
@@ -364,42 +467,24 @@ void rdma_client(const std::string& ipv4) {
         throw std::runtime_error("Failed to initialize RDMA contexts.");
     }
 
+    // Start the Result thread
+    std::thread result_thread(client_result_thread, ipv4, result_logname,
+                              client_logname, &client_queue);
+
+    // Start the RX thread
+    std::thread rx_thread(client_rx_thread, ipv4, client_logname, &ping_table,
+                          &ctx_rx);
+
     // Start the TX thread
     std::thread tx_thread(client_tx_thread, ipv4, client_logname, &ping_table,
                           &ctx_tx, ctx_rx.gid, ctx_rx.qp->qp_num);
 
-    // Post RECV WRs and register CQ event notifications
-    if (post_recv(&ctx_rx, RX_DEPTH, PINGWEAVE_WRID_RECV) < RX_DEPTH) {
-        client_logger->warn("Failed to post RECV WRs.");
-    }
-
-    // Register for CQ event notifications
-    if (ibv_req_notify_cq(pingweave_cq(&ctx_rx), 0)) {
-        client_logger->error("Couldn't register CQE notification");
-        throw std::runtime_error("Couldn't register CQE notification");
-    }
-
-    // Start the receive loop
-    try {
-        while (true) {
-            /**
-             * IMPORTANT: Use event-driven polling.
-             * To reduce CPU overhead.
-             */
-
-            // Wait for CQ event
-            if (!wait_for_cq_event(client_logname, &ctx_rx)) {
-                throw std::runtime_error("Failed during CQ event waiting");
-            }
-
-            // Process RX CQEs
-            process_rx_cqe(&ctx_rx, &ping_table, client_logname);
-        }
-    } catch (const std::exception& e) {
-        client_logger->error("Exception in RX thread: {}", e.what());
-    }
-
+    // termination
     if (tx_thread.joinable()) {
         tx_thread.join();
+    }
+
+    if (result_thread.joinable()) {
+        result_thread.join();
     }
 }
