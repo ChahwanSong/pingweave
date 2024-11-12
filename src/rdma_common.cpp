@@ -402,39 +402,38 @@ int prepare_ctx(struct pingweave_context *ctx) {
 }
 
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-             const std::string &logname, const int &is_rx) {
+             std::shared_ptr<spdlog::logger> logger, const int &is_rx) {
     ctx->log_msg = "";
     ctx->ipv4 = ipv4;
     ctx->is_rx = is_rx;
     if (get_context_by_ip(ctx)) {
         if (check_log(ctx->log_msg)) {
-            spdlog::get(logname)->error(ctx->log_msg);
+            logger->error(ctx->log_msg);
             return 1;
         }
     }
 
     if (init_ctx(ctx)) {  // Failed to initialize context
         if (check_log(ctx->log_msg)) {
-            spdlog::get(logname)->error(ctx->log_msg);
+            logger->error(ctx->log_msg);
         }
         return 1;
     }
 
     if (prepare_ctx(ctx)) {  // Failed to prepare context
         if (check_log(ctx->log_msg)) {
-            spdlog::get(logname)->error(ctx->log_msg);
+            logger->error(ctx->log_msg);
         }
         return 1;
     }
 
     if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
-        spdlog::get(logname)->error("Couldn't request CQ notification");
+        logger->error("Couldn't request CQ notification");
         return 1;
     }
 
     if (ibv_query_gid(ctx->context, ctx->active_port, GID_INDEX, &ctx->gid)) {
-        spdlog::get(logname)->error("Could not get my gid for gid index {}",
-                                    GID_INDEX);
+        logger->error("Could not get my gid for gid index {}", GID_INDEX);
         return 1;
     }
     // sanity check - always use GID
@@ -445,9 +444,8 @@ int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
     inet_ntop(AF_INET6, &ctx->gid, ctx->parsed_gid, sizeof(ctx->parsed_gid));
 
     std::string ctx_send_type = is_rx ? "RX" : "TX";
-    spdlog::get(logname)->info(
-        "[{}] IP: {} has Queue pair with GID: {}, QPN: {}", ctx_send_type, ipv4,
-        ctx->parsed_gid, ctx->qp->qp_num);
+    logger->info("[{}] IP: {} has Queue pair with GID: {}, QPN: {}",
+                 ctx_send_type, ipv4, ctx->parsed_gid, ctx->qp->qp_num);
     return 0;
 }
 
@@ -611,13 +609,13 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
 }
 
 // Utility function: Wait for CQ event and handle it
-bool wait_for_cq_event(const std::string &logname,
-                       struct pingweave_context *ctx) {
+bool wait_for_cq_event(struct pingweave_context *ctx,
+                       std::shared_ptr<spdlog::logger> logger) {
     struct ibv_cq *ev_cq;
     void *ev_ctx;
 
     if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
-        spdlog::get(logname)->error("Failed to get cq_event");
+        logger->error("Failed to get cq_event");
         return false;
     }
 
@@ -626,13 +624,13 @@ bool wait_for_cq_event(const std::string &logname,
 
     // Verify that the event is from the correct CQ
     if (ev_cq != pingweave_cq(ctx)) {
-        spdlog::get(logname)->error("CQ event for unknown CQ");
+        logger->error("CQ event for unknown CQ");
         return false;
     }
 
     // Re-register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
-        spdlog::get(logname)->error("Couldn't register CQE notification");
+        logger->error("Couldn't register CQE notification");
         return false;
     }
 

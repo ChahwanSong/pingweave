@@ -7,23 +7,25 @@
 typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
 
 // Utility function: Post RECV WR
-bool post_recv_wr(const std::string& logname, struct pingweave_context* ctx) {
+bool post_recv_wr(std::shared_ptr<spdlog::logger> logger,
+                  struct pingweave_context* ctx) {
     if (post_recv(ctx, 1, PINGWEAVE_WRID_RECV) == 0) {
-        spdlog::get(logname)->warn("RECV post failed.");
+        logger->warn("RECV post failed.");
         return false;
     }
     return true;
 }
 
 // Utility function: Handle PING message
-bool handle_ping_message(const std::string& logname,
-                         struct pingweave_context* ctx, struct ibv_wc& wc,
-                         uint64_t cqe_time, ServerInternalQueue* server_queue) {
-    spdlog::get(logname)->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
+bool handle_ping_message(struct pingweave_context* ctx,
+                         std::shared_ptr<spdlog::logger> logger,
+                         struct ibv_wc& wc, uint64_t cqe_time,
+                         ServerInternalQueue* server_queue) {
+    logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
 
     // Parse GRH header (for debugging)
     struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(ctx->buf);
-    spdlog::get(logname)->debug("  -> from: {}", parsed_gid(&grh->sgid));
+    logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
 
     // Parse PING message
     union ping_msg_t ping_msg;
@@ -31,22 +33,21 @@ bool handle_ping_message(const std::string& logname,
     ping_msg.x.time = cqe_time;
 
     // For debugging
-    spdlog::get(logname)->debug("  -> id: {}, gid: {}, qpn: {}, time: {}",
-                                ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
-                                ping_msg.x.qpn, ping_msg.x.time);
+    logger->debug("  -> id: {}, gid: {}, qpn: {}, time: {}", ping_msg.x.pingid,
+                  parsed_gid(&ping_msg.x.gid), ping_msg.x.qpn, ping_msg.x.time);
 
     if (!server_queue->try_enqueue(ping_msg)) {
-        spdlog::get(logname)->error("Failed to enqueue ping message");
+        logger->error("Failed to enqueue ping message");
         return false;
     }
     return true;
 }
 
 // Utility function: Process PONG CQE
-bool process_pong_cqe(const std::string& logname,
-                      struct pingweave_context* ctx_tx, struct ibv_wc& wc,
+bool process_pong_cqe(struct pingweave_context* ctx_tx,
+                      std::shared_ptr<spdlog::logger> logger, struct ibv_wc& wc,
                       uint64_t cqe_time, PingMsgMap& pong_table) {
-    spdlog::get(logname)->debug("-> PONG's pingID: {}", wc.wr_id);
+    logger->debug("-> PONG's pingID: {}", wc.wr_id);
     union ping_msg_t ping_msg = {};
     if (pong_table.get(wc.wr_id, ping_msg)) {
         // Create ACK message
@@ -55,7 +56,7 @@ bool process_pong_cqe(const std::string& logname,
         pong_msg.x.pingid = wc.wr_id;
         pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
             ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
-        spdlog::get(logname)->debug(
+        logger->debug(
             "SEND post with ACK message pingid: {} to qpn: {}, gid: {}, delay: "
             "{}",
             pong_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
@@ -74,18 +75,16 @@ bool process_pong_cqe(const std::string& logname,
         if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                       PINGWEAVE_WRID_SEND)) {
             if (check_log(ctx_tx->log_msg)) {
-                spdlog::get(logname)->error(ctx_tx->log_msg);
+                logger->error(ctx_tx->log_msg);
             }
             return false;
         }
     } else {
-        spdlog::get(logname)->warn("pingid {} entry does not exist (expired?)",
-                                   wc.wr_id);
+        logger->warn("pingid {} entry does not exist (expired?)", wc.wr_id);
     }
     // Remove entry from table
     if (!pong_table.remove(wc.wr_id)) {
-        spdlog::get(logname)->warn(
-            "Nothing to remove the id {} from pong_table", wc.wr_id);
+        logger->warn("Nothing to remove the id {} from pong_table", wc.wr_id);
     }
     return true;
 }
@@ -99,7 +98,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
 
     try {
         // Initial RECV WR posting
-        if (!post_recv_wr(logname, ctx_rx)) {
+        if (!post_recv_wr(logger, ctx_rx)) {
             throw std::runtime_error("Initial RECV post failed");
         }
 
@@ -115,7 +114,7 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             logger->debug("Waiting to poll RX RECV CQE...");
 
             // Wait for CQ event
-            if (!wait_for_cq_event(logname, ctx_rx)) {
+            if (!wait_for_cq_event(ctx_rx, logger)) {
                 throw std::runtime_error("Failed during CQ event waiting");
             }
 
@@ -141,14 +140,14 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                     if (wc.status == IBV_WC_SUCCESS) {
                         if (wc.opcode == IBV_WC_RECV) {
                             // handle ping message
-                            if (!handle_ping_message(logname, ctx_rx, wc,
+                            if (!handle_ping_message(ctx_rx, logger, wc,
                                                      cqe_time, server_queue)) {
                                 throw std::runtime_error(
                                     "Failed to handle PING message");
                             }
 
                             // Post next RECV WR
-                            if (!post_recv_wr(logname, ctx_rx)) {
+                            if (!post_recv_wr(logger, ctx_rx)) {
                                 throw std::runtime_error(
                                     "Failed to post next RECV WR");
                             }
@@ -190,14 +189,14 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                     // Check WC status and handle
                     if (wc.status == IBV_WC_SUCCESS) {
                         if (wc.opcode == IBV_WC_RECV) {
-                            if (!handle_ping_message(logname, ctx_rx, wc,
+                            if (!handle_ping_message(ctx_rx, logger, wc,
                                                      cqe_time, server_queue)) {
                                 throw std::runtime_error(
                                     "Failed to handle PING message");
                             }
 
                             // Post next RECV WR
-                            if (!post_recv_wr(logname, ctx_rx)) {
+                            if (!post_recv_wr(logger, ctx_rx)) {
                                 throw std::runtime_error(
                                     "Failed to post next RECV WR");
                             }
@@ -254,9 +253,8 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
 
             // (1) Store in table
             if (!pong_table.insert(ping_msg.x.pingid, ping_msg)) {
-                spdlog::get(logname)->warn(
-                    "Failed to insert pingid {} into pong_table.",
-                    ping_msg.x.pingid);
+                logger->warn("Failed to insert pingid {} into pong_table.",
+                             ping_msg.x.pingid);
             }
 
             // (2) Create and send PONG message
@@ -270,13 +268,13 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
             dst_addr.x.qpn = ping_msg.x.qpn;
 
             // send PONG message
-            spdlog::get(logname)->debug(
+            logger->debug(
                 "SEND post with PONG message of pingid: {} to qpn: {}, gid: {}",
                 pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid));
             if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
                           pong_msg.x.pingid)) {
                 if (check_log(ctx_tx->log_msg)) {
-                    spdlog::get(logname)->error(ctx_tx->log_msg);
+                    logger->error(ctx_tx->log_msg);
                 }
                 throw std::runtime_error("SEND PONG post failed");
             }
@@ -306,10 +304,9 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                 if (wc.status == IBV_WC_SUCCESS) {
                     if (wc.opcode == IBV_WC_SEND) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {
-                            spdlog::get(logname)->debug(
-                                "CQE of ACK, so ignore this");
+                            logger->debug("CQE of ACK, so ignore this");
                         } else {
-                            if (process_pong_cqe(logname, ctx_tx, wc, cqe_time,
+                            if (process_pong_cqe(ctx_tx, logger, wc, cqe_time,
                                                  pong_table)) {
                                 // Successfully processed
                             } else {
@@ -318,16 +315,14 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                             }
                         }
                     } else {
-                        spdlog::get(logname)->error(
-                            "Unexpected opcode: {}",
-                            static_cast<int>(wc.opcode));
+                        logger->error("Unexpected opcode: {}",
+                                      static_cast<int>(wc.opcode));
                         throw std::runtime_error("Unexpected opcode");
                     }
                 } else {
-                    spdlog::get(logname)->warn(
-                        "TX WR failure - status: {}, opcode: {}",
-                        ibv_wc_status_str(wc.status),
-                        static_cast<int>(wc.opcode));
+                    logger->warn("TX WR failure - status: {}, opcode: {}",
+                                 ibv_wc_status_str(wc.status),
+                                 static_cast<int>(wc.opcode));
                     throw std::runtime_error("TX WR failure");
                 }
 
@@ -356,10 +351,9 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                 if (wc.status == IBV_WC_SUCCESS) {
                     if (wc.opcode == IBV_WC_SEND) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {
-                            spdlog::get(logname)->debug(
-                                "CQE of ACK, so ignore this");
+                            logger->debug("CQE of ACK, so ignore this");
                         } else {
-                            if (process_pong_cqe(logname, ctx_tx, wc, cqe_time,
+                            if (process_pong_cqe(ctx_tx, logger, wc, cqe_time,
                                                  pong_table)) {
                                 // Successfully processed
                             } else {
@@ -368,16 +362,14 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                             }
                         }
                     } else {
-                        spdlog::get(logname)->error(
-                            "Unexpected opcode: {}",
-                            static_cast<int>(wc.opcode));
+                        logger->error("Unexpected opcode: {}",
+                                      static_cast<int>(wc.opcode));
                         throw std::runtime_error("Unexpected opcode");
                     }
                 } else {
-                    spdlog::get(logname)->warn(
-                        "TX WR failure - status: {}, opcode: {}",
-                        ibv_wc_status_str(wc.status),
-                        static_cast<int>(wc.opcode));
+                    logger->warn("TX WR failure - status: {}, opcode: {}",
+                                 ibv_wc_status_str(wc.status),
+                                 static_cast<int>(wc.opcode));
                     throw std::runtime_error("TX WR failure");
                 }
 
@@ -401,12 +393,12 @@ void rdma_server(const std::string& ipv4) {
 
     // Initialize RDMA context
     struct pingweave_context ctx_tx, ctx_rx;
-    if (make_ctx(&ctx_tx, ipv4, server_logname, false)) {
+    if (make_ctx(&ctx_tx, ipv4, server_logger, false)) {
         server_logger->error("Failed to make TX device info: {}", ipv4);
         throw std::runtime_error("make_ctx failed.");
     }
 
-    if (make_ctx(&ctx_rx, ipv4, server_logname, true)) {
+    if (make_ctx(&ctx_rx, ipv4, server_logger, true)) {
         server_logger->error("Failed to make RX device info: {}", ipv4);
         throw std::runtime_error("make_ctx failed.");
     }

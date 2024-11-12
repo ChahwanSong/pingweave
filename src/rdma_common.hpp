@@ -111,7 +111,7 @@ struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
 int init_ctx(struct pingweave_context *ctx);
 int prepare_ctx(struct pingweave_context *ctx);
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
-             const std::string &logname, const int &is_rx);
+             std::shared_ptr<spdlog::logger> logger, const int &is_rx);
 
 int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id);
 int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
@@ -126,8 +126,8 @@ std::set<std::string> get_all_local_ips();
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 
 // Utility function: Wait for CQ event and handle it
-bool wait_for_cq_event(const std::string &logname,
-                       struct pingweave_context *ctx);
+bool wait_for_cq_event(struct pingweave_context *ctx,
+                       std::shared_ptr<spdlog::logger> logger);
 
 std::string get_thread_id();
 

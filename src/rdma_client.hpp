@@ -9,9 +9,8 @@
 void handle_received_message(pingweave_context* ctx_rx,
                              const union pong_msg_t& pong_msg,
                              PingInfoMap* ping_table, uint64_t recv_time,
-                             uint64_t cqe_time, const std::string& logname) {
-    auto logger = spdlog::get(logname);
-
+                             uint64_t cqe_time,
+                             std::shared_ptr<spdlog::logger> logger) {
     if (pong_msg.x.opcode == PINGWEAVE_OPCODE_PONG) {
         // Handle PONG message
         logger->debug("[CQE] Recv PONG ({}): recv_time {}, cqe_time:{}",
@@ -39,13 +38,13 @@ void handle_received_message(pingweave_context* ctx_rx,
 
 // Function to initialize RDMA contexts
 bool initialize_contexts(pingweave_context& ctx_tx, pingweave_context& ctx_rx,
-                         const std::string& ipv4, const std::string& logname) {
-    auto logger = spdlog::get(logname);
-    if (make_ctx(&ctx_tx, ipv4, logname, false)) {
+                         const std::string& ipv4,
+                         std::shared_ptr<spdlog::logger> logger) {
+    if (make_ctx(&ctx_tx, ipv4, logger, false)) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
         return true;
     }
-    if (make_ctx(&ctx_rx, ipv4, logname, true)) {
+    if (make_ctx(&ctx_rx, ipv4, logger, true)) {
         logger->error("Failed to create RX context for IP: {}", ipv4);
         return true;
     }
@@ -54,9 +53,7 @@ bool initialize_contexts(pingweave_context& ctx_tx, pingweave_context& ctx_rx,
 
 // Function to process TX CQEs
 void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
-                    const std::string& logname) {
-    auto logger = spdlog::get(logname);
-
+                    std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
@@ -142,9 +139,7 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
 
 // Function to process RX CQEs
 void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
-                    const std::string& logname) {
-    auto logger = spdlog::get(logname);
-
+                    std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0, recv_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
@@ -175,7 +170,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                 if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
                     // Handle the received message (PONG or ACK)
                     handle_received_message(ctx_rx, pong_msg, ping_table,
-                                            recv_time, cqe_time, logname);
+                                            recv_time, cqe_time, logger);
 
                     // Post the next RECV WR
                     if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
@@ -219,7 +214,7 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                 if (wc.status == IBV_WC_SUCCESS && wc.opcode == IBV_WC_RECV) {
                     // Handle the received message (PONG or ACK)
                     handle_received_message(ctx_rx, pong_msg, ping_table,
-                                            recv_time, cqe_time, logname);
+                                            recv_time, cqe_time, logger);
 
                     // Post the next RECV WR
                     if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) == 0) {
@@ -302,11 +297,9 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 }
             }
 
-            /**
-             * NOTE: Client's TX loop must be non-blocking.
-             */
+            /** NOTE: Client's TX loop must be non-blocking. */
             // Process TX CQEs
-            process_tx_cqe(ctx_tx, ping_table, logname);
+            process_tx_cqe(ctx_tx, ping_table, logger);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
@@ -335,12 +328,12 @@ void client_rx_thread(const std::string& ipv4, const std::string& logname,
     try {
         while (true) {
             /** IMPORTANT: Use event-driven polling to reduce CPU overhead. */
-            if (!wait_for_cq_event(logname, ctx_rx)) {  // Wait for CQ event
+            if (!wait_for_cq_event(ctx_rx, logger)) {  // Wait for CQ event
                 throw std::runtime_error("Failed during CQ event waiting");
             }
 
             // Process RX CQEs
-            process_rx_cqe(ctx_rx, ping_table, logname);
+            process_rx_cqe(ctx_rx, ping_table, logger);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in RX thread: {}", e.what());
@@ -463,7 +456,7 @@ void rdma_client(const std::string& ipv4) {
     // Initialize RDMA contexts
     pingweave_context ctx_tx = {};
     pingweave_context ctx_rx = {};
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logname)) {
+    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logger)) {
         throw std::runtime_error("Failed to initialize RDMA contexts.");
     }
 
