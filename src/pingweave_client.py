@@ -3,6 +3,7 @@ import subprocess
 import sys
 import asyncio  # default library
 import configparser  # default library
+import socket
 
 try:
     import yaml
@@ -13,16 +14,12 @@ except ImportError:
 
 from logger import initialize_pinglist_logger
 
-# parameter
-COLLECT_PERIOD_SECONDS = 10
-LOAD_PINGLIST_SECONDS = 5
-
 # absolute paths of this script and pinglist.yaml
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
-DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")  # for all
+PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")  # for server
+UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")  # for client
+DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
 
 # ConfigParser object
 config = configparser.ConfigParser()
@@ -30,7 +27,9 @@ config.read(CONFIG_PATH)
 
 control_host = config["controller"]["host"]
 control_port = config["controller"]["port"]
-logger = initialize_pinglist_logger(control_host, "client")
+interval_download_pinglist_sec = int(config["param"]["interval_download_pinglist_sec"])
+interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
+logger = initialize_pinglist_logger(socket.gethostname(), "client")
 
 
 async def fetch_data(ip, port, data_type: str):
@@ -92,7 +91,7 @@ async def send_gid_files(ip, port):
                         reader, writer = await asyncio.open_connection(ip, port)
                         writer.write(data_to_send.encode())
                         await writer.drain()
-                        logger.info(
+                        logger.debug(
                             f"Sent POST address for {ip_address} to the server."
                         )
                         writer.close()
@@ -110,7 +109,9 @@ async def main():
             fetch_data(control_host, control_port, "pinglist"),
             fetch_data(control_host, control_port, "address_store"),
         )
-        await asyncio.sleep(COLLECT_PERIOD_SECONDS)  # sleep to prevent high CPU usage
+        await asyncio.sleep(
+            interval_download_pinglist_sec
+        )  # sleep to prevent high CPU usage
 
 
 if __name__ == "__main__":

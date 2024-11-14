@@ -28,7 +28,7 @@ bool handle_ping_message(struct pingweave_context* ctx,
     logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
 
     // Parse PING message
-    union ping_msg_t ping_msg;
+    union ping_msg_t ping_msg = {0};
     std::memcpy(&ping_msg, ctx->buf + GRH_SIZE, sizeof(ping_msg_t));
     ping_msg.x.time = cqe_time;
 
@@ -49,7 +49,7 @@ bool process_pong_cqe(struct pingweave_context* ctx_tx,
                       std::shared_ptr<spdlog::logger> logger, struct ibv_wc& wc,
                       uint64_t cqe_time, PingMsgMap& pong_table) {
     logger->debug("-> PONG's pingID: {}", wc.wr_id);
-    union ping_msg_t ping_msg = {};
+    union ping_msg_t ping_msg = {0};
     if (pong_table.get(wc.wr_id, ping_msg)) {
         // Create ACK message
         union pong_msg_t pong_msg = {};
@@ -103,23 +103,23 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
         if (!post_recv_wr(logger, ctx_rx)) {
             throw std::runtime_error("Initial RECV post failed");
         }
-
+#ifdef SERVER_RX_EVENT_DRIVEN
         /** IMPORTANT: Use event-driven polling to reduce CPU overhead */
         // Register for CQ event notifications
         if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             logger->error("Couldn't register CQE notification");
             throw std::runtime_error("Couldn't register CQE notification");
         }
+#endif
 
         // Polling loop
         while (true) {
-            logger->debug("Waiting to poll RX RECV CQE...");
-
+#ifdef SERVER_RX_EVENT_DRIVEN
             // Wait for CQ event
             if (!wait_for_cq_event(ctx_rx, logger)) {
                 throw std::runtime_error("Failed during CQ event waiting");
             }
-
+#endif
             // Poll CQE
             struct ibv_wc wc = {};
             uint64_t cqe_time = 0;
@@ -173,16 +173,24 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 if (has_events) {
                     ibv_end_poll(ctx_rx->cq_s.cq_ex);
                 } else {  // error: must be at least one event
+#ifndef SERVER_RX_EVENT_DRIVEN
+                    std::this_thread::sleep_for(std::chrono::microseconds(3));
+#else
                     logger->error("ibv_start_poll failed: {}", ret);
                     throw std::runtime_error("Failed during CQ polling");
+#endif
                 }
             } else {
                 // poll CQE when using application-level timestamping
                 ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
 
                 if (!ret) {  // error: must be at least one event
+#ifndef SERVER_RX_EVENT_DRIVEN
+                    std::this_thread::sleep_for(std::chrono::microseconds(3));
+#else
                     logger->error("CQE poll receives nothing");
                     throw std::runtime_error("Failed during CQ polling");
+#endif
                 }
 
                 while (ret) {
@@ -248,7 +256,8 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
         // Receive and process PING message from internal queue
         if (server_queue->try_dequeue(ping_msg)) {
             logger->debug(
-                "Internal queue received a ping_msg - pingid: {}, qpn: {}, "
+                "Internal queue received a ping_msg - pingid: {}, qpn: "
+                "{}, "
                 "gid: {}, lid: {}, ping arrival time: {}",
                 ping_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
                 ping_msg.x.lid, ping_msg.x.time);
@@ -272,8 +281,8 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
 
             // send PONG message
             logger->debug(
-                "SEND post with PONG message of pingid: {} to qpn: {}, gid: "
-                "{}, lid: {}",
+                "SEND post with PONG message of pingid: {} -> qpn: {}, "
+                "gid: {}, lid: {}",
                 pong_msg.x.pingid, dst_addr.x.qpn, parsed_gid(&dst_addr.x.gid),
                 dst_addr.x.lid);
             if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
@@ -309,7 +318,7 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                 if (wc.status == IBV_WC_SUCCESS) {
                     if (wc.opcode == IBV_WC_SEND) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {
-                            logger->debug("CQE of ACK, so ignore this");
+                            logger->debug("CQE of ACK. Do nothing.");
                         } else {
                             if (process_pong_cqe(ctx_tx, logger, wc, cqe_time,
                                                  pong_table)) {
@@ -338,7 +347,7 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                 ibv_end_poll(ctx_tx->cq_s.cq_ex);
             } else {  // nothing to poll
                 // to minize CPU overhead for polling
-                std::this_thread::sleep_for(std::chrono::microseconds(20));
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
                 continue;
             }
         } else {
@@ -347,7 +356,7 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
 
             if (!ret) {  // nothing to poll
                 // to minize CPU overhead for polling
-                std::this_thread::sleep_for(std::chrono::microseconds(20));
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
                 continue;
             }
 
@@ -356,7 +365,7 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
                 if (wc.status == IBV_WC_SUCCESS) {
                     if (wc.opcode == IBV_WC_SEND) {
                         if (wc.wr_id == PINGWEAVE_WRID_SEND) {
-                            logger->debug("CQE of ACK, so ignore this");
+                            logger->debug("CQE of ACK. Do nothing.");
                         } else {
                             if (process_pong_cqe(ctx_tx, logger, wc, cqe_time,
                                                  pong_table)) {

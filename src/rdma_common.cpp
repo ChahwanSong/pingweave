@@ -658,9 +658,9 @@ std::string get_thread_id() {
 result_stat_t calculateStatistics(const std::vector<uint64_t> &delays) {
     if (delays.empty()) {
         // 벡터가 비어 있을 때 -1 반환
-        return {static_cast<uint64_t>(-1), static_cast<uint64_t>(-1),
-                static_cast<uint64_t>(-1), static_cast<uint64_t>(-1),
-                static_cast<uint64_t>(-1)};
+        return {static_cast<uint64_t>(0), static_cast<uint64_t>(0),
+                static_cast<uint64_t>(0), static_cast<uint64_t>(0),
+                static_cast<uint64_t>(0)};
     }
 
     // 평균(mean)

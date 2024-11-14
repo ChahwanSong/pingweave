@@ -22,4 +22,7 @@
     - LID 포함 (GID, LID, QPN) 시키기 -> 타입 string, string, integer 캐스팅.
 - Traffic class = 3
     - post_send() 의 Grh 에 설정
--
+- Merge python client/server to pingweave.cpp
+    - Done
+- 모든 ping 실패 시 statistics -> 0 으로 표시되게 하기
+- pingweave_mare 에서 실패..

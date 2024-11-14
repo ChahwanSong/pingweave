@@ -67,8 +67,8 @@ class PingInfoMap {
 
     explicit PingInfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
                          ClientInternalQueue* client_queue,
-                         int thresholdSeconds = 1)
-        : threshold(thresholdSeconds),
+                         int threshold_ms = 1000)
+        : threshold_ms(threshold_ms),
           q_ptr(client_queue),
           logger(ping_table_logger) {}
 
@@ -263,22 +263,25 @@ class PingInfoMap {
             }
 
             auto& entry = it->second;
-            auto elapsedSeconds =
-                std::chrono::duration_cast<std::chrono::seconds>(
+            auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - entry.timestamp)
                     .count();
 
             // no more "stale" entries to remove
-            if (elapsedSeconds < threshold) {
+            if (elapsed_ms < threshold_ms) {
                 return n_remove;
             }
 
             // remove from map and list
             if (it->second.value.recv_cnt >= 3) {
-                // ignore the case of buffer override
-                logger->debug("[Ignore] Pingid {} (-> {}) has recv count {}.",
-                              it->second.value.pingid, it->second.value.dstip,
-                              it->second.value.recv_cnt);
+                // ignore the case of buffer overlaid
+                logger->debug(
+                    "[Overlaid?] Pingid {} (-> {}) has recv count {} and "
+                    "bitmap "
+                    "{}.",
+                    it->second.value.pingid, it->second.value.dstip,
+                    it->second.value.recv_cnt, it->second.value.recv_bitmap);
             } else {
                 logger->debug(
                     "Pingid {} (-> {}) failure with recv cnt {} and bitmap {}.",
@@ -319,7 +322,7 @@ class PingInfoMap {
 
     std::unordered_map<Key, MapEntry> map;
     std::list<Key> keyList;
-    const int threshold;
+    const int threshold_ms;
     mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
     std::shared_ptr<spdlog::logger> logger;
     ClientInternalQueue* q_ptr;

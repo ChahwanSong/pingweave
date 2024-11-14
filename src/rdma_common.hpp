@@ -49,6 +49,7 @@ enum {
     PINGWEAVE_WRID_SEND,
     PINGWEAVE_OPCODE_PONG,
     PINGWEAVE_OPCODE_ACK,
+    PINGWEAVE_MAX_MACRO,
 };
 
 struct pingweave_context {
@@ -194,17 +195,27 @@ inline uint64_t get_current_timestamp_steady() {
     return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000LL + ts.tv_nsec;
 }
 
-// IP 주소 문자열을 uint32_t로 변환하는 함수
+// Convert IP string to uint32_t (network byte order)
 inline uint32_t ip2uint(const std::string &ip) {
     uint32_t result;
-    inet_pton(AF_INET, ip.c_str(), &result);
-    return ntohl(result);  // 네트워크 바이트 순서에서 호스트 바이트 순서로 변환
+    inet_pton(AF_INET, ip.c_str(), &result);  // network byte order
+    return result;
 }
 
-// uint32_t를 IP 주소 문자열로 변환하는 함수
-inline std::string uint2ip(uint32_t ip) {
-    ip = htonl(ip);  // 호스트 바이트 순서를 네트워크 바이트 순서로 변환
+// Convert uint32_t (network byte order) to IP string
+inline std::string uint2ip(const uint32_t &ip) {
     char buffer[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &ip, buffer, INET_ADDRSTRLEN);
     return std::string(buffer);
+}
+
+// two uint32_t (ip, uid) -> uint64_t
+inline uint64_t combine2uint64(const uint32_t &high, const uint32_t &low) {
+    return (static_cast<uint64_t>(high) << 32) | low;
+}
+
+// uint64_t -> two uint32_t (ip, uid)
+inline void split2uint64(const uint64_t &value, uint32_t &high, uint32_t &low) {
+    high = static_cast<uint32_t>(value >> 32);
+    low = static_cast<uint32_t>(value & 0xFFFFFFFF);
 }

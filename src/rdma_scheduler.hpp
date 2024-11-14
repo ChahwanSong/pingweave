@@ -19,7 +19,7 @@ class MsgScheduler {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
             now - last_access_time);
         auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
-            now - last_load_time);
+            now - last_load_time); /** TODO: seconds -> minutes */
 
         // Check if 10 minutes have passed to call load()
         if (loadDuration.count() >= load_interval_min) {
@@ -110,8 +110,8 @@ class MsgScheduler {
                 }
             }
 
-            logger->info("Loaded {} relevant addresses from YAML.",
-                         addressInfo.size());
+            logger->debug("Loaded {} relevant addresses from YAML.",
+                          addressInfo.size());
 
             if (!addressInfo.empty()) {
                 inter_ping_interval_us = PING_INTERVAL_US / addressInfo.size();

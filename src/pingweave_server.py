@@ -3,6 +3,8 @@ import sys
 import subprocess
 import configparser  # default library
 import asyncio  # default library
+import time
+import socket
 
 try:
     import yaml
@@ -13,16 +15,12 @@ except ImportError:
 
 from logger import initialize_pinglist_logger
 
-# parameter
-COLLECT_PERIOD_SECONDS = 10
-LOAD_PINGLIST_SECONDS = 5
-
 # absolute paths of this script and pinglist.yaml
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
-DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")  # for all
+PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")  # for server
+UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")  # for client
+DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
 
 # Variables to save pinglist
 pinglist_in_memory = {}
@@ -36,7 +34,9 @@ config.read(CONFIG_PATH)
 
 control_host = config["controller"]["host"]
 control_port = config["controller"]["port"]
-logger = initialize_pinglist_logger(control_host, "server")
+interval_download_pinglist_sec = int(config["param"]["interval_download_pinglist_sec"])
+interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
+logger = initialize_pinglist_logger(socket.gethostname(), "server")
 
 
 def check_ip_active(target_ip):
@@ -50,9 +50,14 @@ def check_ip_active(target_ip):
             logger.error(f"Standard error output: {result.stderr.strip()}")
             return False
 
-        # Check ip address from output
+        # Check if the target_ip is in the 'ip addr' output and if it's not down
         if target_ip in result.stdout:
-            return True
+            # Check if the interface is up or down
+            if f"{target_ip}" in result.stdout and "state UP" in result.stdout:
+                return True
+            else:
+                logger.error(f"Interface with IP {target_ip} is down.")
+                return False
         else:
             logger.error(f"No active interface found with IP address {target_ip}.")
             return False
@@ -62,7 +67,7 @@ def check_ip_active(target_ip):
         return False
 
 
-async def load_pinglist():
+async def read_pinglist():
     global pinglist_in_memory
 
     try:
@@ -72,17 +77,17 @@ async def load_pinglist():
                 with open(PINGLIST_PATH, "r") as file:
                     # YAML -> dictionary (parsing)
                     pinglist_in_memory = yaml.safe_load(file)
-                    logger.info("Pinglist is loaded successfully.")
+                    logger.debug("Pinglist is loaded successfully.")
             else:
                 logger.error(f"Pinglist file not found at {PINGLIST_PATH}")
     except Exception as e:
         logger.error(f"Error loading pinglist: {e}")
 
 
-async def load_pinglist_periodically():
+async def read_pinglist_periodically():
     while True:
-        await load_pinglist()
-        await asyncio.sleep(LOAD_PINGLIST_SECONDS)
+        await read_pinglist()
+        await asyncio.sleep(interval_read_pinglist_sec)
 
 
 async def handle_client(reader, writer):
@@ -98,7 +103,7 @@ async def handle_client(reader, writer):
                 response = str(pinglist_in_memory).encode()
                 writer.write(response)
                 await writer.drain()
-                logger.info(
+                logger.debug(
                     f"(SEND) pinglist data to client: {client_ip}:{client_port}"
                 )
 
@@ -107,7 +112,7 @@ async def handle_client(reader, writer):
                 response = str(address_store).encode()
                 writer.write(response)
                 await writer.drain()
-                logger.info(
+                logger.debug(
                     f"(SEND) address_store to client: {client_ip}:{client_port}"
                 )
 
@@ -119,7 +124,7 @@ async def handle_client(reader, writer):
                 async with address_store_lock:  # address_store 업데이트에 대한 잠금
                     address_store[ip_address] = [gid, lid, int(qpn)]
                     logger.info(
-                        f"(RECV) POST from {client_ip}:{client_port} and updated the store."
+                        f"(RECV) POST from {client_ip}:{client_port}. Update the address store."
                     )
 
                     if len(address_store) > 10000:
@@ -143,15 +148,25 @@ async def handle_client(reader, writer):
 
 
 async def main():
-    if not check_ip_active(control_host):
-        logger.error(f"No active interface with the target IP {control_host}.")
-        exit(1)
+    # parallel task of loading pinglist file from config file
+    asyncio.create_task(read_pinglist_periodically())
 
-    asyncio.create_task(load_pinglist_periodically())
+    while True:
+        if not check_ip_active(control_host):
+            logger.error(
+                f"No active iface with Control IP {control_host}. Sleep 10 minutes..."
+            )
+            time.sleep(600)
+            continue
 
-    server = await asyncio.start_server(handle_client, control_host, control_port)
-    async with server:
-        await server.serve_forever()
+        try:
+            server = await asyncio.start_server(
+                handle_client, control_host, control_port
+            )
+            async with server:
+                await server.serve_forever()
+        except Exception as e:
+            print(f"Cannot start the pingweave server: {e}")
 
 
 if __name__ == "__main__":

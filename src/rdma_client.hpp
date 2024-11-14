@@ -190,15 +190,19 @@ void process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
             if (has_events) {
                 // End the polling session
                 ibv_end_poll(ctx_rx->cq_s.cq_ex);
-            } else {
-                // nothing to poll
+            } else {  // nothing to poll
+#ifndef CLIENT_RX_EVENT_DRIVEN
+                std::this_thread::sleep_for(std::chrono::microseconds(3));
+#endif
                 return;
             }
         } else {
             ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
 
-            if (!ret) {
-                // nothing to poll
+            if (!ret) {  // nothing to poll
+#ifndef CLIENT_RX_EVENT_DRIVEN
+                std::this_thread::sleep_for(std::chrono::microseconds(3));
+#endif
                 return;
             }
 
@@ -243,11 +247,11 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                       const union ibv_gid& rx_gid, const uint32_t& rx_lid,
                       const uint32_t& rx_qpn) {
     auto logger = spdlog::get(logname);
-    logger->info("Starting TX thread after 1 second (Thead ID: {})...",
+    logger->info("Running TX thread (Thead ID: {}) after 1 second ...",
                  get_thread_id());
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    uint64_t ping_id = PING_ID_INIT;  // start with a large number (> 100)
+    uint32_t ping_uid = 0;
     MsgScheduler scheduler(ipv4, logname);
 
     try {
@@ -265,14 +269,14 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
 
                 // Create the PING message
                 union ping_msg_t msg = {};
-                msg.x.pingid = ping_id++;
+                msg.x.pingid = combine2uint64(ip2uint(ipv4), ping_uid++);
                 msg.x.qpn = rx_qpn;
                 msg.x.gid = rx_gid;
                 msg.x.lid = rx_lid;
 
-                if (msg.x.pingid < PING_ID_INIT) {
+                if (msg.x.pingid < PINGWEAVE_MAX_MACRO) {
                     logger->error("Ping ID must be at least {}. Current: {}",
-                                  PING_ID_INIT, msg.x.pingid);
+                                  (int)PINGWEAVE_MAX_MACRO, msg.x.pingid);
                     throw std::runtime_error("Invalid ping ID.");
                 }
 
@@ -291,8 +295,7 @@ void client_tx_thread(const std::string& ipv4, const std::string& logname,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), "
-                    "time: {}",
+                    "{}), time: {}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
                     send_time_steady);
                 if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
@@ -322,19 +325,23 @@ void client_rx_thread(const std::string& ipv4, const std::string& logname,
         logger->warn("Failed to post RECV WRs.");
     }
 
+#ifdef CLIENT_RX_EVENT_DRIVEN
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
         logger->error("Couldn't register CQE notification");
         throw std::runtime_error("Couldn't register CQE notification");
     }
+#endif
 
     // Start the receive loop
     try {
         while (true) {
+#ifdef CLIENT_RX_EVENT_DRIVEN
             /** IMPORTANT: Use event-driven polling to reduce CPU overhead. */
             if (!wait_for_cq_event(ctx_rx, logger)) {  // Wait for CQ event
                 throw std::runtime_error("Failed during CQ event waiting");
             }
+#endif
 
             // Process RX CQEs
             process_rx_cqe(ctx_rx, ping_table, logger);
@@ -408,6 +415,7 @@ void client_result_thread(const std::string& ipv4, const std::string& logname,
                         calculateStatistics(result_info.server_delays);
 
                     // logging
+                    /** TODO: remove texts  */
                     logger->info(
                         "{},{},{},{},{},Client:{},{},{},{},{},Network:{},{},{},"
                         "{},{},Server:{},{},{},{},{}",
@@ -455,7 +463,7 @@ void rdma_client(const std::string& ipv4) {
     std::shared_ptr<spdlog::logger> ping_table_logger =
         initialize_custom_logger(ping_table_logname, LOG_LEVEL_PING_TABLE,
                                  LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    PingInfoMap ping_table(ping_table_logger, &client_queue, 1);
+    PingInfoMap ping_table(ping_table_logger, &client_queue, 1000);
 
     // Initialize RDMA contexts
     pingweave_context ctx_tx = {};

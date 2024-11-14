@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 # Create the logs directory if it doesn't exist
 log_dir = "../logs"
 logging_level = logging.INFO
+console_level = logging.ERROR
 
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -39,17 +40,17 @@ def initialize_consumer_logger(prefix, ipv4):
     return logger
 
 
-def initialize_pinglist_logger(ipv4: str, middlename: str = "server"):
-    logger = logging.getLogger(f"pinglist_{middlename}_{ipv4}")
+def initialize_pinglist_logger(host: str, middlename: str = "server"):
+    logger = logging.getLogger(f"pinglist_{middlename}_{host}")
     logger.setLevel(logging_level)  # Set the log level
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging_level)  # 콘솔에는 INFO 이상의 레벨만 출력
+    console_handler.setLevel(console_level)  # 콘솔에는 INFO 이상의 레벨만 출력
 
-    log_file = os.path.join(log_dir, f"pinglist_{middlename}_{ipv4}.log")
+    log_file = os.path.join(log_dir, f"pinglist_{middlename}_{host}.log")
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=5 * 1024 * 1024,
+        maxBytes=10 * 1024 * 1024,
         backupCount=0,
     )
     file_handler.setLevel(logging_level)  # 파일에는 DEBUG 이상의 레벨을 저장

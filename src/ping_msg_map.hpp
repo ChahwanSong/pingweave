@@ -65,13 +65,11 @@ class PingMsgMap {
 
     bool empty() {
         std::shared_lock lock(mutex_);
-        expireEntries();
         return map.empty();
     }
 
     size_t size() {
         std::shared_lock lock(mutex_);
-        expireEntries();
         return map.size();
     }
 
