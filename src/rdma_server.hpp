@@ -6,44 +6,6 @@
 
 typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
 
-// Utility function: Post RECV WR
-bool post_recv_wr(std::shared_ptr<spdlog::logger> logger,
-                  struct pingweave_context* ctx) {
-    if (post_recv(ctx, 1, PINGWEAVE_WRID_RECV) == 0) {
-        logger->warn("RECV post failed.");
-        return false;
-    }
-    return true;
-}
-
-// Utility function: Handle PING message
-bool handle_ping_message(struct pingweave_context* ctx,
-                         std::shared_ptr<spdlog::logger> logger,
-                         struct ibv_wc& wc, uint64_t cqe_time,
-                         ServerInternalQueue* server_queue) {
-    logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
-
-    // Parse GRH header (for debugging)
-    struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(ctx->buf);
-    logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
-
-    // Parse PING message
-    union ping_msg_t ping_msg = {0};
-    std::memcpy(&ping_msg, ctx->buf + GRH_SIZE, sizeof(ping_msg_t));
-    ping_msg.x.time = cqe_time;
-
-    // For debugging
-    logger->debug("  -> id: {}, gid: {}, lid: {}, qpn: {}, time: {}",
-                  ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
-                  ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
-
-    if (!server_queue->try_enqueue(ping_msg)) {
-        logger->error("Failed to enqueue ping message");
-        return false;
-    }
-    return true;
-}
-
 // Utility function: Process PONG CQE
 bool process_pong_cqe(struct pingweave_context* ctx_tx,
                       std::shared_ptr<spdlog::logger> logger, struct ibv_wc& wc,
@@ -83,7 +45,8 @@ bool process_pong_cqe(struct pingweave_context* ctx_tx,
             return false;
         }
     } else {
-        logger->warn("pingid {} entry does not exist (expired?)", wc.wr_id);
+        logger->warn("pingid {} entry does not exist at pong_table (expired?)",
+                     wc.wr_id);
     }
     // Remove entry from table
     if (!pong_table.remove(wc.wr_id)) {
@@ -103,10 +66,13 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
     struct ibv_wc wc = {};
     int ret = 0;
     uint64_t cqe_time = 0;
+    union ping_msg_t ping_msg = {};
+    struct ibv_poll_cq_attr attr = {};
 
     try {
         // Initial RECV WR posting
-        if (!post_recv_wr(logger, ctx_rx)) {
+        if (post_recv(ctx_rx, RX_DEPTH, PINGWEAVE_WRID_RECV) != RX_DEPTH) {
+            logger->error("Failed to post the next RECV WR.");
             throw std::runtime_error("Initial RECV post failed");
         }
 #ifdef SERVER_RX_EVENT_DRIVEN
@@ -126,50 +92,69 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
             }
 #endif
             if (ctx_rx->rnic_hw_ts) {
-                struct ibv_poll_cq_attr attr = {};
                 ret = ibv_start_poll(ctx_rx->cq_s.cq_ex, &attr);
 
-                if (!ret) {
-                    wc.status = ctx_rx->cq_s.cq_ex->status;
-                    wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
-                    wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
-                    cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-
-                    // Check WC status and handle
-                    if (wc.status == IBV_WC_SUCCESS) {
-                        if (wc.opcode == IBV_WC_RECV) {
-                            if (!handle_ping_message(ctx_rx, logger, wc,
-                                                     cqe_time, server_queue)) {
-                                throw std::runtime_error(
-                                    "Failed to handle PING message");
-                            }
-
-                            // Post next RECV WR
-                            if (!post_recv_wr(logger, ctx_rx)) {
-                                throw std::runtime_error(
-                                    "Failed to post next RECV WR");
-                            }
-                        } else {
-                            logger->error("Unexpected opcode: {}",
-                                          static_cast<int>(wc.opcode));
-                            throw std::runtime_error(
-                                "Unexpected opcode in RX thread");
-                        }
-                    } else {
-                        logger->error("RX WR failure - status: {}, opcode: {}",
-                                      ibv_wc_status_str(wc.status),
-                                      static_cast<int>(wc.opcode));
-                        throw std::runtime_error("RX WR failure");
-                    }
-                }
-
-                if (ret) {  // if no event
-#ifndef SERVER_RX_EVENT_DRIVEN
-                    std::this_thread::sleep_for(std::chrono::microseconds(3));
-#else
-                    logger->error("CQE poll receives nothing");
+                if (ret) {  // no event
+#ifdef SERVER_RX_EVENT_DRIVEN
+                    logger->error("ibv_start_poll failed: {}", ret);
                     throw std::runtime_error("Failed during CQ polling");
 #endif
+                    // small jittering to reduce CPU overhead
+                    std::this_thread::sleep_for(std::chrono::microseconds(1));
+                    ibv_end_poll(ctx_rx->cq_s.cq_ex);
+                    continue;
+                }
+
+                // Parse PING message
+                std::memcpy(&ping_msg, ctx_rx->buf + GRH_SIZE,
+                            sizeof(ping_msg_t));
+
+                // Extract WC information
+                wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
+                ping_msg.x.time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
+                wc.status = ctx_rx->cq_s.cq_ex->status;
+                wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
+
+                // Post next RECV WR
+                if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) != 1) {
+                    logger->error("Failed to post the next RECV WR.");
+                    throw std::runtime_error("Failed to post next RECV WR");
+                }
+
+                // Check WC status and handle
+                if (wc.status == IBV_WC_SUCCESS) {
+                    if (wc.opcode == IBV_WC_RECV) {
+                        logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
+
+                        // Parse GRH header (for debugging)
+                        struct ibv_grh* grh =
+                            reinterpret_cast<struct ibv_grh*>(ctx_rx->buf);
+                        logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
+
+                        // For debugging
+                        logger->debug(
+                            "  -> id: {}, gid: {}, lid: {}, qpn: {}, time: "
+                            "{}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                            ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
+
+                        if (!server_queue->try_enqueue(ping_msg)) {
+                            logger->error("Failed to enqueue ping message");
+                            throw std::runtime_error(
+                                "Failed to handle PING message");
+                        }
+
+                    } else {
+                        logger->error("Unexpected opcode: {}",
+                                      static_cast<int>(wc.opcode));
+                        throw std::runtime_error(
+                            "Unexpected opcode in RX thread");
+                    }
+                } else {
+                    logger->error("RX WR failure - status: {}, opcode: {}",
+                                  ibv_wc_status_str(wc.status),
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
                 }
                 ibv_end_poll(ctx_rx->cq_s.cq_ex);
 
@@ -177,43 +162,62 @@ void server_rx_thread(const std::string& ipv4, const std::string& logname,
                 // poll CQE when using application-level timestamping
                 ret = ibv_poll_cq(pingweave_cq(ctx_rx), 1, &wc);
 
-                if (ret) {
-                    cqe_time = get_current_timestamp_steady();
-
-                    // Check WC status and handle
-                    if (wc.status == IBV_WC_SUCCESS) {
-                        if (wc.opcode == IBV_WC_RECV) {
-                            if (!handle_ping_message(ctx_rx, logger, wc,
-                                                     cqe_time, server_queue)) {
-                                throw std::runtime_error(
-                                    "Failed to handle PING message");
-                            }
-
-                            // Post next RECV WR
-                            if (!post_recv_wr(logger, ctx_rx)) {
-                                throw std::runtime_error(
-                                    "Failed to post next RECV WR");
-                            }
-                        } else {
-                            logger->error("Unexpected opcode: {}",
-                                          static_cast<int>(wc.opcode));
-                            throw std::runtime_error(
-                                "Unexpected opcode in RX thread");
-                        }
-                    } else {
-                        logger->error("RX WR failure - status: {}, opcode: {}",
-                                      ibv_wc_status_str(wc.status),
-                                      static_cast<int>(wc.opcode));
-                        throw std::runtime_error("RX WR failure");
-                    }
-                }
-                if (!ret) {  // if no event
-#ifndef SERVER_RX_EVENT_DRIVEN
-                    std::this_thread::sleep_for(std::chrono::microseconds(3));
-#else
+                if (!ret) {  // no event
+#ifdef SERVER_RX_EVENT_DRIVEN
                     logger->error("CQE poll receives nothing");
                     throw std::runtime_error("Failed during CQ polling");
 #endif
+                    // small jittering to reduce CPU overhead
+                    std::this_thread::sleep_for(std::chrono::microseconds(1));
+                    continue;
+                }
+
+                // Parse PING message
+                std::memcpy(&ping_msg, ctx_rx->buf + GRH_SIZE,
+                            sizeof(ping_msg_t));
+
+                ping_msg.x.time = get_current_timestamp_steady();
+
+                // Post next RECV WR
+                if (post_recv(ctx_rx, 1, PINGWEAVE_WRID_RECV) != 1) {
+                    logger->error("Failed to post the next RECV WR.");
+                    throw std::runtime_error("Failed to post next RECV WR");
+                }
+
+                // Check WC status and handle
+                if (wc.status == IBV_WC_SUCCESS) {
+                    if (wc.opcode == IBV_WC_RECV) {
+                        logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
+
+                        // Parse GRH header (for debugging)
+                        struct ibv_grh* grh =
+                            reinterpret_cast<struct ibv_grh*>(ctx_rx->buf);
+                        logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
+
+                        // For debugging
+                        logger->debug(
+                            "  -> id: {}, gid: {}, lid: {}, qpn: {}, time: "
+                            "{}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                            ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
+
+                        if (!server_queue->try_enqueue(ping_msg)) {
+                            logger->error("Failed to enqueue ping message");
+                            throw std::runtime_error(
+                                "Failed to handle PING message");
+                        }
+
+                    } else {
+                        logger->error("Unexpected opcode: {}",
+                                      static_cast<int>(wc.opcode));
+                        throw std::runtime_error(
+                            "Unexpected opcode in RX thread");
+                    }
+                } else {
+                    logger->error("RX WR failure - status: {}, opcode: {}",
+                                  ibv_wc_status_str(wc.status),
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("RX WR failure");
                 }
             }
         }
@@ -294,6 +298,12 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
             ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
             bool has_events = false;
 
+            if (ret) {  // no event
+                // to minize CPU overhead for polling
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                continue;
+            }
+
             while (!ret) {
                 has_events = true;
 
@@ -334,16 +344,12 @@ void server_tx_thread(const std::string& ipv4, const std::string& logname,
             }
             if (has_events) {
                 ibv_end_poll(ctx_tx->cq_s.cq_ex);
-            } else {  // nothing to poll
-                // to minize CPU overhead for polling
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
-                continue;
             }
         } else {
             // Poll CQE when using application-level timestamping
             ret = ibv_poll_cq(pingweave_cq(ctx_tx), 1, &wc);
 
-            if (!ret) {  // nothing to poll
+            if (!ret) {  // no event
                 // to minize CPU overhead for polling
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
                 continue;

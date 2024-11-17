@@ -7,13 +7,13 @@
 // constants
 const static int MESSAGE_SIZE = 64;           // Message size of 64B
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
-const static int RDMA_TRAFFIC_CLASS = 3;      // traffic class
+const static int RDMA_TRAFFIC_CLASS = (26 << 2);  // DSCP value
 
 // RDMA parameters
 const static int TX_DEPTH = 16;      // only 1 SEND to have data consistency
 const static int RX_DEPTH = 32;      // enough?
 const static int GID_INDEX = 0;      // by default 0 (infiniband & RoCE)
-const static int SERVICE_LEVEL = 3;  // by default 3 (TC = 3)
+const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
 
 // Params for IPC (inter-processor communication)
 const static int BATCH_SIZE = 16;               // Process messages in batches
