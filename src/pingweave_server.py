@@ -24,7 +24,7 @@ DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
 
 # Variables to save pinglist
 pinglist_in_memory = {}
-address_store = {}  # ip -> (gid, lid, qpn)
+address_store = {}  # ip -> (ip, gid, lid, qpn)
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()
 
@@ -149,7 +149,7 @@ async def handle_client(reader, writer):
                 ip_address, gid, lid, qpn, dtime = content
 
                 async with address_store_lock:  # address_store - lock
-                    address_store[ip_address] = [gid, int(lid), int(qpn)]
+                    address_store[ip_address] = [ip_address, gid, int(lid), int(qpn)]
                     logger.info(
                         f"(RECV) POST from {client_ip}:{client_port}. Update the address store."
                     )

@@ -3,5 +3,5 @@ bin/*
 result/*
 download/*
 upload/*
-.vscode
+.vscode/*
 src/__pycache__

@@ -26,21 +26,10 @@ OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
 # 출력 파일
 TARGET_MAIN = $(BIN_DIR)/pingweave
 
-# Rule to check for yaml-cpp
-YAML_CPP_INSTALLED := $(shell dpkg -l | grep libyaml-cpp-dev)
-
-
 # 기본 타겟
-.PHONY: all check_yaml_cpp main clean
+.PHONY: all main clean
 
-all: check_yaml_cpp main
-
-check_yaml_cpp:
-ifndef YAML_CPP_INSTALLED
-	@echo "[Makefile] yaml-cpp not found. Installing..."
-	@sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libyaml-cpp-dev
-	# @sudo dnf install yaml-cpp-devel -y
-endif 
+all: main
 
 # 메인 빌드
 main: $(TARGET_MAIN)

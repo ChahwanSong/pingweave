@@ -65,22 +65,22 @@ class MsgScheduler {
 
     void load_address_info() {
         try {
-            // clear the storage
+            // start with clean-slate
             addressInfo.clear();
             addr_idx = 0;
 
             // Load pinglist.yaml
-            YAML::Node pinglist = YAML::LoadFile(
-                get_source_directory() + DIR_DOWNLOAD_PATH + "pinglist.yaml");
+            std::ifstream ifs_pinglist(get_source_directory() + DIR_DOWNLOAD_PATH + "pinglist.yaml");
+            fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
             std::vector<std::string> relevantIps;
 
-            if (pinglist["rdma"]) {
-                for (const auto& group : pinglist["rdma"]) {
-                    for (const auto& ip : group.second) {
-                        if (ip.as<std::string>() == ipaddr) {
-                            for (const auto& targetIp : group.second) {
+            if (pinglist.contains("rdma")) {
+                for (auto& group : pinglist["rdma"]) {
+                    for (auto& ip : group) {
+                        if (ip.get_value_ref<std::string&>() == ipaddr) {
+                            for (auto& targetIp : group) {
                                 relevantIps.push_back(
-                                    targetIp.as<std::string>());
+                                    targetIp.get_value_ref<std::string&>());
                             }
                             break;  // move to next group
                         }
@@ -89,18 +89,17 @@ class MsgScheduler {
             }
 
             // Load address_store.yaml
-            YAML::Node addressStore =
-                YAML::LoadFile(get_source_directory() + DIR_DOWNLOAD_PATH +
+            std::ifstream ifs_addressStore(get_source_directory() + DIR_DOWNLOAD_PATH +
                                "address_store.yaml");
-            addressInfo.clear();  // Clear existing data
+            fkyaml::node addressStore = fkyaml::node::deserialize(ifs_addressStore);
 
-            for (const auto& it : addressStore) {
-                std::string ip = it.first.as<std::string>();
+            for (auto& it : addressStore) {
+                std::string ip = it[0].get_value_ref<std::string&>();
                 if (std::find(relevantIps.begin(), relevantIps.end(), ip) !=
                     relevantIps.end()) {
-                    std::string gid = it.second[0].as<std::string>();
-                    uint32_t lid = it.second[1].as<uint32_t>();
-                    uint32_t qpn = it.second[2].as<uint32_t>();
+                    std::string gid = it[1].get_value_ref<std::string&>();
+                    uint32_t lid = static_cast<uint32_t>(it[2].get_value_ref<fkyaml::node::integer_type&>());
+                    uint32_t qpn = static_cast<uint32_t>(it[3].get_value_ref<fkyaml::node::integer_type&>());
 
                     addressInfo.emplace_back(ip, gid, lid, qpn);
                 }
@@ -117,8 +116,8 @@ class MsgScheduler {
 
             logger->debug("Interval btw ping: {} microseconds",
                           inter_ping_interval_us);
-        } catch (const YAML::Exception& e) {
-            logger->error("Failed to load YAML file: {}", e.what());
+        } catch (const std::exception& e) {
+            logger->error("Failed to load and parse YAML file: {}", e.what());
             addressInfo.clear();  // If failed, ring becomes empty
         }
     }

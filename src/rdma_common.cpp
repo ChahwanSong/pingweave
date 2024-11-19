@@ -123,46 +123,42 @@ std::set<std::string> get_all_local_ips() {
 
 // If error occurs, myaddr returned is empty set.
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
-    YAML::Node config;
-    myaddr.clear();
+    fkyaml::node config;
+    myaddr.clear(); // clean-slate start
 
     try {
-        config = YAML::LoadFile(filename);
-        // successful
-        spdlog::debug("Configuration file loaded successfully.");
-    } catch (const YAML::BadFile &e) {
-        spdlog::error("Error: Unable to open or find the file {}: {}", filename,
-                      e.what());
-
-        return;
-    } catch (const YAML::ParserException &e) {
-        spdlog::error("Error: Failed to parse the file {}: {}", filename,
-                      e.what());
-        return;
+        std::ifstream ifs(filename);
+        config = fkyaml::node::deserialize(ifs);
+        spdlog::debug("Pinglist.yaml loaded successfully.");
     } catch (const std::exception &e) {
         spdlog::error(
-            "Error: An unexpected error occurred while loading the file {}: {}",
+            "An unexpected error occurred while loading the file {}: {}",
             filename, e.what());
         return;
     }
 
+    try {
     // Get the RDMA category groups
-    if (!config["rdma"]) {
+    if (!config.contains("rdma")) {
         spdlog::error("No 'rdma' category found in the YAML file.");
         return;
     }
 
-    // Retrieve the node's IP addresses
+    // Retrieve the node's IP addr
     std::set<std::string> local_ips = get_all_local_ips();
 
-    for (const auto &group : config["rdma"]) {  // for any group
-        for (const auto &ip : group.second) {
+    // find all my ip addrs is in pinglist ip addrs
+    for (auto &group : config["rdma"]) {
+        for (auto &ip : group) {
             // If IP is on the current node, add it
-            std::string ip_addr = ip.as<std::string>();
+            std::string ip_addr = ip.get_value_ref<std::string&>();
             if (local_ips.find(ip_addr) != local_ips.end()) {
                 myaddr.insert(ip_addr);
             }
         }
+    }
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to get my IP addresses from pinglist.yaml");
     }
 }
 

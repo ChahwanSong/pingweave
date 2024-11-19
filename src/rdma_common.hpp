@@ -16,7 +16,6 @@
 #include <time.h>
 #include <unistd.h>  // For fork(), sleep()
 #include <unistd.h>
-#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <atomic>  // std::atomic
@@ -38,6 +37,7 @@
 #include <vector>
 
 #include "format.hpp"
+#include "macro.hpp"
 #include "logger.hpp"
 
 // fully-blocking SPSC queue
