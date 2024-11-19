@@ -124,7 +124,7 @@ std::set<std::string> get_all_local_ips() {
 // If error occurs, myaddr returned is empty set.
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
     fkyaml::node config;
-    myaddr.clear(); // clean-slate start
+    myaddr.clear();  // clean-slate start
 
     try {
         std::ifstream ifs(filename);
@@ -138,26 +138,26 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
     }
 
     try {
-    // Get the RDMA category groups
-    if (!config.contains("rdma")) {
-        spdlog::error("No 'rdma' category found in the YAML file.");
-        return;
-    }
+        // Get the RDMA category groups
+        if (!config.contains("rdma")) {
+            spdlog::error("No 'rdma' category found in the YAML file.");
+            return;
+        }
 
-    // Retrieve the node's IP addr
-    std::set<std::string> local_ips = get_all_local_ips();
+        // Retrieve the node's IP addr
+        std::set<std::string> local_ips = get_all_local_ips();
 
-    // find all my ip addrs is in pinglist ip addrs
-    for (auto &group : config["rdma"]) {
-        for (auto &ip : group) {
-            // If IP is on the current node, add it
-            std::string ip_addr = ip.get_value_ref<std::string&>();
-            if (local_ips.find(ip_addr) != local_ips.end()) {
-                myaddr.insert(ip_addr);
+        // find all my ip addrs is in pinglist ip addrs
+        for (auto &group : config["rdma"]) {
+            for (auto &ip : group) {
+                // If IP is on the current node, add it
+                std::string ip_addr = ip.get_value_ref<std::string &>();
+                if (local_ips.find(ip_addr) != local_ips.end()) {
+                    myaddr.insert(ip_addr);
+                }
             }
         }
-    }
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         spdlog::error("Failed to get my IP addresses from pinglist.yaml");
     }
 }
@@ -409,21 +409,18 @@ int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
         return true;  // propagate error
     }
 
-    // if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
-    //     logger->error("Couldn't request CQ notification");
-    //     return true;  // propagate error
-    // }
-
     if (ibv_query_gid(ctx->context, ctx->active_port, GID_INDEX, &ctx->gid)) {
         logger->error("Could not get my gid for gid index {}", GID_INDEX);
         return true;  // propagate error
     }
 
     // sanity check - always use GID
-    if (ctx->gid.global.subnet_prefix == 0) {
-        logger->error("GID subnet prefix must be non-zero.");
-        return true;  // propagate error
-    }
+    logger->debug("ctx->gid.global.subnet_prefix: {}",
+              ctx->gid.global.subnet_prefix);
+    // if (ctx->gid.global.subnet_prefix == 0) {
+    //     logger->error("GID subnet prefix must be non-zero.");
+    //     return true;  // propagate error
+    // }
 
     // gid to wired and parsed gid
     gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
@@ -488,8 +485,11 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
     ah_attr.sl = SERVICE_LEVEL;
     ah_attr.src_path_bits = 0;
     ah_attr.port_num = ctx->active_port;
+    logger->debug("post_send: port_num is {}", ctx->active_port);
+    logger->debug("post_send: gid.global.interface_id is {}",
+                    rem_dest.x.gid.global.interface_id);
 
-    if (rem_dest.x.gid.global.interface_id) {
+    if (rem_dest.x.gid.global.interface_id) { // IP addr for RoCEv2
         ah_attr.is_global = 1;
         ah_attr.grh.hop_limit = 1;
         ah_attr.grh.dgid = rem_dest.x.gid;
@@ -554,7 +554,7 @@ int wait_for_cq_event(struct pingweave_context *ctx,
         logger->error("Failed to get cq_event");
         return false;
     }
-    
+
     // Verify that the event is from the correct CQ
     if (ev_cq != pingweave_cq(ctx)) {
         logger->error("CQ event for unknown CQ");

@@ -372,9 +372,9 @@ void client_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), time: {}",
+                    "{}), time: {}, dst_GID:{}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
-                    send_time_steady);
+                    send_time_steady, parsed_gid(&dst_addr.x.gid));
 
                 // sanity check
                 assert(msg.x.pingid > PINGWEAVE_WRID_PONG_ACK);

@@ -14,7 +14,7 @@ const int LOG_FILE_EXTRA_NUM = 0;            // extra rotate-log files
 const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
 const std::string LOG_RESULT_FORMAT = "%v";
 const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::info;
-const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
+const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::debug;
 const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
 

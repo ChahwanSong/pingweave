@@ -17,11 +17,11 @@ const static int MESSAGE_SIZE = 64;  // Message size of 64B
 const static int NUM_BUFFER = 256;   // enough?
 const static int TX_DEPTH = 1;       // enough?
 const static int RX_DEPTH = 1;       // enough?
-const static int GID_INDEX = 0;      // by default 0 (infiniband & RoCE)
+const static int GID_INDEX = 3;      // by default 0 (infiniband & RoCE)
 const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
 const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
-const static int RDMA_TRAFFIC_CLASS = 106;    // DSCP value
+const static int RDMA_TRAFFIC_CLASS = 0;    // DSCP value
 const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 
 // Params for internal message queue btw threads
