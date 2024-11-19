@@ -179,7 +179,9 @@ async def main():
     load_config_ini()
     
     # parallel task of loading pinglist file from config file
-    asyncio.create_task(read_pinglist_periodically())
+    loop = asyncio.get_event_loop()
+    loop.create_task(read_pinglist_periodically())
+    # asyncio.create_task(read_pinglist_periodically()) # python >=3.7
 
     while True:
         if not check_ip_active(control_host):
@@ -208,3 +210,4 @@ if __name__ == "__main__":
         loop.run_until_complete(main())
     finally:
         loop.close()
+    # asyncio.run(main())
