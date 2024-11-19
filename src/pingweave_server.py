@@ -210,6 +210,7 @@ async def main():
                 await server.serve_forever()
         except Exception as e:
             print(f"Cannot start the pingweave server: {e}")
+            time.sleep(10)
 
 
 if __name__ == "__main__":
