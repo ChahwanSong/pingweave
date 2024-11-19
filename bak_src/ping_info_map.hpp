@@ -60,16 +60,16 @@ enum {
     (PINGWEAVE_MASK_RECV_PING_CQE | PINGWEAVE_MASK_RECV_PONG | \
      PINGWEAVE_MASK_RECV_ACK)
 
-
 class PingInfoMap {
    public:
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
     explicit PingInfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
-                         ClientInternalQueue* queue, int threshold_ms = 1000)
+                         ClientInternalQueue* client_queue,
+                         int threshold_ms = 1000)
         : threshold_ms(threshold_ms),
-          client_queue(queue),
+          q_ptr(client_queue),
           logger(ping_table_logger) {}
 
     // if already exists, return false
@@ -191,13 +191,13 @@ class PingInfoMap {
             uint64_t server_process_time = ping_info.server_delay;
 
             // logging
-            logger->debug("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
+            logger->trace("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
                           client_process_time, network_rtt,
                           server_process_time);
 
             // sanity check
             if (ping_info.recv_cnt != 3) {
-                logger->warn(
+                logger->debug(
                     "[Corrupted] pingid {} (-> {}) recv count must be 3, but "
                     "{}. ",
                     ping_info.pingid, ping_info.dstip, ping_info.recv_cnt);
@@ -207,17 +207,17 @@ class PingInfoMap {
 
             // send out for analysis
             // ping_time, dstip, ping_time, {each entity's process delays}
-            if (!client_queue->try_enqueue(
-                    {ping_info.pingid, ip2uint(ping_info.dstip),
-                     ping_info.time_ping_send, client_process_time, network_rtt,
-                     server_process_time, true})) {
-                logger->error(
+            if (!q_ptr->try_enqueue({ping_info.pingid, ip2uint(ping_info.dstip),
+                                     ping_info.time_ping_send,
+                                     client_process_time, network_rtt,
+                                     server_process_time, true})) {
+                logger->debug(
                     "pingid {} (-> {}): Failed to enqueue to result queue",
                     ping_info.pingid, ping_info.dstip);
             }
 
             if (remove(ping_info.pingid)) {  // if failed to remove
-                logger->warn(
+                logger->debug(
                     "Entry for pingid {} does not exist, so cannot remove.",
                     ping_info.pingid);
             }
@@ -276,7 +276,7 @@ class PingInfoMap {
             // remove from map and list
             if (it->second.value.recv_cnt >= 3) {
                 // ignore the case of buffer overlaid
-                logger->warn(
+                logger->debug(
                     "[Overlaid?] Pingid {} (-> {}) has recv count {} and "
                     "bitmap "
                     "{}.",
@@ -284,16 +284,16 @@ class PingInfoMap {
                     it->second.value.recv_cnt, it->second.value.recv_bitmap);
             } else {
                 logger->debug(
-                    "[Failed] Pingid {} (-> {}), recv cnt {} and bitmap {}.",
+                    "Pingid {} (-> {}) failure with recv cnt {} and bitmap {}.",
                     it->second.value.pingid, it->second.value.dstip,
                     it->second.value.recv_cnt, it->second.value.recv_bitmap);
 
                 // failure (packets might be lost)
-                if (!client_queue->try_enqueue({it->second.value.pingid,
-                                                ip2uint(it->second.value.dstip),
-                                                it->second.value.time_ping_send,
-                                                0, 0, 0, false})) {
-                    logger->error(
+                if (!q_ptr->try_enqueue({it->second.value.pingid,
+                                         ip2uint(it->second.value.dstip),
+                                         it->second.value.time_ping_send, 0, 0,
+                                         0, false})) {
+                    logger->debug(
                         "Failed to enqueue (pingid {}, failed) to result "
                         "thread",
                         it->second.value.pingid);
@@ -325,5 +325,5 @@ class PingInfoMap {
     const int threshold_ms;
     mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
     std::shared_ptr<spdlog::logger> logger;
-    ClientInternalQueue* client_queue;
+    ClientInternalQueue* q_ptr;
 };

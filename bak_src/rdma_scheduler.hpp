@@ -4,32 +4,34 @@
 
 class MsgScheduler {
    public:
-    MsgScheduler(const std::string& ip, std::shared_ptr<spdlog::logger> logger)
+    MsgScheduler(const std::string& ip, const std::string& logname)
         : ipaddr(ip),
-          logger(logger),
+          logname(logname),
           last_access_time(std::chrono::steady_clock::now()),
           last_load_time(std::chrono::steady_clock::now()),
-          addr_idx(0) {}
+          addr_idx(0) {
+        this->logger = spdlog::get(logname);
+    }
     ~MsgScheduler() {}
 
     int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
         auto now = std::chrono::steady_clock::now();
-        auto pingDuration = std::chrono::duration_cast<std::chrono::microseconds>(
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
             now - last_access_time);
         auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
-            now - last_load_time);
+            now - last_load_time); /** TODO: seconds -> minutes */
 
-        // Check the time to load the address_store
-        if (loadDuration.count() >= LOAD_CONFIG_INTERVAL_SEC) {
-            load_address_info();
+        // Check if 10 minutes have passed to call load()
+        if (loadDuration.count() >= load_interval_min) {
+            load();
             last_load_time = now;
         }
 
-        if (pingDuration.count() >= inter_ping_interval_us) {
+        if (duration.count() >= inter_ping_interval_us) {
             last_access_time = now;
 
             if (!addressInfo.empty()) {
-                result = addressInfo[addr_idx % addressInfo.size()];
+                result = addressInfo[addr_idx];
                 addr_idx = (addr_idx + 1) % addressInfo.size();
                 return 1;  // Success
             } else {
@@ -60,10 +62,12 @@ class MsgScheduler {
     size_t addr_idx;
     std::chrono::steady_clock::time_point last_access_time;
     std::chrono::steady_clock::time_point last_load_time;
+    uint64_t load_interval_min = 10;         // 10 minutes to load yaml
     uint64_t inter_ping_interval_us = 1000;  // interval btw each ping
+    std::string logname;
     std::shared_ptr<spdlog::logger> logger;
 
-    void load_address_info() {
+    void load() {
         try {
             // clear the storage
             addressInfo.clear();

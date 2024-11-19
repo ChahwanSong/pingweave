@@ -23,41 +23,13 @@ DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
 
 # ConfigParser object
 config = configparser.ConfigParser()
+config.read(CONFIG_PATH)
 
-# global variables
-control_host = None
-control_port = None
-interval_download_pinglist_sec = None
-interval_read_pinglist_sec = None
-
+control_host = config["controller"]["host"]
+control_port = config["controller"]["port"]
+interval_download_pinglist_sec = int(config["param"]["interval_download_pinglist_sec"])
+interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 logger = initialize_pinglist_logger(socket.gethostname(), "client")
-
-def load_config_ini():
-    """
-    Reads the configuration file and updates global variables with a lock to ensure thread safety.
-    """
-    global control_host, control_port, interval_download_pinglist_sec, interval_read_pinglist_sec
-
-    try:
-        config.read(CONFIG_PATH)
-
-        # 변수 업데이트
-        control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["port"])
-        interval_download_pinglist_sec = int(
-            config["param"]["interval_download_pinglist_sec"]
-        )
-        interval_read_pinglist_sec = int(
-            config["param"]["interval_read_pinglist_sec"]
-        )
-
-        logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        logger.error(f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60")
-        interval_download_pinglist_sec = int(60)
-        interval_read_pinglist_sec = int(60)
-        
 
 
 async def fetch_data(ip, port, data_type: str):
@@ -132,9 +104,6 @@ async def send_gid_files(ip, port):
 
 async def main():
     while True:
-        # load a config file
-        load_config_ini()
-        
         await asyncio.gather(
             send_gid_files(control_host, control_port),
             fetch_data(control_host, control_port, "pinglist"),

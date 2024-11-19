@@ -40,13 +40,12 @@ def initialize_consumer_logger(prefix, ipv4):
     return logger
 
 
-def initialize_pinglist_logger(host: str, middlename: str = "server", enable_console=True):
+def initialize_pinglist_logger(host: str, middlename: str = "server"):
     logger = logging.getLogger(f"pinglist_{middlename}_{host}")
     logger.setLevel(logging_level)  # Set the log level
-    
-    if enable_console:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(console_level)  # >=ERROR to console
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)  # 콘솔에는 INFO 이상의 레벨만 출력
 
     log_file = os.path.join(log_dir, f"pinglist_{middlename}_{host}.log")
     file_handler = RotatingFileHandler(
@@ -54,17 +53,15 @@ def initialize_pinglist_logger(host: str, middlename: str = "server", enable_con
         maxBytes=10 * 1024 * 1024,
         backupCount=0,
     )
-    file_handler.setLevel(logging_level)  # >=INFO to file
+    file_handler.setLevel(logging_level)  # 파일에는 DEBUG 이상의 레벨을 저장
 
     formatter = logging.Formatter(
         "[%(asctime)s][%(levelname)s][%(filename)s:%(funcName)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    
+    console_handler.setFormatter(formatter)
     file_handler.setFormatter(formatter)
-    if enable_console:
-        console_handler.setFormatter(formatter)
-    
+
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 

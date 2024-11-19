@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <list>
 #include <mutex>
-#include <shared_mutex>
+#include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
 #include <unordered_map>
 
 #include "rdma_common.hpp"
@@ -29,9 +29,11 @@ class PingMsgMap {
             return false;
         }
 
-        // add to list and map with timestamp
-        TimePoint now = std::chrono::steady_clock::now();
+        // 리스트 끝에 추가
         auto listIter = keyList.emplace(keyList.end(), key);
+
+        // 맵에 추가
+        TimePoint now = std::chrono::steady_clock::now();
         map[key] = {value, now, listIter};
         return true;
     }
@@ -86,7 +88,7 @@ class PingMsgMap {
             const Key& key = keyList.front();
             auto it = map.find(key);
 
-            // remove from list if map does not have
+            // 맵에 항목이 없으면 리스트에서 제거
             if (it == map.end()) {
                 keyList.pop_front();
                 continue;
@@ -101,8 +103,7 @@ class PingMsgMap {
             if (elapsedSeconds < threshold) {
                 return n_remove;
             }
-
-            // remove from map and list
+            // 맵과 리스트에서 제거
             keyList.pop_front();
             map.erase(it);
             ++n_remove;

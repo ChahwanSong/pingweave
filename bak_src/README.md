@@ -27,7 +27,3 @@
 - 모든 ping 실패 시 statistics -> 0 으로 표시되게 하기
 - server 에서 message 도착을 전부 캐치 못하고 놓침
     - recv_post 를 처음에 많이 해두기? 그럼 buffer overlaid 문제 발생?
-- Recv/Send buffer 여러개 사용하기 (buffer corruption 문제)
-    - Done
-- pingweave_server.py 에서 로컬 주소 address_store 에 저장할 때, 오래된 정보 (1 day) 필터링
-

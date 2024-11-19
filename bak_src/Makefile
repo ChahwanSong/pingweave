@@ -16,7 +16,7 @@ LDLIBS =
 BIN_DIR = ../bin
 
 # 공통 소스 파일
-SRCS_COMMON = rdma_common.cpp
+SRCS_COMMON = logger.cpp rdma_common.cpp # producer_queue.cpp
 OBJS_COMMON = $(addprefix $(BIN_DIR)/, $(SRCS_COMMON:.cpp=.o))
 
 # 메인용 소스 파일 및 오브젝트 파일

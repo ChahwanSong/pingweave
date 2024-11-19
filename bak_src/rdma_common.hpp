@@ -43,84 +43,105 @@
 // fully-blocking SPSC queue
 typedef moodycamel::BlockingReaderWriterQueue<struct result_msg_t>
     ClientInternalQueue;
-typedef moodycamel::ReaderWriterQueue<union ping_msg_t> ServerInternalQueue;
+
+enum {
+    PINGWEAVE_WRID_RECV = 11,
+    PINGWEAVE_WRID_SEND,
+    PINGWEAVE_OPCODE_PONG,
+    PINGWEAVE_OPCODE_ACK,
+    PINGWEAVE_MAX_MACRO,
+};
+
+struct pingweave_context {
+    struct ibv_context *context;
+    struct ibv_comp_channel *channel;
+    struct ibv_pd *pd;
+    struct ibv_mr *mr;
+    struct ibv_cq *cq;
+    struct ibv_qp *qp;
+    struct ibv_ah *ah;
+    union {
+        struct ibv_cq *cq;
+        struct ibv_cq_ex *cq_ex;
+    } cq_s;
+    char *buf;
+    int send_flags;
+    int active_port;
+
+    /* interface*/
+    std::string ipv4;
+    std::string iface;
+    struct ibv_port_attr portinfo;
+    int rnic_hw_ts;
+
+    /* gid */
+    union ibv_gid gid;
+    char wired_gid[33];
+    char parsed_gid[33];
+
+    int is_rx;
+    uint64_t completion_timestamp_mask;
+
+    /* logging */
+    std::string log_msg;
+};
+
+union rdma_addr {
+    char raw[24];
+    struct {
+        uint32_t qpn;       // 4B
+        union ibv_gid gid;  // 16B
+        uint32_t lid;       // 4B
+    } x;
+};
+
+// enum ibv_mtu pingweave_mtu_to_enum(int mtu);
+
+void wire_gid_to_gid(const char *wgid, union ibv_gid *gid);
+void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
+std::string parsed_gid(union ibv_gid *gid);
 
 // Helper function to find RDMA device by matching network interface
 int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx);
 int get_context_by_ip(struct pingweave_context *ctx);
-// all ipv4 local address
-std::set<std::string> get_all_local_ips();
-void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
+
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
 
-// get thread ID
-std::string get_thread_id();
-
 struct ibv_cq *pingweave_cq(struct pingweave_context *ctx);
+
 int init_ctx(struct pingweave_context *ctx);
 int prepare_ctx(struct pingweave_context *ctx);
 int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
              std::shared_ptr<spdlog::logger> logger, const int &is_rx);
 
-// Initialize TX/RX context for RDMA UD
-int initialize_contexts(pingweave_context &ctx_tx, pingweave_context &ctx_rx,
-                        const std::string &ipv4,
-                        std::shared_ptr<spdlog::logger> logger);
-
-// RDMA Ops
-int post_recv(struct pingweave_context *ctx, const uint64_t &wr_id,
-              const int &n);
+int post_recv(struct pingweave_context *ctx, int n, const uint64_t &wr_id);
 int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
-              const char *msg, const size_t &msg_len, const int &buf_idx,
-              const uint64_t &wr_id, std::shared_ptr<spdlog::logger> logger);
-int wait_for_cq_event(struct pingweave_context *ctx,
-                      std::shared_ptr<spdlog::logger> logger);
+              const char *msg, const size_t &msg_len, const uint64_t &wr_id);
 
 int save_device_info(struct pingweave_context *ctx,
                      std::shared_ptr<spdlog::logger> logger);
-int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
-                     std::shared_ptr<spdlog::logger> logger);
+// for testing
+int load_device_info(union rdma_addr *dst_addr,
+                     std::shared_ptr<spdlog::logger> logger,
+                     const std::string &filepath);
+
+std::set<std::string> get_all_local_ips();
+
+void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
+
+// Utility function: Wait for CQ event and handle it
+bool wait_for_cq_event(struct pingweave_context *ctx,
+                       std::shared_ptr<spdlog::logger> logger);
+
+std::string get_thread_id();
 
 // statistics
-result_stat_t calc_stats(const std::vector<uint64_t> &delays);
+result_stat_t calculateStatistics(const std::vector<uint64_t> &delays);
 
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/
 /**************************************************************/
-
-// use when writing to file
-inline void wire_gid_to_gid(const char *wgid, union ibv_gid *gid) {
-    char tmp[9];
-    __be32 v32;
-    int i;
-    uint32_t tmp_gid[4];
-    for (tmp[8] = 0, i = 0; i < 4; ++i) {
-        memcpy(tmp, wgid + i * 8, 8);
-        sscanf(tmp, "%x", &v32);
-        tmp_gid[i] = be32toh(v32);
-    }
-    memcpy(gid, tmp_gid, sizeof(*gid));
-}
-
-// use when reading from file
-inline void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]) {
-    uint32_t tmp_gid[4];
-    int i;
-
-    memcpy(tmp_gid, gid, sizeof(tmp_gid));
-    for (i = 0; i < 4; ++i) {
-        sprintf(&wgid[i * 8], "%08x", htobe32(tmp_gid[i]));
-    }
-}
-
-// GID parser
-inline std::string parsed_gid(union ibv_gid *gid) {
-    char parsed_gid[33];
-    inet_ntop(AF_INET6, gid, parsed_gid, sizeof(parsed_gid));
-    return std::string(parsed_gid);
-}
-
 // Get current time in 64-bit nanoseconds
 inline uint64_t get_current_timestamp_ns() {
     // Get the current time point from the system clock

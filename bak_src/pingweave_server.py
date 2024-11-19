@@ -30,14 +30,14 @@ address_store_lock = asyncio.Lock()
 
 # ConfigParser object
 config = configparser.ConfigParser()
+config.read(CONFIG_PATH)
 
-# global variables
-control_host = None
-control_port = None
-interval_download_pinglist_sec = None
-interval_read_pinglist_sec = None
-
+control_host = config["controller"]["host"]
+control_port = config["controller"]["port"]
+interval_download_pinglist_sec = int(config["param"]["interval_download_pinglist_sec"])
+interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 logger = initialize_pinglist_logger(socket.gethostname(), "server")
+
 
 def check_ip_active(target_ip):
     try:
@@ -66,33 +66,6 @@ def check_ip_active(target_ip):
         logger.error(f"An unexpected error occurred while checking IP: {e}")
         return False
 
-
-def load_config_ini():
-    """
-    Reads the configuration file and updates global variables with a lock to ensure thread safety.
-    """
-    global control_host, control_port, interval_download_pinglist_sec, interval_read_pinglist_sec
-
-    try:
-        config.read(CONFIG_PATH)
-
-        # 변수 업데이트
-        control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["port"])
-        interval_download_pinglist_sec = int(
-            config["param"]["interval_download_pinglist_sec"]
-        )
-        interval_read_pinglist_sec = int(
-            config["param"]["interval_read_pinglist_sec"]
-        )
-
-        logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        logger.error(f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60")
-        interval_download_pinglist_sec = int(60)
-        interval_read_pinglist_sec = int(60)
-    
 
 async def read_pinglist():
     global pinglist_in_memory
@@ -126,7 +99,7 @@ async def handle_client(reader, writer):
         request = await reader.read(512)
 
         if request.startswith(b"GET /pinglist"):
-            async with pinglist_lock:  # pinglist_in_memory - lock
+            async with pinglist_lock:  # pinglist_in_memory에 대한 잠금
                 response = str(pinglist_in_memory).encode()
                 writer.write(response)
                 await writer.drain()
@@ -135,7 +108,7 @@ async def handle_client(reader, writer):
                 )
 
         elif request.startswith(b"GET /address_store"):
-            async with address_store_lock:  # address_store - lock
+            async with address_store_lock:  # address_store에 대한 별도 잠금
                 response = str(address_store).encode()
                 writer.write(response)
                 await writer.drain()
@@ -144,12 +117,12 @@ async def handle_client(reader, writer):
                 )
 
         elif request.startswith(b"POST /address"):
-            content = request.decode().splitlines()[1:]  # ignore the first line
+            content = request.decode().splitlines()[1:]  # 첫 줄 무시
             if len(content) == 5:  # IP, GID, LID, QPN, datetime
                 ip_address, gid, lid, qpn, dtime = content
 
-                async with address_store_lock:  # address_store - lock
-                    address_store[ip_address] = [gid, int(lid), int(qpn)]
+                async with address_store_lock:  # address_store 업데이트에 대한 잠금
+                    address_store[ip_address] = [gid, lid, int(qpn)]
                     logger.info(
                         f"(RECV) POST from {client_ip}:{client_port}. Update the address store."
                     )
@@ -175,9 +148,6 @@ async def handle_client(reader, writer):
 
 
 async def main():
-    # initially load a config file
-    load_config_ini()
-    
     # parallel task of loading pinglist file from config file
     asyncio.create_task(read_pinglist_periodically())
 
@@ -186,10 +156,7 @@ async def main():
             logger.error(
                 f"No active iface with Control IP {control_host}. Sleep 10 minutes..."
             )
-            time.sleep(600) # sleep 600 seconds
-            
-            # reload a config file and try
-            load_config_ini() 
+            time.sleep(600)
             continue
 
         try:

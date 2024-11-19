@@ -5,47 +5,32 @@
 #include <iostream>
 #include <sstream>
 
-#include "libs_external.hpp"
+#include "extlibs.hpp"
 #include "macro.hpp"
 
+// spdlog
+const int LOG_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB
+const int LOG_FILE_EXTRA_NUM = 0;            // extra rotate-log files
+const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
+const std::string LOG_RESULT_FORMAT = "%v";
+const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::info;
+const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
+const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
+const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
+
+// get a absolute path of source directory
 #ifndef SOURCE_DIR
 #define SOURCE_DIR (".")
 #endif
 
-// spdlog
-const int LOG_FILE_SIZE = 50 * 1024 * 1024;  // 10 MB
-const int LOG_FILE_EXTRA_NUM = 0;            // extra rotate-log files
-const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
-const std::string LOG_RESULT_FORMAT = "%v";
-const enum spdlog::level::level_enum LOG_LEVEL_PRODUCER = spdlog::level::debug;
-const enum spdlog::level::level_enum LOG_LEVEL_SERVER = spdlog::level::info;
-const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
-const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
-const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE =
-    spdlog::level::debug;
-
-std::shared_ptr<spdlog::logger> initialize_custom_logger(
-    const std::string &logname, enum spdlog::level::level_enum log_level,
-    int file_size, int file_num);
-
-std::shared_ptr<spdlog::logger> initialize_result_logger(
-    const std::string &logname, enum spdlog::level::level_enum log_level,
-    int file_size, int file_num);
-
-// get a absolute path of source directory
-inline std::string get_source_directory() { return SOURCE_DIR; }
-
-// check log message
-inline bool check_log(std::string &ctx_log) { return !ctx_log.empty(); }
-
-// append log message to ctx_log
-inline void append_log(std::string &ctx_log, const char *format, ...) {
-    char buffer[64];
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buffer, 64, format, args);
-    va_end(args);
-    ctx_log.append(buffer).append("\n");
+inline std::string get_source_directory() {
+#ifndef SOURCE_DIR
+    // If missed, give a current directory
+    return ".";
+#else
+    // SOURCE_DIR will be defined in Makefile
+    return SOURCE_DIR;
+#endif
 }
 
 // calculate time difference with considering bit wrap-around
@@ -59,4 +44,39 @@ inline uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1,
         delta = (mask - t1 + 1) + t2;
     }
     return delta;
+}
+
+inline std::shared_ptr<spdlog::logger> initialize_custom_logger(
+    const std::string &logname, enum spdlog::level::level_enum log_level,
+    int file_size, int file_num) {
+    auto logger = spdlog::get(logname);
+    if (!logger) {
+        logger = spdlog::rotating_logger_mt(
+            logname, get_source_directory() + DIR_LOG_PATH + logname + ".log",
+            file_size, file_num);
+        logger->set_pattern(LOG_FORMAT);
+        logger->set_level(log_level);
+        logger->flush_on(spdlog::level::info);
+        logger->info("Logger initialization (logname: {}, PID: {})", logname,
+                     getpid());
+    }
+    return logger;
+}
+
+inline std::shared_ptr<spdlog::logger> initialize_result_logger(
+    const std::string &logname, enum spdlog::level::level_enum log_level,
+    int file_size, int file_num) {
+    auto logger = spdlog::get(logname);
+    if (!logger) {
+        logger = spdlog::rotating_logger_mt(
+            logname,
+            get_source_directory() + DIR_RESULT_PATH + logname + ".log",
+            file_size, file_num);
+        logger->set_pattern(LOG_RESULT_FORMAT);
+        logger->set_level(log_level);
+        logger->flush_on(log_level); /** TODO: */
+        logger->debug("Result logger initialization (logname: {}, PID: {})",
+                      logname, getpid());
+    }
+    return logger;
 }
