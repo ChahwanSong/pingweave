@@ -39,10 +39,18 @@ interval_read_pinglist_sec = None
 
 logger = initialize_pinglist_logger(socket.gethostname(), "server")
 
+
 def check_ip_active(target_ip):
     try:
         # Linux/Unix - based 'ip addr' command
-        result = subprocess.run(["ip", "addr"], capture_output=True, text=True)
+        # result = subprocess.run(["ip", "addr"], capture_output=True, text=True) # python 3.7
+        result = subprocess.run(
+            ["ip", "addr"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )  # python 3.6
+
         if result.returncode != 0:
             logger.error(
                 f"Error running 'ip addr' command. Return code: {result.returncode}"
@@ -82,17 +90,17 @@ def load_config_ini():
         interval_download_pinglist_sec = int(
             config["param"]["interval_download_pinglist_sec"]
         )
-        interval_read_pinglist_sec = int(
-            config["param"]["interval_read_pinglist_sec"]
-        )
+        interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 
         logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
-        logger.error(f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60")
+        logger.error(
+            f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60"
+        )
         interval_download_pinglist_sec = int(60)
         interval_read_pinglist_sec = int(60)
-    
+
 
 async def read_pinglist():
     global pinglist_in_memory
@@ -177,7 +185,7 @@ async def handle_client(reader, writer):
 async def main():
     # initially load a config file
     load_config_ini()
-    
+
     # parallel task of loading pinglist file from config file
     loop = asyncio.get_event_loop()
     loop.create_task(read_pinglist_periodically())
@@ -188,10 +196,10 @@ async def main():
             logger.error(
                 f"No active iface with Control IP {control_host}. Sleep 10 minutes..."
             )
-            time.sleep(600) # sleep 600 seconds
-            
+            time.sleep(600)  # sleep 600 seconds
+
             # reload a config file and try
-            load_config_ini() 
+            load_config_ini()
             continue
 
         try:
