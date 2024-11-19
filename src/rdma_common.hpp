@@ -135,22 +135,22 @@ inline uint64_t get_current_timestamp_ns() {
 // Convert 64-bit nanoseconds timestamp to a human-readable string
 inline std::string timestamp_ns_to_string(uint64_t timestamp_ns) {
     // Convert nanoseconds to seconds and nanoseconds part
-    auto seconds = std::chrono::seconds(timestamp_ns / 1'000'000'000LL);
+    auto seconds = timestamp_ns / 1'000'000'000LL;
     auto nanoseconds_part = timestamp_ns % 1'000'000'000LL;
 
-    // Convert to time_point
-    std::chrono::time_point<std::chrono::system_clock> time_point(seconds);
-
-    // Format to a human-readable string
-    std::time_t time_t_format =
-        std::chrono::system_clock::to_time_t(time_point);
+    // Convert to time_t and tm structure
+    std::time_t time_t_format = static_cast<std::time_t>(seconds);
     std::tm tm_format = *std::localtime(&time_t_format);
 
-    std::ostringstream oss;
-    oss << std::put_time(&tm_format, "%Y-%m-%d %H:%M:%S");
-    oss << "." << std::setw(9) << std::setfill('0') << nanoseconds_part;
+    // Format time to a human-readable string
+    char time_buffer[32];
+    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", &tm_format);
 
-    return oss.str();
+    // Combine formatted time and nanoseconds
+    char result_buffer[64];
+    std::snprintf(result_buffer, sizeof(result_buffer), "%s.%09llu", time_buffer, nanoseconds_part);
+    
+    return std::string(result_buffer);
 }
 
 // Get current time as a formatted string
@@ -159,12 +159,15 @@ inline std::string get_current_timestamp_string() {
     auto now = std::chrono::system_clock::now();
     // Convert to time_t for formatting
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    // Format the time as a string
-    std::ostringstream oss;
-    oss << std::put_time(std::localtime(&now_time), "%Y-%m-%d %H:%M:%S");
-    return oss.str();
-}
+    // Convert to tm structure for local time
+    std::tm tm_format = *std::localtime(&now_time);
 
+    // Format the time as a string
+    char time_buffer[32];
+    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", &tm_format);
+
+    return std::string(time_buffer);
+}
 // Function to get current timestamp
 inline uint64_t get_current_timestamp_steady() {
     struct timespec ts = {};
