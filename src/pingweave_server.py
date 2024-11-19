@@ -177,7 +177,9 @@ async def handle_client(reader, writer):
                 )
 
         writer.close()
-        await writer.wait_closed()
+        # Do not await writer.wait_closed(), as it does not exist in Python 3.6
+        # await writer.wait_closed()
+        
     except Exception as e:
         logger.error(f"Error handling client data from {client_ip}:{client_port}: {e}")
 
@@ -189,7 +191,8 @@ async def main():
     # parallel task of loading pinglist file from config file
     loop = asyncio.get_event_loop()
     loop.create_task(read_pinglist_periodically())
-    # asyncio.create_task(read_pinglist_periodically()) # python >=3.7
+    # avoid to use asyncio.create_task to be compatible with python 3.6
+    # asyncio.create_task(read_pinglist_periodically()) 
 
     while True:
         if not check_ip_active(control_host):
@@ -219,4 +222,5 @@ if __name__ == "__main__":
         loop.run_until_complete(main())
     finally:
         loop.close()
+    # Avoid using asyncio.run() to be compatible with python 3.6 
     # asyncio.run(main())

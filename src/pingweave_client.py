@@ -32,6 +32,7 @@ interval_read_pinglist_sec = None
 
 logger = initialize_pinglist_logger(socket.gethostname(), "client")
 
+
 def load_config_ini():
     """
     Reads the configuration file and updates global variables with a lock to ensure thread safety.
@@ -47,17 +48,16 @@ def load_config_ini():
         interval_download_pinglist_sec = int(
             config["param"]["interval_download_pinglist_sec"]
         )
-        interval_read_pinglist_sec = int(
-            config["param"]["interval_read_pinglist_sec"]
-        )
+        interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 
         logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
-        logger.error(f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60")
+        logger.error(
+            f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60"
+        )
         interval_download_pinglist_sec = int(60)
         interval_read_pinglist_sec = int(60)
-        
 
 
 async def fetch_data(ip, port, data_type: str):
@@ -88,7 +88,8 @@ async def fetch_data(ip, port, data_type: str):
             logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
 
         writer.close()
-        await writer.wait_closed()
+        # Skip 'await writer.wait_closed()' for Python 3.6 compatibility
+        # await writer.wait_closed()
 
     except (ConnectionRefusedError, asyncio.TimeoutError) as e:
         logger.error(
@@ -96,6 +97,7 @@ async def fetch_data(ip, port, data_type: str):
         )
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
+
 
 
 async def send_gid_files(ip, port):
@@ -123,18 +125,21 @@ async def send_gid_files(ip, port):
                             f"Sent POST address for {ip_address} to the server."
                         )
                         writer.close()
-                        await writer.wait_closed()
+                        # Skip 'await writer.wait_closed()' for Python 3.6 compatibility
+                        # await writer.wait_closed()
+                        
                     except Exception as e:
                         logger.error(
                             f"Failed to send POST gid/lid address for {ip_address}: {e}"
                         )
-
+                        
+                        
 
 async def main():
     while True:
         # load a config file
         load_config_ini()
-        
+
         await asyncio.gather(
             send_gid_files(control_host, control_port),
             fetch_data(control_host, control_port, "pinglist"),
