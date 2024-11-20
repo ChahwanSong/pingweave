@@ -27,17 +27,22 @@ config = configparser.ConfigParser()
 # global variables
 control_host = None
 control_port = None
-interval_download_pinglist_sec = None
+interval_sync_pinglist_sec = None
 interval_read_pinglist_sec = None
 
 logger = initialize_pinglist_logger(socket.gethostname(), "client")
+
+python_version = sys.version_info
+if python_version < (3, 6):
+    logger.error("Python 3.6 or higher is required. Current version:", sys.version)
+    sys.exit(1)  # 프로그램 종료
 
 
 def load_config_ini():
     """
     Reads the configuration file and updates global variables with a lock to ensure thread safety.
     """
-    global control_host, control_port, interval_download_pinglist_sec, interval_read_pinglist_sec
+    global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
     try:
         config.read(CONFIG_PATH)
@@ -45,18 +50,16 @@ def load_config_ini():
         # 변수 업데이트
         control_host = config["controller"]["host"]
         control_port = int(config["controller"]["port"])
-        interval_download_pinglist_sec = int(
-            config["param"]["interval_download_pinglist_sec"]
-        )
+        interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
         interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 
         logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60"
+            f"Use a default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
-        interval_download_pinglist_sec = int(60)
+        interval_sync_pinglist_sec = int(60)
         interval_read_pinglist_sec = int(60)
 
 
@@ -88,8 +91,10 @@ async def fetch_data(ip, port, data_type: str):
             logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
 
         writer.close()
-        # Skip 'await writer.wait_closed()' for Python 3.6 compatibility
-        # await writer.wait_closed()
+
+        # For Python 3.6 , skip 'await writer.wait_closed()' for compatibility
+        if python_version == (3, 6):
+            await writer.wait_closed()
 
     except (ConnectionRefusedError, asyncio.TimeoutError) as e:
         logger.error(
@@ -97,7 +102,6 @@ async def fetch_data(ip, port, data_type: str):
         )
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
-
 
 
 async def send_gid_files(ip, port):
@@ -125,15 +129,16 @@ async def send_gid_files(ip, port):
                             f"Sent POST address for {ip_address} to the server."
                         )
                         writer.close()
+
                         # Skip 'await writer.wait_closed()' for Python 3.6 compatibility
-                        # await writer.wait_closed()
-                        
+                        if python_version == (3, 6):
+                            await writer.wait_closed()
+
                     except Exception as e:
                         logger.error(
                             f"Failed to send POST gid/lid address for {ip_address}: {e}"
                         )
-                        
-                        
+
 
 async def main():
     while True:
@@ -146,14 +151,16 @@ async def main():
             fetch_data(control_host, control_port, "address_store"),
         )
         await asyncio.sleep(
-            interval_download_pinglist_sec
+            interval_sync_pinglist_sec
         )  # sleep to prevent high CPU usage
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    finally:
-        loop.close()
-    # asyncio.run(main())
+    if python_version == (3, 6):
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(main())
+        finally:
+            loop.close()
+    else:
+        asyncio.run(main())

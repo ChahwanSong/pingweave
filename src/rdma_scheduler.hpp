@@ -14,13 +14,15 @@ class MsgScheduler {
 
     int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
         auto now = std::chrono::steady_clock::now();
-        auto pingDuration = std::chrono::duration_cast<std::chrono::microseconds>(
-            now - last_access_time);
-        auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
-            now - last_load_time);
+        auto pingDuration =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                now - last_access_time);
+        auto loadDuration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - last_load_time);
 
-        // Check the time to load the address_store
-        if (loadDuration.count() >= LOAD_CONFIG_INTERVAL_SEC) {
+        // Check the time to load the address_store (with a small extra delay)
+        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_MS + 1) {
             load_address_info();
             last_load_time = now;
         }
@@ -70,7 +72,8 @@ class MsgScheduler {
             addr_idx = 0;
 
             // Load pinglist.yaml
-            std::ifstream ifs_pinglist(get_source_directory() + DIR_DOWNLOAD_PATH + "pinglist.yaml");
+            std::ifstream ifs_pinglist(get_source_directory() +
+                                       DIR_DOWNLOAD_PATH + "pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
             std::vector<std::string> relevantIps;
 
@@ -89,17 +92,21 @@ class MsgScheduler {
             }
 
             // Load address_store.yaml
-            std::ifstream ifs_addressStore(get_source_directory() + DIR_DOWNLOAD_PATH +
-                               "address_store.yaml");
-            fkyaml::node addressStore = fkyaml::node::deserialize(ifs_addressStore);
+            std::ifstream ifs_addressStore(get_source_directory() +
+                                           DIR_DOWNLOAD_PATH +
+                                           "address_store.yaml");
+            fkyaml::node addressStore =
+                fkyaml::node::deserialize(ifs_addressStore);
 
             for (auto& it : addressStore) {
                 std::string ip = it[0].get_value_ref<std::string&>();
                 if (std::find(relevantIps.begin(), relevantIps.end(), ip) !=
                     relevantIps.end()) {
                     std::string gid = it[1].get_value_ref<std::string&>();
-                    uint32_t lid = static_cast<uint32_t>(it[2].get_value_ref<fkyaml::node::integer_type&>());
-                    uint32_t qpn = static_cast<uint32_t>(it[3].get_value_ref<fkyaml::node::integer_type&>());
+                    uint32_t lid = static_cast<uint32_t>(
+                        it[2].get_value_ref<fkyaml::node::integer_type&>());
+                    uint32_t qpn = static_cast<uint32_t>(
+                        it[3].get_value_ref<fkyaml::node::integer_type&>());
 
                     addressInfo.emplace_back(ip, gid, lid, qpn);
                 }

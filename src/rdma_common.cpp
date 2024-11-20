@@ -131,9 +131,7 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
         config = fkyaml::node::deserialize(ifs);
         spdlog::debug("Pinglist.yaml loaded successfully.");
     } catch (const std::exception &e) {
-        spdlog::error(
-            "An unexpected error occurred while loading the file {}: {}",
-            filename, e.what());
+        spdlog::error("Failed to load a file {}: {}", filename, e.what());
         return;
     }
 
@@ -524,9 +522,6 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
     ah_attr.sl = SERVICE_LEVEL;
     ah_attr.src_path_bits = 0;
     ah_attr.port_num = ctx->active_port;
-    logger->debug("post_send: port_num is {}", ctx->active_port);
-    logger->debug("post_send: gid.global.interface_id is {}",
-                  rem_dest.x.gid.global.interface_id);
 
     if (rem_dest.x.gid.global.interface_id) {  // IP addr for RoCEv2
         ah_attr.is_global = 1;

@@ -34,22 +34,32 @@ config = configparser.ConfigParser()
 # global variables
 control_host = None
 control_port = None
-interval_download_pinglist_sec = None
+interval_sync_pinglist_sec = None
 interval_read_pinglist_sec = None
 
 logger = initialize_pinglist_logger(socket.gethostname(), "server")
 
+python_version = sys.version_info
+if python_version < (3, 6):
+    logger.error("Python 3.6 or higher is required. Current version:", sys.version)
+    sys.exit(1)  # 프로그램 종료
+
 
 def check_ip_active(target_ip):
     try:
-        # Linux/Unix - based 'ip addr' command
-        # result = subprocess.run(["ip", "addr"], capture_output=True, text=True) # python 3.7
-        result = subprocess.run(
-            ["ip", "addr"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )  # python 3.6
+
+        if python_version == (3, 6):
+            result = subprocess.run(
+                ["ip", "addr"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )  # python 3.6
+        else:
+            # Linux/Unix - based 'ip addr' command
+            result = subprocess.run(
+                ["ip", "addr"], capture_output=True, text=True
+            )  # python 3.7
 
         if result.returncode != 0:
             logger.error(
@@ -79,7 +89,7 @@ def load_config_ini():
     """
     Reads the configuration file and updates global variables with a lock to ensure thread safety.
     """
-    global control_host, control_port, interval_download_pinglist_sec, interval_read_pinglist_sec
+    global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
     try:
         config.read(CONFIG_PATH)
@@ -87,23 +97,22 @@ def load_config_ini():
         # 변수 업데이트
         control_host = config["controller"]["host"]
         control_port = int(config["controller"]["port"])
-        interval_download_pinglist_sec = int(
-            config["param"]["interval_download_pinglist_sec"]
-        )
+        interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
         interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 
         logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            f"Use a default parameters - interval_download_pinglist_sec=60, interval_read_pinglist_sec=60"
+            f"Use a default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
-        interval_download_pinglist_sec = int(60)
+        interval_sync_pinglist_sec = int(60)
         interval_read_pinglist_sec = int(60)
 
 
 async def read_pinglist():
     global pinglist_in_memory
+    pinglist_in_memory.clear()
 
     try:
         # use a lock to hold client request during file loading
@@ -177,9 +186,11 @@ async def handle_client(reader, writer):
                 )
 
         writer.close()
+
         # Do not await writer.wait_closed(), as it does not exist in Python 3.6
-        # await writer.wait_closed()
-        
+        if python_version > (3, 6):
+            await writer.wait_closed()
+
     except Exception as e:
         logger.error(f"Error handling client data from {client_ip}:{client_port}: {e}")
 
@@ -189,10 +200,12 @@ async def main():
     load_config_ini()
 
     # parallel task of loading pinglist file from config file
-    loop = asyncio.get_event_loop()
-    loop.create_task(read_pinglist_periodically())
-    # avoid to use asyncio.create_task to be compatible with python 3.6
-    # asyncio.create_task(read_pinglist_periodically()) 
+    if python_version == (3, 6):
+        loop = asyncio.get_event_loop()
+        loop.create_task(read_pinglist_periodically())
+    else:
+        # avoid to use asyncio.create_task to be compatible with python 3.6
+        asyncio.create_task(read_pinglist_periodically())
 
     while True:
         if not check_ip_active(control_host):
@@ -209,41 +222,40 @@ async def main():
             server = await asyncio.start_server(
                 handle_client, control_host, control_port
             )
-            logger.info(f"Pingweave server running on {server.sockets[0].getsockname()}")
+            logger.info(
+                f"Pingweave server running on {server.sockets[0].getsockname()}"
+            )
 
-            # Keep the server running indefinitely
-            await asyncio.Event().wait()
+            if python_version == (3, 6):
+                # Keep the server running indefinitely
+                await asyncio.Event().wait()
+            else:
+                async with server:
+                    await server.serve_forever()
 
         except Exception as e:
             print(f"Cannot start the pingweave server: {e}")
             time.sleep(10)
         finally:
-            server.close()
-            
-        # try:
-        #     server = await asyncio.start_server(
-        #         handle_client, control_host, control_port
-        #     )
-        #     async with server:
-        #         await server.serve_forever()
-        # except Exception as e:
-        #     print(f"Cannot start the pingweave server: {e}")
-        #     time.sleep(10)
+            if python_version == (3, 6):
+                server.close()
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        logger.info("Received exit signal (KeyboardInterrupt).")
-    finally:
-        # Cancel all pending tasks
-        pending = asyncio.Task.all_tasks(loop)
-        for task in pending:
-            task.cancel()
-        # Run the event loop until all tasks are cancelled
-        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        loop.close()
-    # Avoid using asyncio.run() to be compatible with python 3.6 
-    # asyncio.run(main())
+    if python_version == (3, 6):
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(main())
+        except KeyboardInterrupt:
+            logger.info("Received exit signal (KeyboardInterrupt).")
+        finally:
+            # Cancel all pending tasks
+            pending = asyncio.Task.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            # Run the event loop until all tasks are cancelled
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+    else:  # python >= 3.7
+        # Avoid using asyncio.run() to be compatible with python 3.6
+        asyncio.run(main())

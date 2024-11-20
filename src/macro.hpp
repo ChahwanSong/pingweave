@@ -21,7 +21,7 @@ const static int GID_INDEX = 3;      // by default 0 (infiniband & RoCE)
 const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
 const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
-const static int RDMA_TRAFFIC_CLASS = 0;    // DSCP value
+const static int RDMA_TRAFFIC_CLASS = (26 << 2 | 2);       // DSCP value = 106
 const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 
 // Params for internal message queue btw threads
@@ -29,7 +29,7 @@ const static int QUEUE_SIZE = 65536;         // large enough
 const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
 
 // Ping interval / Report interval
-const static uint64_t PING_INTERVAL_US = 1000000;          // microseconds
-const static uint64_t REPORT_INTERVAL_SEC = 10;         // seconds
-const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 10;    // seconds
-const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds
+const static uint64_t PING_INTERVAL_US = 1 * 1000000;       // microseconds
+const static uint64_t REPORT_INTERVAL_MS = 10 * 1000;       // seconds
+const static uint64_t LOAD_CONFIG_INTERVAL_MS = 10 * 1000;  // milliseconds
+const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;      // seconds

@@ -94,7 +94,7 @@ void client_process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
                 } else {
                     logger->error("Unexpected opcode: {}",
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("Unexpected opcode in RX thread");
+                    throw std::runtime_error("Unexpected opcode");
                 }
 
                 ret = ibv_next_poll(ctx_rx->cq_s.cq_ex);
@@ -112,10 +112,8 @@ void client_process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
             num_cqes = ibv_poll_cq(ctx_rx->cq, BATCH_CQE, wc_array);
 
             if (num_cqes < 0) {
-                logger->error("Failed to poll CQ");
                 throw std::runtime_error("Failed to poll CQ");
             } else if (num_cqes == 0) {  // no completion
-                logger->error("CQE poll receives nothing");
                 throw std::runtime_error("Failed during CQ polling");
             }
 
@@ -263,7 +261,7 @@ void client_process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
                 if (wc.opcode == IBV_WC_RECV) {
                     // Get current time
                     cqe_time = get_current_timestamp_steady();
-                    
+
                     logger->debug(
                         "[CQE] Recv completed (ping ID: {}), time: {}",
                         wc.wr_id, cqe_time);
@@ -298,9 +296,8 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
     // RECV WR uses wr_id as a buffer index
     for (int i = 0; i < ctx_rx->buf.size(); ++i) {
         if (post_recv(ctx_rx, i, RX_DEPTH) != RX_DEPTH) {
-            logger->error("Failed to post RECV WRs.");
-            throw std::runtime_error(
-                "Failed to post RECV WR when initialization.");
+            logger->error("Failed to post RECV WRs when initialization.");
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -308,7 +305,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
         logger->error("Couldn't register CQE notification");
-        throw std::runtime_error("Couldn't register CQE notification");
+        exit(EXIT_FAILURE);
     }
 
     // Start the receive loop
@@ -316,6 +313,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
         while (true) {
             // Wait for the next CQE
             if (!wait_for_cq_event(ctx_rx, logger)) {
+                logger->error("Failed during CQ event waiting");
                 throw std::runtime_error("Failed during CQ event waiting");
             }
 
@@ -324,7 +322,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in RX thread: {}", e.what());
-        throw;  // Propagate exception
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -382,7 +380,9 @@ void client_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
                 if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(ping_msg_t),
                               msg.x.pingid % ctx_tx->buf.size(), msg.x.pingid,
                               logger)) {
-                    throw std::runtime_error("Failed to send PING message.");
+                    logger->error("Failed to send PING message, dst_ip: {}.",
+                                  dst_ip);
+                    // throw std::runtime_error("Failed to send PING message.");
                 }
             }
 
@@ -442,11 +442,11 @@ void client_result_thread(const std::string& ipv4,
             // report periodically for every 1 minute
             auto current_time = std::chrono::steady_clock::now();
             auto elapsed_time =
-                std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
                     current_time - last_report_time)
                     .count();
 
-            if (elapsed_time >= REPORT_INTERVAL_SEC) {
+            if (elapsed_time >= REPORT_INTERVAL_MS) {
                 for (auto& [dstip, result_info] : dstip2result) {
                     result_stat_t client_stat =
                         calc_stats(result_info.client_delays);
