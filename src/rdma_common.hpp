@@ -37,8 +37,8 @@
 #include <vector>
 
 #include "format.hpp"
-#include "macro.hpp"
 #include "logger.hpp"
+#include "macro.hpp"
 
 // fully-blocking SPSC queue
 typedef moodycamel::BlockingReaderWriterQueue<struct result_msg_t>
@@ -53,6 +53,7 @@ std::set<std::string> get_all_local_ips();
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx);
+int get_gid_table_size(struct pingweave_context* ctx);
 
 // get thread ID
 std::string get_thread_id();
@@ -144,12 +145,14 @@ inline std::string timestamp_ns_to_string(uint64_t timestamp_ns) {
 
     // Format time to a human-readable string
     char time_buffer[32];
-    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", &tm_format);
+    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S",
+                  &tm_format);
 
     // Combine formatted time and nanoseconds
     char result_buffer[64];
-    std::snprintf(result_buffer, sizeof(result_buffer), "%s.%09llu", time_buffer, nanoseconds_part);
-    
+    std::snprintf(result_buffer, sizeof(result_buffer), "%s.%09llu",
+                  time_buffer, nanoseconds_part);
+
     return std::string(result_buffer);
 }
 
@@ -164,7 +167,8 @@ inline std::string get_current_timestamp_string() {
 
     // Format the time as a string
     char time_buffer[32];
-    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", &tm_format);
+    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S",
+                  &tm_format);
 
     return std::string(time_buffer);
 }

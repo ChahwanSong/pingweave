@@ -185,6 +185,37 @@ int find_active_port(struct pingweave_context *ctx) {
     return -1;
 }
 
+// Get GID table size
+int get_gid_table_size(struct pingweave_context *ctx) {
+    int gid_count;
+    struct ibv_port_attr port_attr;
+
+    if (ibv_query_port(ctx->context, ctx->active_port, &port_attr)) {
+        fprintf(stderr, "Failed to query port attributes.");
+        return -1;
+    }
+
+    int gid_table_size = port_attr.gid_tbl_len;
+    if (gid_table_size <= 0) {
+        fprintf(stderr, "No GIDs available.");
+
+        return -1;
+    }
+
+    union ibv_gid last_gid;
+    for (int i = gid_table_size - 1; i >= 0; --i) {
+        if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
+            auto gid_str = parsed_gid(&last_gid);
+            if (!gid_str.empty() && gid_str != "::") {
+                gid_count = i;
+                break;
+            }
+        }
+    }
+
+    return gid_count;
+}
+
 // thread ID and cast to string
 std::string get_thread_id() {
     std::stringstream ss;
@@ -250,6 +281,21 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
             goto clean_device;
         }
         ctx->active_port = active_port;
+    }
+
+    {
+        int gid_table_size = get_gid_table_size(ctx);
+        logger->info("GID table size is {}. We use the last GID index",
+                     gid_table_size);
+        if (gid_table_size <= 0) {
+            logger->info("GID is not available or something is wrong.");
+            goto clean_device;
+        } else if (gid_table_size == 1) {
+            logger->info("-> probably, Infiniband device.");
+        } else {
+            logger->info("-> probably, RoCEv2 device.");
+        }
+        ctx->gid_index = gid_table_size;  // use last GID
     }
 
     {  // create a complete channel for event-driven polling
@@ -409,18 +455,11 @@ int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
         return true;  // propagate error
     }
 
-    if (ibv_query_gid(ctx->context, ctx->active_port, GID_INDEX, &ctx->gid)) {
-        logger->error("Could not get my gid for gid index {}", GID_INDEX);
+    if (ibv_query_gid(ctx->context, ctx->active_port, ctx->gid_index,
+                      &ctx->gid)) {
+        logger->error("Could not get my gid for gid index {}", ctx->gid_index);
         return true;  // propagate error
     }
-
-    // sanity check - always use GID
-    logger->debug("ctx->gid.global.subnet_prefix: {}",
-              ctx->gid.global.subnet_prefix);
-    // if (ctx->gid.global.subnet_prefix == 0) {
-    //     logger->error("GID subnet prefix must be non-zero.");
-    //     return true;  // propagate error
-    // }
 
     // gid to wired and parsed gid
     gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
@@ -487,17 +526,14 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
     ah_attr.port_num = ctx->active_port;
     logger->debug("post_send: port_num is {}", ctx->active_port);
     logger->debug("post_send: gid.global.interface_id is {}",
-                    rem_dest.x.gid.global.interface_id);
+                  rem_dest.x.gid.global.interface_id);
 
-    if (rem_dest.x.gid.global.interface_id) { // IP addr for RoCEv2
+    if (rem_dest.x.gid.global.interface_id) {  // IP addr for RoCEv2
         ah_attr.is_global = 1;
         ah_attr.grh.hop_limit = 1;
         ah_attr.grh.dgid = rem_dest.x.gid;
-        ah_attr.grh.sgid_index = GID_INDEX;
+        ah_attr.grh.sgid_index = ctx->gid_index;
         ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;
-    } else {
-        logger->error("PingWeave must use GID interface");
-        return true;
     }
 
     // address handle

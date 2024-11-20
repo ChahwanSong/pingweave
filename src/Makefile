@@ -14,6 +14,10 @@ LDLIBS =
 
 # 출력 파일 디렉토리
 BIN_DIR = ../bin
+RESULT_DIR = ../result
+LOGS_DIR = ../logs
+UPLOAD_DIR = ../upload
+DOWNLOAD_DIR = ../download
 
 # 공통 소스 파일
 SRCS_COMMON = rdma_common.cpp
@@ -36,6 +40,10 @@ main: $(TARGET_MAIN)
 
 $(TARGET_MAIN): $(OBJS_MAIN)
 	@mkdir -p $(BIN_DIR)
+	@mkdir -p $(RESULT_DIR)
+	@mkdir -p $(LOGS_DIR)
+	@mkdir -p $(UPLOAD_DIR)
+	@mkdir -p $(DOWNLOAD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # 오브젝트 파일 생성 규칙

@@ -96,6 +96,7 @@ struct pingweave_context {
     std::vector<Buffer> buf;
 
     /* interface*/
+    int gid_index;
     std::string ipv4;
     std::string iface;
     struct ibv_port_attr portinfo;

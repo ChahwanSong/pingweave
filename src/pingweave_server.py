@@ -209,18 +209,41 @@ async def main():
             server = await asyncio.start_server(
                 handle_client, control_host, control_port
             )
-            async with server:
-                await server.serve_forever()
+            logger.info(f"Pingweave server running on {server.sockets[0].getsockname()}")
+
+            # Keep the server running indefinitely
+            await asyncio.Event().wait()
+
         except Exception as e:
             print(f"Cannot start the pingweave server: {e}")
             time.sleep(10)
+        finally:
+            server.close()
+            
+        # try:
+        #     server = await asyncio.start_server(
+        #         handle_client, control_host, control_port
+        #     )
+        #     async with server:
+        #         await server.serve_forever()
+        # except Exception as e:
+        #     print(f"Cannot start the pingweave server: {e}")
+        #     time.sleep(10)
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Received exit signal (KeyboardInterrupt).")
     finally:
+        # Cancel all pending tasks
+        pending = asyncio.Task.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        # Run the event loop until all tasks are cancelled
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
     # Avoid using asyncio.run() to be compatible with python 3.6 
     # asyncio.run(main())
