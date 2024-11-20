@@ -161,42 +161,43 @@ void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
 }
 
 // Find a valid active port on RDMA devices
-int find_active_port(struct pingweave_context *ctx) {
+int find_active_port(struct pingweave_context *ctx,
+                     std::shared_ptr<spdlog::logger> logger) {
     ibv_device_attr device_attr;
     if (ibv_query_device(ctx->context, &device_attr)) {
-        fprintf(stderr, "Failed to query device");
+        logger->error("Failed to query device");
         return -1;
     }
 
     for (int port = 1; port <= device_attr.phys_port_cnt; ++port) {
         if (ibv_query_port(ctx->context, port, &ctx->portinfo)) {
-            fprintf(stderr, "Failed to query port: %d\n", port);
+            logger->error("Failed to query port {}", port);
             continue;
         }
         if (ctx->portinfo.state == IBV_PORT_ACTIVE) {
-            // fprintf(stdout, "Found active port: %d\n", port);
+            logger->info("Found active port: {}", port);
             return port;
         }
     }
 
-    fprintf(stderr, "No active ports found.\n");
+    logger->error("No active ports found.");
     return -1;
 }
 
 // Get GID table size
-int get_gid_table_size(struct pingweave_context *ctx) {
-    int gid_count;
+int get_gid_table_size(struct pingweave_context *ctx,
+                       std::shared_ptr<spdlog::logger> logger) {
+    int gid_count = -1;
     struct ibv_port_attr port_attr;
 
     if (ibv_query_port(ctx->context, ctx->active_port, &port_attr)) {
-        fprintf(stderr, "Failed to query port attributes.");
+        logger->error("Failed to query port attributes.");
         return -1;
     }
 
     int gid_table_size = port_attr.gid_tbl_len;
     if (gid_table_size <= 0) {
-        fprintf(stderr, "No GIDs available.");
-
+        logger->error("No GIDs available.");
         return -1;
     }
 
@@ -205,8 +206,11 @@ int get_gid_table_size(struct pingweave_context *ctx) {
         if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
             auto gid_str = parsed_gid(&last_gid);
             if (!gid_str.empty() && gid_str != "::") {
-                gid_count = i;
-                break;
+                logger->info("Device's GID[{}]: {}", i, gid_str);
+                // get the last GID index
+                if (gid_count == -1) {
+                    gid_count = i;
+                }
             }
         }
     }
@@ -272,7 +276,7 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
     }
 
     {  // find an active port
-        int active_port = find_active_port(ctx);
+        int active_port = find_active_port(ctx, logger);
         if (active_port < 0) {
             logger->error("Unable to query port info for port: {}",
                           active_port);
@@ -282,11 +286,11 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
     }
 
     {
-        int gid_table_size = get_gid_table_size(ctx);
-        logger->info("GID table size is {}. We use the last GID index",
+        int gid_table_size = get_gid_table_size(ctx, logger);
+        logger->info("GID table size is {}, where we use the last GID index",
                      gid_table_size);
         if (gid_table_size <= 0) {
-            logger->info("GID is not available or something is wrong.");
+            logger->error("GID is not available or something is wrong.");
             goto clean_device;
         } else if (gid_table_size == 1) {
             logger->info("-> probably, Infiniband device.");

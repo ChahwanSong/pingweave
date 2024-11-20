@@ -52,8 +52,8 @@ int get_context_by_ip(struct pingweave_context *ctx);
 std::set<std::string> get_all_local_ips();
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 // Find the active port from RNIC hardware
-int find_active_port(struct pingweave_context *ctx);
-int get_gid_table_size(struct pingweave_context* ctx);
+int find_active_port(struct pingweave_context *ctx, std::shared_ptr<spdlog::logger> logger);
+int get_gid_table_size(struct pingweave_context* ctx, std::shared_ptr<spdlog::logger> logger);
 
 // get thread ID
 std::string get_thread_id();
