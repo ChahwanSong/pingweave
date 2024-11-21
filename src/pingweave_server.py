@@ -13,6 +13,7 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml"])
     import yaml
 
+from aiohttp import web
 from logger import initialize_pinglist_logger
 
 # absolute paths of this script and pinglist.yaml
@@ -40,26 +41,17 @@ interval_read_pinglist_sec = None
 logger = initialize_pinglist_logger(socket.gethostname(), "server")
 
 python_version = sys.version_info
-if python_version < (3, 6):
-    logger.error("Python 3.6 or higher is required. Current version:", sys.version)
+if python_version < (3, 7):
+    logger.error(f"Python 3.7 or higher is required. Current version: {sys.version}")
     sys.exit(1)  # 프로그램 종료
 
 
 def check_ip_active(target_ip):
     try:
-
-        if python_version == (3, 6):
-            result = subprocess.run(
-                ["ip", "addr"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-            )  # python 3.6
-        else:
-            # Linux/Unix - based 'ip addr' command
-            result = subprocess.run(
-                ["ip", "addr"], capture_output=True, text=True
-            )  # python 3.7
+        # Linux/Unix - based 'ip addr' command
+        result = subprocess.run(
+            ["ip", "addr"], capture_output=True, text=True
+        )
 
         if result.returncode != 0:
             logger.error(
@@ -87,7 +79,7 @@ def check_ip_active(target_ip):
 
 def load_config_ini():
     """
-    Reads the configuration file and updates global variables with a lock to ensure thread safety.
+    Reads the configuration file and updates global variables.
     """
     global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
@@ -104,10 +96,10 @@ def load_config_ini():
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            f"Use a default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
+            "Use default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
-        interval_sync_pinglist_sec = int(60)
-        interval_read_pinglist_sec = int(60)
+        interval_sync_pinglist_sec = 60
+        interval_read_pinglist_sec = 60
 
 
 async def read_pinglist():
@@ -134,65 +126,50 @@ async def read_pinglist_periodically():
         await asyncio.sleep(interval_read_pinglist_sec)
 
 
-async def handle_client(reader, writer):
+async def get_pinglist(request):
+    client_ip = request.remote
+    async with pinglist_lock:
+        response_data = pinglist_in_memory
+    logger.debug(f"(SEND) pinglist data to client: {client_ip}")
+    return web.json_response(response_data)
+
+
+async def get_address_store(request):
+    client_ip = request.remote
+    async with address_store_lock:
+        response_data = address_store
+    logger.debug(f"(SEND) address_store to client: {client_ip}")
+    return web.json_response(response_data)
+
+
+async def post_address(request):
+    client_ip = request.remote
     try:
-        client_address = writer.get_extra_info("peername")
-        if client_address:
-            client_ip, client_port = client_address
+        data = await request.json()
+        ip_address = data.get('ip_address')
+        gid = data.get('gid')
+        lid = data.get('lid')
+        qpn = data.get('qpn')
+        dtime = data.get('dtime')
 
-        request = await reader.read(512)
+        if all([ip_address, gid, lid, qpn, dtime]):
+            async with address_store_lock:
+                address_store[ip_address] = [ip_address, gid, int(lid), int(qpn)]
+                logger.info(f"(RECV) POST from {client_ip}. Update the address store.")
 
-        if request.startswith(b"GET /pinglist"):
-            async with pinglist_lock:  # pinglist_in_memory - lock
-                response = str(pinglist_in_memory).encode()
-                writer.write(response)
-                await writer.drain()
-                logger.debug(
-                    f"(SEND) pinglist data to client: {client_ip}:{client_port}"
-                )
-
-        elif request.startswith(b"GET /address_store"):
-            async with address_store_lock:  # address_store - lock
-                response = str(address_store).encode()
-                writer.write(response)
-                await writer.drain()
-                logger.debug(
-                    f"(SEND) address_store to client: {client_ip}:{client_port}"
-                )
-
-        elif request.startswith(b"POST /address"):
-            content = request.decode().splitlines()[1:]  # ignore the first line
-            if len(content) == 5:  # IP, GID, LID, QPN, datetime
-                ip_address, gid, lid, qpn, dtime = content
-
-                async with address_store_lock:  # address_store - lock
-                    address_store[ip_address] = [ip_address, gid, int(lid), int(qpn)]
-                    logger.info(
-                        f"(RECV) POST from {client_ip}:{client_port}. Update the address store."
+                if len(address_store) > 10000:
+                    logger.error(
+                        f"Too many registered ip->(gid,lid) entries: {len(address_store)}"
                     )
-
-                    if len(address_store) > 10000:
-                        logger.error(
-                            f"Too many registered ip->(gid,lid) entries: {len(address_store)}"
-                        )
-                        logger.critical(
-                            "Clean up the address_store. Check your config."
-                        )
-                        address_store.clear()
-
-            else:
-                logger.warning(
-                    f"(RECV) POST format is incorrect from {client_ip}:{client_port}"
-                )
-
-        writer.close()
-
-        # Do not await writer.wait_closed(), as it does not exist in Python 3.6
-        if python_version > (3, 6):
-            await writer.wait_closed()
-
+                    logger.critical("Clean up the address_store. Check your config.")
+                    address_store.clear()
+            return web.Response(text="Address updated", status=200)
+        else:
+            logger.warning(f"(RECV) POST format is incorrect from {client_ip}")
+            return web.Response(text="Invalid data", status=400)
     except Exception as e:
-        logger.error(f"Error handling client data from {client_ip}:{client_port}: {e}")
+        logger.error(f"Error handling POST data from {client_ip}: {e}")
+        return web.Response(text="Internal server error", status=500)
 
 
 async def main():
@@ -200,62 +177,41 @@ async def main():
     load_config_ini()
 
     # parallel task of loading pinglist file from config file
-    if python_version == (3, 6):
-        loop = asyncio.get_event_loop()
-        loop.create_task(read_pinglist_periodically())
-    else:
-        # avoid to use asyncio.create_task to be compatible with python 3.6
-        asyncio.create_task(read_pinglist_periodically())
+    asyncio.create_task(read_pinglist_periodically())
 
     while True:
         if not check_ip_active(control_host):
             logger.error(
                 f"No active iface with Control IP {control_host}. Sleep 10 minutes..."
             )
-            time.sleep(600)  # sleep 600 seconds
+            await asyncio.sleep(600)  # sleep 600 seconds
 
             # reload a config file and try
             load_config_ini()
             continue
 
         try:
-            server = await asyncio.start_server(
-                handle_client, control_host, control_port
-            )
-            logger.info(
-                f"Pingweave server running on {server.sockets[0].getsockname()}"
-            )
+            app = web.Application()
+            app.router.add_get('/pinglist', get_pinglist)
+            app.router.add_get('/address_store', get_address_store)
+            app.router.add_post('/address', post_address)
 
-            if python_version == (3, 6):
-                # Keep the server running indefinitely
-                await asyncio.Event().wait()
-            else:
-                async with server:
-                    await server.serve_forever()
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, control_host, control_port)
+            await site.start()
+
+            logger.info(f"Pingweave server running on {control_host}:{control_port}")
+
+            # Keep the server running indefinitely
+            await asyncio.Event().wait()
 
         except Exception as e:
-            print(f"Cannot start the pingweave server: {e}")
-            time.sleep(10)
+            logger.error(f"Cannot start the pingweave server: {e}")
+            await asyncio.sleep(10)
         finally:
-            if python_version == (3, 6):
-                server.close()
+            await runner.cleanup()
 
 
 if __name__ == "__main__":
-    if python_version == (3, 6):
-        loop = asyncio.get_event_loop()
-        try:
-            loop.run_until_complete(main())
-        except KeyboardInterrupt:
-            logger.info("Received exit signal (KeyboardInterrupt).")
-        finally:
-            # Cancel all pending tasks
-            pending = asyncio.Task.all_tasks(loop)
-            for task in pending:
-                task.cancel()
-            # Run the event loop until all tasks are cancelled
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            loop.close()
-    else:  # python >= 3.7
-        # Avoid using asyncio.run() to be compatible with python 3.6
-        asyncio.run(main())
+    asyncio.run(main())

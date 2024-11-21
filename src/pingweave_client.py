@@ -1,9 +1,12 @@
 import os
 import subprocess
 import sys
-import asyncio  # default library
 import configparser  # default library
 import socket
+import time
+import urllib.request
+import urllib.error
+import json
 
 try:
     import yaml
@@ -34,13 +37,13 @@ logger = initialize_pinglist_logger(socket.gethostname(), "client")
 
 python_version = sys.version_info
 if python_version < (3, 6):
-    logger.error("Python 3.6 or higher is required. Current version:", sys.version)
+    logger.error(f"Python 3.6 or higher is required. Current version: {sys.version}")
     sys.exit(1)  # 프로그램 종료
 
 
 def load_config_ini():
     """
-    Reads the configuration file and updates global variables with a lock to ensure thread safety.
+    Reads the configuration file and updates global variables.
     """
     global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
@@ -57,110 +60,91 @@ def load_config_ini():
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            f"Use a default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
+            "Use default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
-        interval_sync_pinglist_sec = int(60)
-        interval_read_pinglist_sec = int(60)
+        interval_sync_pinglist_sec = 60
+        interval_read_pinglist_sec = 60
 
 
-async def fetch_data(ip, port, data_type: str):
+def fetch_data(ip, port, data_type):
     try:
-        reader, writer = await asyncio.open_connection(ip, port)
+        url = f"http://{ip}:{port}/{data_type}"
+        logger.debug(f"Requesting {url}")
+        request = urllib.request.Request(url)
+        with urllib.request.urlopen(request) as response:
+            data = response.read()
+            logger.info(f"Received {data_type} data.")
 
-        # GET request
-        writer.write(f"GET /{data_type}".encode())
-        await writer.drain()
+            # Save to YAML
+            try:
+                yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
 
-        # Get response
-        data = await reader.read(-1)
-        logger.info(f"Received {data_type} data.")
+                # Parse JSON data
+                parsed_data = json.loads(data.decode())
 
-        # Save to YAML
-        try:
-            yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
+                # Write to YAML file
+                with open(yaml_file_path, "w") as yaml_file:
+                    yaml.dump(parsed_data, yaml_file, default_flow_style=False)
 
-            # Check the data type - dict()
-            parsed_data = yaml.safe_load(data.decode())
-
-            # Write to YAML file
-            with open(yaml_file_path, "w") as yaml_file:
-                yaml.dump(parsed_data, yaml_file, default_flow_style=False)
-
-            logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
-        except yaml.YAMLError as e:
-            logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
-
-        writer.close()
-
-        # For Python 3.6 , skip 'await writer.wait_closed()' for compatibility
-        if python_version == (3, 6):
-            await writer.wait_closed()
-
-    except (ConnectionRefusedError, asyncio.TimeoutError) as e:
-        logger.error(
-            f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}"
-        )
+                logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
+            except (yaml.YAMLError, json.JSONDecodeError) as e:
+                logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
+    except urllib.error.URLError as e:
+        logger.error(f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}")
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
 
 
-async def send_gid_files(ip, port):
+def send_gid_files(ip, port):
     for filename in os.listdir(UPLOAD_PATH):
         filepath = os.path.join(UPLOAD_PATH, filename)
 
-        if (
-            os.path.isfile(filepath) and filename.count(".") == 3
-        ):  # Check file name is IP address
+        if os.path.isfile(filepath) and filename.count(".") == 3:  # Check file name is IP address
             with open(filepath, "r") as file:
                 lines = file.read().splitlines()
                 if len(lines) == 4:
                     gid, lid, qpn, times = lines
                     ip_address = filename
 
-                    # send POST to server
-                    data_to_send = (
-                        f"POST /address\n{ip_address}\n{gid}\n{lid}\n{qpn}\n{times}"
-                    )
+                    # Prepare data to send
+                    data = {
+                        "ip_address": ip_address,
+                        "gid": gid,
+                        "lid": lid,
+                        "qpn": qpn,
+                        "dtime": times
+                    }
+                    data_json = json.dumps(data).encode('utf-8')
+
+                    url = f"http://{ip}:{port}/address"
+                    request = urllib.request.Request(url, data=data_json, method='POST')
+                    request.add_header('Content-Type', 'application/json')
+
                     try:
-                        reader, writer = await asyncio.open_connection(ip, port)
-                        writer.write(data_to_send.encode())
-                        await writer.drain()
-                        logger.debug(
-                            f"Sent POST address for {ip_address} to the server."
-                        )
-                        writer.close()
-
-                        # Skip 'await writer.wait_closed()' for Python 3.6 compatibility
-                        if python_version == (3, 6):
-                            await writer.wait_closed()
-
+                        with urllib.request.urlopen(request) as response:
+                            response_data = response.read()
+                            logger.debug(f"Sent POST address for {ip_address} to the server.")
+                    except urllib.error.URLError as e:
+                        logger.error(f"Failed to send POST gid/lid address for {ip_address}: {e}")
                     except Exception as e:
-                        logger.error(
-                            f"Failed to send POST gid/lid address for {ip_address}: {e}"
-                        )
+                        logger.error(f"An unexpected error occurred while sending data: {e}")
 
 
-async def main():
+def main():
     while True:
-        # load a config file
+        # Load the config file
         load_config_ini()
 
-        await asyncio.gather(
-            send_gid_files(control_host, control_port),
-            fetch_data(control_host, control_port, "pinglist"),
-            fetch_data(control_host, control_port, "address_store"),
-        )
-        await asyncio.sleep(
-            interval_sync_pinglist_sec
-        )  # sleep to prevent high CPU usage
+        # Send gid files
+        send_gid_files(control_host, control_port)
+
+        # Fetch pinglist and address_store
+        fetch_data(control_host, control_port, "pinglist")
+        fetch_data(control_host, control_port, "address_store")
+
+        # Sleep to prevent high CPU usage + small delay
+        time.sleep(interval_sync_pinglist_sec + 0.01)
 
 
 if __name__ == "__main__":
-    if python_version == (3, 6):
-        loop = asyncio.get_event_loop()
-        try:
-            loop.run_until_complete(main())
-        finally:
-            loop.close()
-    else:
-        asyncio.run(main())
+    main()

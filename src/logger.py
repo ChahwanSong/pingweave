@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 # Create the logs directory if it doesn't exist
 log_dir = "../logs"
 logging_level = logging.INFO
-console_level = logging.ERROR
+console_level = logging.DEBUG
 
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
