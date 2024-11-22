@@ -51,7 +51,8 @@ int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx);
 int get_context_by_ip(struct pingweave_context *ctx);
 // all ipv4 local address
 std::set<std::string> get_all_local_ips();
-void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
+void get_my_addr_from_pinglist(const std::string &pinglist_filename,
+                               std::set<std::string> &myaddr);
 // Find the active port from RNIC hardware
 int find_active_port(struct pingweave_context *ctx,
                      std::shared_ptr<spdlog::logger> logger);
@@ -99,10 +100,10 @@ std::string convert_result_to_str(const std::string &srcip,
                                   const result_stat_t &client_stat,
                                   const result_stat_t &network_stat,
                                   const result_stat_t &server_stat);
-    // send the result to http server
-    void send_result_to_http_server(const std::string &server_ip,
-                                    int server_port, const std::string &message,
-                                    std::shared_ptr<spdlog::logger> logger);
+// send the result to http server
+void send_result_to_http_server(const std::string &server_ip, int server_port,
+                                const std::string &message,
+                                std::shared_ptr<spdlog::logger> logger);
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/
 /**************************************************************/

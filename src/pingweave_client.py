@@ -1,21 +1,22 @@
 import os
-import subprocess
 import sys
-import configparser  # default library
-import socket
+import subprocess
+import configparser
+import asyncio
 import time
-import urllib.request
-import urllib.error
+import copy
+import socket
+import psutil
+import socket
+import multiprocessing
 import json
 
-try:
-    import yaml
-except ImportError:
-    print("PyYAML library not found. Installing...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml"])
-    import yaml
+import yaml  # python3 -m pip install pyyaml
+import urllib.request  # python3 -m pip install urllib
+import urllib.error
+from logger import initialize_pingweave_logger
 
-from logger import initialize_pinglist_logger
+logger = initialize_pingweave_logger(socket.gethostname(), "client")
 
 # absolute paths of this script and pinglist.yaml
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,14 +31,13 @@ config = configparser.ConfigParser()
 # global variables
 control_host = None
 control_port = None
+collect_port = None
 interval_sync_pinglist_sec = None
 interval_read_pinglist_sec = None
 
-logger = initialize_pinglist_logger(socket.gethostname(), "client")
-
 python_version = sys.version_info
 if python_version < (3, 6):
-    logger.error(f"Python 3.6 or higher is required. Current version: {sys.version}")
+    logger.critical(f"Python 3.6 or higher is required. Current version: {sys.version}")
     sys.exit(1)  # 프로그램 종료
 
 
@@ -45,18 +45,20 @@ def load_config_ini():
     """
     Reads the configuration file and updates global variables.
     """
-    global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
+    global control_host, control_port, collect_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
     try:
         config.read(CONFIG_PATH)
 
         # 변수 업데이트
         control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["port"])
+        control_port = int(config["controller"]["port_control"])
+        collect_port = int(config["controller"]["port_collect"])
+
         interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
         interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
 
-        logger.info(f"Configuration reloaded successfully from {CONFIG_PATH}.")
+        logger.debug(f"Configuration reloaded successfully from {CONFIG_PATH}.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
@@ -67,34 +69,43 @@ def load_config_ini():
 
 
 def fetch_data(ip, port, data_type):
+    # YAML path
+    yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
+    is_error = False
     try:
         url = f"http://{ip}:{port}/{data_type}"
         logger.debug(f"Requesting {url}")
         request = urllib.request.Request(url)
         with urllib.request.urlopen(request) as response:
             data = response.read()
-            logger.info(f"Received {data_type} data.")
+            logger.debug(f"Received {data_type} data.")
 
-            # Save to YAML
-            try:
-                yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
+            # Parse JSON data
+            parsed_data = json.loads(data.decode())
 
-                # Parse JSON data
-                parsed_data = json.loads(data.decode())
+            # Write to YAML file
+            with open(yaml_file_path, "w") as yaml_file:
+                yaml.dump(parsed_data, yaml_file, default_flow_style=False)
 
-                # Write to YAML file
-                with open(yaml_file_path, "w") as yaml_file:
-                    yaml.dump(parsed_data, yaml_file, default_flow_style=False)
+            logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
 
-                logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
-            except (yaml.YAMLError, json.JSONDecodeError) as e:
-                logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
+    except (yaml.YAMLError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
+        is_error = True
     except urllib.error.URLError as e:
         logger.error(
             f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}"
         )
+        is_error = True
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
+        is_error = True
+
+    # if error occurs, write an empty YAML file which makes no ping
+    if is_error:
+        logger.debug(f"-> Dump an empty YAML !!")
+        with open(yaml_file_path, "w") as yaml_file:
+            yaml.dump({}, yaml_file, default_flow_style=False)
 
 
 def send_gid_files(ip, port):

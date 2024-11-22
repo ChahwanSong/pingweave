@@ -153,9 +153,10 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
         // Re-register for CQ event notifications
         if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             logger->error("Couldn't register CQE notification");
-            throw std::runtime_error("Failed to post cqe request notification.");
+            throw std::runtime_error(
+                "Failed to post cqe request notification.");
         }
-        
+
     } catch (const std::exception& e) {
         logger->error("RX CQE handler exits unexpectedly: {}", e.what());
         throw;  // Propagate exception
@@ -178,7 +179,8 @@ bool server_process_pong_cqe(struct pingweave_context* ctx_tx,
         pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
             ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
         logger->debug(
-            "-> SEND post with ACK message pingid: {} to qpn: {}, gid: {}, lid: "
+            "-> SEND post with ACK message pingid: {} to qpn: {}, gid: {}, "
+            "lid: "
             "{}, delay: {}",
             pong_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
             ping_msg.x.lid, pong_msg.x.server_delay);

@@ -466,7 +466,7 @@ void client_result_thread(const std::string& ipv4,
                         ipv4, uint2ip(dstip), result_info, client_stat,
                         network_stat, server_stat);
                     logger->info(result);         // logging
-                    agg_result += result + "\n";  // aggregate
+                    agg_result += result + "\n";  // aggregate logs
                 }
 
                 // send to collector
@@ -474,7 +474,8 @@ void client_result_thread(const std::string& ipv4,
                 int controller_port;
                 if (get_controller_info_from_ini(pingweave_ini_abs_path,
                                                  controller_host,
-                                                 controller_port)) {
+                                                 controller_port) &&
+                    agg_result.size() > 0) {
                     send_result_to_http_server(controller_host, controller_port,
                                                agg_result, logger);
                 }

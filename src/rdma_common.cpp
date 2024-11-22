@@ -143,39 +143,45 @@ void delete_files_in_directory(const std::string &directoryPath) {
 }
 
 // If error occurs, myaddr returned is empty set.
-void get_my_addr(const std::string &filename, std::set<std::string> &myaddr) {
+void get_my_addr_from_pinglist(const std::string &pinglist_filename,
+                               std::set<std::string> &myaddr) {
     fkyaml::node config;
     myaddr.clear();  // clean-slate start
 
     try {
-        std::ifstream ifs(filename);
+        std::ifstream ifs(pinglist_filename);
         config = fkyaml::node::deserialize(ifs);
         spdlog::debug("Pinglist.yaml loaded successfully.");
     } catch (const std::exception &e) {
-        spdlog::error("Failed to load a file {}: {}", filename, e.what());
+        spdlog::error("Failed to load a pinglist.yaml: {}", e.what());
         return;
     }
 
     try {
-        // Get the RDMA category groups
-        if (!config.contains("rdma")) {
-            spdlog::error("No 'rdma' category found in the YAML file.");
-            return;
-        }
-
         // Retrieve the node's IP addr
         std::set<std::string> local_ips = get_all_local_ips();
 
-        // find all my ip addrs is in pinglist ip addrs
-        for (auto &group : config["rdma"]) {
-            for (auto &ip : group) {
-                // If IP is on the current node, add it
-                std::string ip_addr = ip.get_value_ref<std::string &>();
-                if (local_ips.find(ip_addr) != local_ips.end()) {
-                    myaddr.insert(ip_addr);
+        if (config.empty()) {
+            spdlog::warn("No entry in pinglist.yaml, skip.");
+            return;
+        }
+
+        // Get the RDMA category groups
+        if (!config.contains("rdma")) {
+            spdlog::warn("No 'rdma' category found in pinglist.yaml");
+        } else {
+            // find all my ip addrs is in pinglist ip addrs
+            for (auto &group : config["rdma"]) {
+                for (auto &ip : group) {
+                    // If IP is on the current node, add it
+                    std::string ip_addr = ip.get_value_ref<std::string &>();
+                    if (local_ips.find(ip_addr) != local_ips.end()) {
+                        myaddr.insert(ip_addr);
+                    }
                 }
             }
         }
+
     } catch (const std::exception &e) {
         spdlog::error("Failed to get my IP addresses from pinglist.yaml");
     }
@@ -196,7 +202,7 @@ int find_active_port(struct pingweave_context *ctx,
             continue;
         }
         if (ctx->portinfo.state == IBV_PORT_ACTIVE) {
-            logger->info("Found active port: {}", port);
+            logger->debug("Found active port: {}", port);
             return port;
         }
     }
@@ -227,7 +233,7 @@ int get_gid_table_size(struct pingweave_context *ctx,
         if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
             auto gid_str = parsed_gid(&last_gid);
             if (!gid_str.empty() && gid_str != "::") {
-                logger->info("Device's GID[{}]: {}", i, gid_str);
+                logger->debug("Device's GID[{}]: {}", i, gid_str);
                 // get the last GID index
                 if (gid_count == -1) {
                     gid_count = i;
@@ -332,8 +338,8 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
 
     {
         int gid_table_size = get_gid_table_size(ctx, logger);
-        logger->info("GID table size is {}, where we use the last GID index",
-                     gid_table_size);
+        logger->debug("GID table size is {}, where we use the last GID index",
+                      gid_table_size);
         if (gid_table_size <= 0) {
             logger->error("GID is not available or something is wrong.");
             goto clean_device;
@@ -840,7 +846,7 @@ void send_result_to_http_server(const std::string &server_ip, int server_port,
 
     // HTTP 요청 작성
     std::string request =
-        "POST /data HTTP/1.1\r\n"
+        "POST /result HTTP/1.1\r\n"
         "Host: " +
         server_ip + ":" + std::to_string(server_port) +
         "\r\n"
@@ -859,16 +865,15 @@ void send_result_to_http_server(const std::string &server_ip, int server_port,
     // char buffer[1024] = {0};
     // ssize_t bytes_read = read(sock, buffer, sizeof(buffer) - 1);
     // if (bytes_read > 0) {
-    //     std::cout << "Response from server:\n" << buffer << std::endl;
+    //     logger->info("Response from server: {}", buffer);
     // } else if (bytes_read == 0) {
-    //     std::cerr << "Connection closed by server!" << std::endl;
+    //     logger->error("Connection closed by server!");
     // } else {
     //     if (errno == EWOULDBLOCK || errno == EAGAIN) {
-    //         std::cerr << "Timeout while waiting for server response!"
-    //                   << std::endl;
+    //         logger->error("Timeout while waiting for server response!");
     //     } else {
-    //         std::cerr << "Failed to receive response! Error: "
-    //                   << strerror(errno) << std::endl;
+    //         logger->error("Failed to receive response! Error: {}",
+    //                       strerror(errno));
     //     }
     // }
 
