@@ -242,9 +242,8 @@ void sigchld_handler(int sig) {
     // 모든 종료된 자식 프로세스의 상태를 수집
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         spdlog::info("[sigchld] Child process (PID: {}) terminated.", pid);
-        kill(pid, SIGTERM);
 
-        // remove from global status
+        // If accidentally killed, handle the status and make logs
         if (process_py_client.pid == pid) {
             spdlog::info("-> process name: {}", process_py_client.name);
             process_py_client = {0};  // renew
@@ -271,7 +270,10 @@ void sigchld_handler(int sig) {
                 break;
             }
         }
+
+        // ensure to kill the process
+        kill(pid, SIGTERM);
     }
 
-    errno = saved_errno;  // 기존 errno 값을 복구
+    errno = saved_errno;  // back to previous errno
 }

@@ -21,8 +21,8 @@ class MsgScheduler {
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - last_load_time);
 
-        // Check the time to load the address_store (with a small extra delay)
-        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_MS + 1) {
+        // Check the time to load the address_store
+        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_MS) {
             load_address_info();
             last_load_time = now;
         }

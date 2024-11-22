@@ -65,10 +65,14 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
                         logger->warn("Failed to repost the next RECV WR.");
                     }
 
+                    // Handle the received message
                     if (!server_queue->try_enqueue(ping_msg)) {
-                        logger->error("Failed to enqueue ping message");
-                        throw std::runtime_error(
-                            "Failed to handle PING message");
+                        logger->warn(
+                            "Failed to enqueue ping message, pingid: {}, gid: "
+                            "{}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
+                        // throw std::runtime_error(
+                        //     "Failed to handle PING message");
                     }
                 } else {
                     logger->error("Unexpected opcode: {}",
@@ -133,11 +137,14 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
                         logger->warn("Failed to repost the next RECV WR.");
                     }
 
-                    // Handle the received message (PONG or ACK)
+                    // Handle the received message
                     if (!server_queue->try_enqueue(ping_msg)) {
-                        logger->error("Failed to enqueue ping message");
-                        throw std::runtime_error(
-                            "Failed to handle PING message");
+                        logger->warn(
+                            "Failed to enqueue ping message, pingid: {}, gid: "
+                            "{}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
+                        // throw std::runtime_error(
+                        //     "Failed to handle PING message");
                     }
                 } else {
                     logger->error("Unexpected opcode: {}",
@@ -189,12 +196,6 @@ bool server_process_pong_cqe(struct pingweave_context* ctx_tx,
         dst_addr.x.gid = ping_msg.x.gid;
         dst_addr.x.lid = ping_msg.x.lid;
         dst_addr.x.qpn = ping_msg.x.qpn;
-
-        /**
-         * TODO: Small jittering to prevent buffer override at client-side.
-         * This can happen as we use RDMA UC communication.
-         **/
-        // std::this_thread::sleep_for(std::chrono::microseconds(10));
 
         // send PONG ACK
         if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
@@ -300,15 +301,12 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
             }
 
             if (wc.opcode == IBV_WC_SEND) {
-                logger->debug("[CQE] Send completed (ping ID: {}), time: {}",
-                              wc.wr_id, cqe_time);
-
                 // get CQE time
                 cqe_time = get_current_timestamp_steady();
 
                 // PONG ACK's CQE -> ignore
                 if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
-                    logger->debug("CQE of ACK. Do nothing.");
+                    logger->debug("[CQE] CQE of ACK. Do nothing.");
                     ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                     continue;
                 }

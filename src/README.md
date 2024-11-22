@@ -31,5 +31,27 @@
     - Done
 - YAML C++ LIBRARY  -> use fkyaml library
     - Done
-- pingweave_server.py 에서 로컬 주소 address_store 에 저장할 때, 오래된 정보 (1 day) 필터링
+- HTTP Server - aiohttp
+    - Done (pingweave_server.py)
 
+
+
+## Overhead
+* CPU: Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz
+* 2 node - (1) non-hyperthreading, (2) hyperthreading
+* pingweave has two processes - (1) TX, (2) RX
+### ping ~4K/second for TX, ~4K/second for RX
+- non-hyperthreading
+    mason    2814898 14.9  0.1 554772 410512 pts/0   Sl+  05:38   0:48 ../bin/pingweave
+    mason    2814899 17.3  0.0 432944 218112 pts/0   Sl+  05:38   0:55 ../bin/pingweave
+- hyperthreading
+    mason     257428 24.3  0.1 554772 409000 pts/0   Sl+  05:38   1:20 ../bin/pingweave
+    mason     257429 36.6  0.0 432948 203864 pts/0   Sl+  05:38   2:01 ../bin/pingweave
+
+### ping ~10K/second for TX, ~10K/second for RX
+- non-hyperthreading
+    mason    2815575 25.7  0.4 1210128 1093172 pts/0 Sl+  07:16   1:40 ../bin/pingweave
+    mason    2815576 33.9  0.2 891700 700880 pts/0   Sl+  07:16   2:13 ../bin/pingweave
+- hyperthreading
+    mason     406627 45.4  0.2 751380 636472 pts/0   Sl+  07:19   1:30 ../bin/pingweave
+    mason     406628 56.7  0.1 498484 297340 pts/0   Sl+  07:19   1:53 ../bin/pingweave

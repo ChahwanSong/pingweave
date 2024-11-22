@@ -236,7 +236,6 @@ async def pingweave_server():
         logger.error(f"Exception in pingweave_server: {e}")
 
 
-#############################################################################
 async def handle_result_post(request):
     client_ip = request.remote
 
@@ -246,9 +245,10 @@ async def handle_result_post(request):
         logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
 
         # Process the data (e.g., data parsing)
-        print(raw_data)
-        # data = raw_data.strip().split(",")  # Parse comma-separated data
-        # logger.debug(f"Processed result data: {data}")
+        results = raw_data.strip().split("\n")
+        for result in results:
+            data = result.strip().split(",")
+            print(f"{data}")
 
         # Return successful response
         return web.Response(text="Data processed successfully", status=200)
@@ -307,9 +307,6 @@ async def pingweave_collector():
         logger.info("pingweave_collector received KeyboardInterrupt. Exiting.")
     except Exception as e:
         logger.error(f"Exception in pingweave_collector: {e}")
-
-
-#############################################################################
 
 
 def run_pingweave_server():
