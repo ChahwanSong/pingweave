@@ -90,7 +90,9 @@ def fetch_data(ip, port, data_type):
             except (yaml.YAMLError, json.JSONDecodeError) as e:
                 logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
     except urllib.error.URLError as e:
-        logger.error(f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}")
+        logger.error(
+            f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}"
+        )
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
 
@@ -99,7 +101,9 @@ def send_gid_files(ip, port):
     for filename in os.listdir(UPLOAD_PATH):
         filepath = os.path.join(UPLOAD_PATH, filename)
 
-        if os.path.isfile(filepath) and filename.count(".") == 3:  # Check file name is IP address
+        if (
+            os.path.isfile(filepath) and filename.count(".") == 3
+        ):  # Check file name is IP address
             with open(filepath, "r") as file:
                 lines = file.read().splitlines()
                 if len(lines) == 4:
@@ -112,22 +116,28 @@ def send_gid_files(ip, port):
                         "gid": gid,
                         "lid": lid,
                         "qpn": qpn,
-                        "dtime": times
+                        "dtime": times,
                     }
-                    data_json = json.dumps(data).encode('utf-8')
+                    data_json = json.dumps(data).encode("utf-8")
 
                     url = f"http://{ip}:{port}/address"
-                    request = urllib.request.Request(url, data=data_json, method='POST')
-                    request.add_header('Content-Type', 'application/json')
+                    request = urllib.request.Request(url, data=data_json, method="POST")
+                    request.add_header("Content-Type", "application/json")
 
                     try:
                         with urllib.request.urlopen(request) as response:
                             response_data = response.read()
-                            logger.debug(f"Sent POST address for {ip_address} to the server.")
+                            logger.debug(
+                                f"Sent POST address from {ip_address} to the server."
+                            )
                     except urllib.error.URLError as e:
-                        logger.error(f"Failed to send POST gid/lid address for {ip_address}: {e}")
+                        logger.error(
+                            f"Failed to send POST gid/lid address from {ip_address}: {e}"
+                        )
                     except Exception as e:
-                        logger.error(f"An unexpected error occurred while sending data: {e}")
+                        logger.error(
+                            f"An unexpected error occurred while sending data: {e}"
+                        )
 
 
 def main():

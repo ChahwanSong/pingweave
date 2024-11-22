@@ -4,11 +4,17 @@
 
 #include <string>
 
+// get a absolute path of source directory
+#ifndef SOURCE_DIR
+#define SOURCE_DIR (".")
+#endif
+
 // directory
 const std::string DIR_UPLOAD_PATH = "/../upload";
-const std::string DIR_DOWNLOAD_PATH = "/../download/";
-const std::string DIR_LOG_PATH = "/../logs/";
-const std::string DIR_RESULT_PATH = "/../result/";
+const std::string DIR_DOWNLOAD_PATH = "/../download";
+const std::string DIR_LOG_PATH = "/../logs";
+const std::string DIR_RESULT_PATH = "/../result";
+const std::string DIR_CONFIG_PATH = "/../config";
 
 // constants
 const static int MESSAGE_SIZE = 64;  // Message size of 64B

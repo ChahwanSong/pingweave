@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "format.hpp"
+#include "ini.hpp"
 #include "logger.hpp"
 #include "macro.hpp"
 
@@ -52,9 +53,15 @@ int get_context_by_ip(struct pingweave_context *ctx);
 std::set<std::string> get_all_local_ips();
 void get_my_addr(const std::string &filename, std::set<std::string> &myaddr);
 // Find the active port from RNIC hardware
-int find_active_port(struct pingweave_context *ctx, std::shared_ptr<spdlog::logger> logger);
-int get_gid_table_size(struct pingweave_context* ctx, std::shared_ptr<spdlog::logger> logger);
-
+int find_active_port(struct pingweave_context *ctx,
+                     std::shared_ptr<spdlog::logger> logger);
+int get_gid_table_size(struct pingweave_context *ctx,
+                       std::shared_ptr<spdlog::logger> logger);
+// parse ini file
+int get_controller_info_from_ini(const std::string &ini_path, std::string &ip,
+                                 int &port);
+// delete files in directory
+void delete_files_in_directory(const std::string &directoryPath);
 // get thread ID
 std::string get_thread_id();
 
@@ -85,7 +92,17 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
 
 // statistics
 result_stat_t calc_stats(const std::vector<uint64_t> &delays);
-
+// convert result to string
+std::string convert_result_to_str(const std::string &srcip,
+                                  const std::string &dstip,
+                                  const result_info_t &result_info,
+                                  const result_stat_t &client_stat,
+                                  const result_stat_t &network_stat,
+                                  const result_stat_t &server_stat);
+    // send the result to http server
+    void send_result_to_http_server(const std::string &server_ip,
+                                    int server_port, const std::string &message,
+                                    std::shared_ptr<spdlog::logger> logger);
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/
 /**************************************************************/

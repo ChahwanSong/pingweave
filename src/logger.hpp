@@ -18,11 +18,6 @@ const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
 
-// get a absolute path of source directory
-#ifndef SOURCE_DIR
-#define SOURCE_DIR (".")
-#endif
-
 inline std::string get_source_directory() {
 #ifndef SOURCE_DIR
     // If missed, give a current directory
@@ -52,7 +47,8 @@ inline std::shared_ptr<spdlog::logger> initialize_custom_logger(
     auto logger = spdlog::get(logname);
     if (!logger) {
         logger = spdlog::rotating_logger_mt(
-            logname, get_source_directory() + DIR_LOG_PATH + logname + ".log",
+            logname,
+            get_source_directory() + DIR_LOG_PATH + "/" + logname + ".log",
             file_size, file_num);
         logger->set_pattern(LOG_FORMAT);
         logger->set_level(log_level);
@@ -70,7 +66,7 @@ inline std::shared_ptr<spdlog::logger> initialize_result_logger(
     if (!logger) {
         logger = spdlog::rotating_logger_mt(
             logname,
-            get_source_directory() + DIR_RESULT_PATH + logname + ".log",
+            get_source_directory() + DIR_RESULT_PATH + "/" + logname + ".log",
             file_size, file_num);
         logger->set_pattern(LOG_RESULT_FORMAT);
         logger->set_level(log_level);

@@ -411,7 +411,11 @@ void client_result_thread(const std::string& ipv4,
     // timer for report
     auto last_report_time = std::chrono::steady_clock::now();
 
-    /** OUTPUT: (#success, #failure, mean, max, p50, p95, p99) */
+    // path of pingweave.ini
+    const std::string pingweave_ini_abs_path =
+        get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
+
+    /** RESULT: (dstip, #success, #failure, mean, max, p50, p95, p99) */
     try {
         while (true) {
             // fully-blocking with timeout (1 sec)
@@ -439,7 +443,7 @@ void client_result_thread(const std::string& ipv4,
                 }
             }
 
-            // report periodically for every 1 minute
+            // report periodically
             auto current_time = std::chrono::steady_clock::now();
             auto elapsed_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -447,6 +451,9 @@ void client_result_thread(const std::string& ipv4,
                     .count();
 
             if (elapsed_time >= REPORT_INTERVAL_MS) {
+                // aggregated results
+                std::string agg_result = "";
+
                 for (auto& [dstip, result_info] : dstip2result) {
                     result_stat_t client_stat =
                         calc_stats(result_info.client_delays);
@@ -455,23 +462,21 @@ void client_result_thread(const std::string& ipv4,
                     result_stat_t server_stat =
                         calc_stats(result_info.server_delays);
 
-                    // logging
-                    /** TODO: remove texts  */
-                    logger->info(
-                        "{},{},{},{},{},Client:{},{},{},{},{},Network:{},{},{},"
-                        "{},{},Server:{},{},{},{},{}",
-                        uint2ip(dstip),
-                        timestamp_ns_to_string(result_info.ts_start),
-                        timestamp_ns_to_string(result_info.ts_end),
-                        result_info.n_success, result_info.n_failure,
-                        client_stat.mean, client_stat.max,
-                        client_stat.percentile_50, client_stat.percentile_95,
-                        client_stat.percentile_99, network_stat.mean,
-                        network_stat.max, network_stat.percentile_50,
-                        network_stat.percentile_95, network_stat.percentile_99,
-                        server_stat.mean, server_stat.max,
-                        server_stat.percentile_50, server_stat.percentile_95,
-                        server_stat.percentile_99);
+                    auto result = convert_result_to_str(
+                        ipv4, uint2ip(dstip), result_info, client_stat,
+                        network_stat, server_stat);
+                    logger->info(result);         // logging
+                    agg_result += result + "\n";  // aggregate
+                }
+
+                // send to collector
+                std::string controller_host;
+                int controller_port;
+                if (get_controller_info_from_ini(pingweave_ini_abs_path,
+                                                 controller_host,
+                                                 controller_port)) {
+                    send_result_to_http_server(controller_host, controller_port,
+                                               agg_result, logger);
                 }
 
                 // clear the history

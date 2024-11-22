@@ -24,7 +24,7 @@ class IniParser {
 
             if (line[0] == '[' && line.back() == ']') {
                 section = line.substr(1, line.size() - 2);
-                std::cout << "Section: " << section << '\n';
+                // std::cout << "Section: " << section << '\n';
             } else {
                 auto delimiterPos = line.find('=');
                 if (delimiterPos == std::string::npos) continue;
@@ -36,7 +36,7 @@ class IniParser {
                     value = trim(value.substr(0, commentPos));
                 }
                 config_[section][key] = value;
-                std::cout << "Key: " << key << ", Value: " << value << '\n';
+                // std::cout << "Key: " << key << ", Value: " << value << '\n';
             }
         }
         return true;
@@ -56,7 +56,7 @@ class IniParser {
         auto ret = get(section, key);
         try {
             return std::stoi(ret);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             return -1;
         }
     }

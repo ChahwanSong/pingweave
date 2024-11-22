@@ -99,7 +99,9 @@ std::set<std::string> get_all_local_ips() {
     }
 
     for (ifa = interfaces; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr) continue;
+        if (ifa->ifa_addr == nullptr) {
+            continue;
+        }
 
         std::string ifa_name = ifa->ifa_name;
 
@@ -119,6 +121,25 @@ std::set<std::string> get_all_local_ips() {
 
     freeifaddrs(interfaces);
     return local_ips;
+}
+
+void delete_files_in_directory(const std::string &directoryPath) {
+    try {
+        if (std::filesystem::exists(directoryPath) &&
+            std::filesystem::is_directory(directoryPath)) {
+            for (const auto &entry :
+                 std::filesystem::directory_iterator(directoryPath)) {
+                std::filesystem::remove_all(entry.path());
+                spdlog::debug("Deleted: {}", entry.path().c_str());
+            }
+        } else {
+            spdlog::error("Directory does not exist or is not a directory: {}",
+                          directoryPath);
+        }
+    } catch (const std::filesystem::filesystem_error &e) {
+        spdlog::error("Failed to delete files in directory {}: {}",
+                      directoryPath, e.what());
+    }
 }
 
 // If error occurs, myaddr returned is empty set.
@@ -216,6 +237,30 @@ int get_gid_table_size(struct pingweave_context *ctx,
     }
 
     return gid_count;
+}
+
+int get_controller_info_from_ini(const std::string &ini_path, std::string &ip,
+                                 int &port) {
+    IniParser parser;
+    if (!parser.load("../config/pingweave.ini")) {
+        spdlog::error("Failed to load pingweave.ini");
+        return false;
+    }
+
+    ip = parser.get("controller", "host");
+    if (ip.empty()) {
+        spdlog::error("pingweave.ini gives an erratic controller host ip.");
+        return false;
+    }
+
+    port = parser.getInt("controller", "port_collect");
+    if (port < 0) {
+        spdlog::error("pingweave.ini gives an erratic controller port.");
+        return false;
+    }
+
+    // success
+    return true;
 }
 
 // thread ID and cast to string
@@ -608,34 +653,7 @@ int wait_for_cq_event(struct pingweave_context *ctx,
     return true;
 }
 
-// calculate stats from delay histroy
-result_stat_t calc_stats(const std::vector<uint64_t> &delays) {
-    if (delays.empty()) {
-        // 벡터가 비어 있을 때 -1 반환
-        return {static_cast<uint64_t>(0), static_cast<uint64_t>(0),
-                static_cast<uint64_t>(0), static_cast<uint64_t>(0),
-                static_cast<uint64_t>(0)};
-    }
-
-    // 평균(mean)
-    uint64_t sum = std::accumulate(delays.begin(), delays.end(), uint64_t(0));
-    uint64_t mean = sum / delays.size();
-
-    // 최대값(max)
-    uint64_t max = *std::max_element(delays.begin(), delays.end());
-
-    // 백분위수를 계산하기 위해 벡터를 정렬
-    std::vector<uint64_t> sorted_delays = delays;
-    std::sort(sorted_delays.begin(), sorted_delays.end());
-
-    // 중간값(50-percentile), 95-percentile, 99-percentile 인덱스 계산
-    uint64_t percentile_50 = sorted_delays[sorted_delays.size() * 50 / 100];
-    uint64_t percentile_95 = sorted_delays[sorted_delays.size() * 95 / 100];
-    uint64_t percentile_99 = sorted_delays[sorted_delays.size() * 99 / 100];
-
-    return {mean, max, percentile_50, percentile_95, percentile_99};
-}
-
+// save RDMA device's Server RX QP information
 int save_device_info(struct pingweave_context *ctx,
                      std::shared_ptr<spdlog::logger> logger) {
     const std::string directory = get_source_directory() + DIR_UPLOAD_PATH;
@@ -679,6 +697,7 @@ int save_device_info(struct pingweave_context *ctx,
     return 0;
 }
 
+// for test purpose
 int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
                      std::shared_ptr<spdlog::logger> logger) {
     std::string line, gid, lid, qpn;
@@ -727,4 +746,131 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
         return 1;
     }
     return 0;
+}
+
+// calculate stats from delay histroy
+result_stat_t calc_stats(const std::vector<uint64_t> &delays) {
+    if (delays.empty()) {
+        // 벡터가 비어 있을 때 -1 반환
+        return {static_cast<uint64_t>(0), static_cast<uint64_t>(0),
+                static_cast<uint64_t>(0), static_cast<uint64_t>(0),
+                static_cast<uint64_t>(0)};
+    }
+
+    // 평균(mean)
+    uint64_t sum = std::accumulate(delays.begin(), delays.end(), uint64_t(0));
+    uint64_t mean = sum / delays.size();
+
+    // 최대값(max)
+    uint64_t max = *std::max_element(delays.begin(), delays.end());
+
+    // 백분위수를 계산하기 위해 벡터를 정렬
+    std::vector<uint64_t> sorted_delays = delays;
+    std::sort(sorted_delays.begin(), sorted_delays.end());
+
+    // 중간값(50-percentile), 95-percentile, 99-percentile 인덱스 계산
+    uint64_t percentile_50 = sorted_delays[sorted_delays.size() * 50 / 100];
+    uint64_t percentile_95 = sorted_delays[sorted_delays.size() * 95 / 100];
+    uint64_t percentile_99 = sorted_delays[sorted_delays.size() * 99 / 100];
+
+    return {mean, max, percentile_50, percentile_95, percentile_99};
+}
+
+std::string convert_result_to_str(const std::string &srcip,
+                                  const std::string &dstip,
+                                  const result_info_t &result_info,
+                                  const result_stat_t &client_stat,
+                                  const result_stat_t &network_stat,
+                                  const result_stat_t &server_stat) {
+    /** TODO: remove texts  */
+    std::stringstream ss;
+    ss << srcip << "," << dstip << ","
+       << timestamp_ns_to_string(result_info.ts_start) << ","
+       << timestamp_ns_to_string(result_info.ts_end) << ","
+       << result_info.n_success << "," << result_info.n_failure << ","
+       << "Client:" << client_stat.mean << "," << client_stat.max << ","
+       << client_stat.percentile_50 << "," << client_stat.percentile_95 << ","
+       << client_stat.percentile_99 << ","
+       << "Network:" << network_stat.mean << "," << network_stat.max << ","
+       << network_stat.percentile_50 << "," << network_stat.percentile_95 << ","
+       << network_stat.percentile_99 << ","
+       << "Server:" << server_stat.mean << "," << server_stat.max << ","
+       << server_stat.percentile_50 << "," << server_stat.percentile_95 << ","
+       << server_stat.percentile_99;
+
+    // string 저장
+    return ss.str();
+}
+
+void send_result_to_http_server(const std::string &server_ip, int server_port,
+                                const std::string &message,
+                                std::shared_ptr<spdlog::logger> logger) {
+    // create socket
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        logger->error("HTTP Socket creation failed!");
+        return;
+    }
+
+    // set timeout (3 seconds, by default)
+    const int timeout_sec = 3;
+    timeval timeout{};
+    timeout.tv_sec = timeout_sec;
+    timeout.tv_usec = 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) <
+        0) {
+        logger->error("HTTP Failed to set timeout!");
+        close(sock);
+        return;
+    }
+
+    // set http server address
+    sockaddr_in server_addr{};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(server_port);
+    inet_pton(AF_INET, server_ip.c_str(), &server_addr.sin_addr);
+
+    // 서버 연결
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
+        0) {
+        logger->error("HTTP Connection to server failed!");
+        close(sock);
+        return;
+    }
+
+    // HTTP 요청 작성
+    std::string request =
+        "POST /data HTTP/1.1\r\n"
+        "Host: " +
+        server_ip + ":" + std::to_string(server_port) +
+        "\r\n"
+        "Content-Type: text/plain\r\n"
+        "Content-Length: " +
+        std::to_string(message.size()) + "\r\n\r\n" + message;
+
+    // 요청 전송
+    if (send(sock, request.c_str(), request.size(), 0) < 0) {
+        logger->error("HTTP Failed to send request!");
+        close(sock);
+        return;
+    }
+
+    // // 응답 수신
+    // char buffer[1024] = {0};
+    // ssize_t bytes_read = read(sock, buffer, sizeof(buffer) - 1);
+    // if (bytes_read > 0) {
+    //     std::cout << "Response from server:\n" << buffer << std::endl;
+    // } else if (bytes_read == 0) {
+    //     std::cerr << "Connection closed by server!" << std::endl;
+    // } else {
+    //     if (errno == EWOULDBLOCK || errno == EAGAIN) {
+    //         std::cerr << "Timeout while waiting for server response!"
+    //                   << std::endl;
+    //     } else {
+    //         std::cerr << "Failed to receive response! Error: "
+    //                   << strerror(errno) << std::endl;
+    //     }
+    // }
+
+    close(sock);
 }

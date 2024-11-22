@@ -73,7 +73,7 @@ class MsgScheduler {
 
             // Load pinglist.yaml
             std::ifstream ifs_pinglist(get_source_directory() +
-                                       DIR_DOWNLOAD_PATH + "pinglist.yaml");
+                                       DIR_DOWNLOAD_PATH + "/pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
             std::vector<std::string> relevantIps;
 
@@ -91,10 +91,10 @@ class MsgScheduler {
                 }
             }
 
-            // Load address_store.yaml
+            // Load address_store
             std::ifstream ifs_addressStore(get_source_directory() +
                                            DIR_DOWNLOAD_PATH +
-                                           "address_store.yaml");
+                                           "/address_store.yaml");
             fkyaml::node addressStore =
                 fkyaml::node::deserialize(ifs_addressStore);
 
@@ -112,8 +112,9 @@ class MsgScheduler {
                 }
             }
 
-            logger->debug("Loaded {} relevant addresses from YAML.",
-                          addressInfo.size());
+            logger->debug(
+                "Loaded #{} relevant addresses from address_store YAML.",
+                addressInfo.size());
 
             if (!addressInfo.empty()) {
                 inter_ping_interval_us = PING_INTERVAL_US / addressInfo.size();
