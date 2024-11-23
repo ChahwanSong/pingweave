@@ -143,8 +143,8 @@ void delete_files_in_directory(const std::string &directoryPath) {
 }
 
 // If error occurs, myaddr returned is empty set.
-void get_my_addr_from_pinglist(const std::string &pinglist_filename,
-                               std::set<std::string> &myaddr) {
+void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
+                                    std::set<std::string> &myaddr) {
     fkyaml::node config;
     myaddr.clear();  // clean-slate start
 
@@ -846,7 +846,7 @@ void send_result_to_http_server(const std::string &server_ip, int server_port,
 
     // HTTP 요청 작성
     std::string request =
-        "POST /result HTTP/1.1\r\n"
+        "POST /result_rdma HTTP/1.1\r\n"
         "Host: " +
         server_ip + ":" + std::to_string(server_port) +
         "\r\n"

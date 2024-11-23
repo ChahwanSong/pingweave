@@ -1,15 +1,11 @@
 import os
 import sys
-import subprocess
 import configparser
 import asyncio
 import time
-import copy
 import socket
 import psutil
 import multiprocessing
-import json
-import signal
 
 from logger import initialize_pingweave_logger
 import yaml  # python3 -m pip install pyyaml
@@ -19,10 +15,8 @@ logger = initialize_pingweave_logger(socket.gethostname(), "server")
 
 # Absolute paths of this script and configuration files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")  # for all
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")  # for server
-UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")  # for client
-DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
+PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Variables to save pinglist
 pinglist_in_memory = {}
@@ -36,7 +30,6 @@ config = configparser.ConfigParser()
 # Global variables
 control_host = None
 control_port = None
-collect_port = None
 interval_sync_pinglist_sec = None
 interval_read_pinglist_sec = None
 
@@ -78,7 +71,7 @@ def load_config_ini():
     """
     Reads the configuration file and updates global variables.
     """
-    global control_host, control_port, collect_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
+    global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
 
     try:
         config.read(CONFIG_PATH)
@@ -86,7 +79,6 @@ def load_config_ini():
         # Update variables
         control_host = config["controller"]["host"]
         control_port = int(config["controller"]["port_control"])
-        collect_port = int(config["controller"]["port_collect"])
 
         interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
         interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
@@ -96,7 +88,7 @@ def load_config_ini():
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            "Use default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
+            "Using default parameters: interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
         interval_sync_pinglist_sec = 60
         interval_read_pinglist_sec = 60
@@ -106,14 +98,12 @@ async def read_pinglist():
     global pinglist_in_memory
 
     try:
-        # Use a lock to hold client request during file loading
         async with pinglist_lock:
             pinglist_in_memory.clear()
             if os.path.isfile(PINGLIST_PATH):
                 with open(PINGLIST_PATH, "r") as file:
-                    # YAML -> dictionary (parsing)
                     pinglist_in_memory = yaml.safe_load(file)
-                    logger.debug("Pinglist is loaded successfully.")
+                    logger.debug("Pinglist loaded successfully.")
             else:
                 logger.error(f"Pinglist file not found at {PINGLIST_PATH}")
     except Exception as e:
@@ -121,9 +111,7 @@ async def read_pinglist():
 
 
 async def read_pinglist_periodically():
-    # Initially load a config file
     load_config_ini()
-
     try:
         while True:
             await read_pinglist()
@@ -132,9 +120,6 @@ async def read_pinglist_periodically():
         logger.info("read_pinglist_periodically task was cancelled.")
     except Exception as e:
         logger.error(f"Exception in read_pinglist_periodically: {e}")
-
-
-#############################################################################
 
 
 async def get_pinglist(request):
@@ -149,7 +134,7 @@ async def get_address_store(request):
     client_ip = request.remote
     async with address_store_lock:
         response_data = address_store
-    logger.debug(f"(SEND) address_store.yaml to client: {client_ip}")
+    logger.debug(f"(SEND) address_store to client: {client_ip}")
     return web.json_response(response_data)
 
 
@@ -167,37 +152,36 @@ async def post_address(request):
             async with address_store_lock:
                 address_store[ip_address] = [ip_address, gid, int(lid), int(qpn)]
                 logger.debug(
-                    f"(RECV) POST from {client_ip}. Update the address store (current size: {len(address_store)})."
+                    f"(RECV) POST from {client_ip}. Updated address store (size: {len(address_store)})."
                 )
 
                 if len(address_store) > 10000:
                     logger.error(
-                        f"Too many registered ip->(gid,lid) entries: {len(address_store)}"
+                        f"Too many entries in address_store: {len(address_store)}"
                     )
-                    logger.critical("Clean up the address_store. Check your config.")
+                    logger.critical(
+                        "Cleaning up address_store. Check your configuration."
+                    )
                     address_store.clear()
             return web.Response(text="Address updated", status=200)
         else:
-            logger.warning(f"(RECV) POST format is incorrect from {client_ip}")
+            logger.warning(f"(RECV) Incorrect POST format from {client_ip}")
             return web.Response(text="Invalid data", status=400)
     except Exception as e:
-        logger.error(f"POST ADDRESS from {client_ip}: {e}")
+        logger.error(f"Error processing POST from {client_ip}: {e}")
         return web.Response(text="Internal server error", status=500)
 
 
 async def pingweave_server():
-    # Initially load a config file
     load_config_ini()
 
     try:
         while True:
             if not check_ip_active(control_host):
                 logger.error(
-                    f"No active iface with Control IP {control_host}. Sleep 1 minute..."
+                    f"No active interface with Control IP {control_host}. Sleeping for 1 minute..."
                 )
-                await asyncio.sleep(60)  # Sleep 60 seconds
-
-                # Reload a config file and try
+                await asyncio.sleep(60)
                 load_config_ini()
                 continue
 
@@ -216,10 +200,8 @@ async def pingweave_server():
                     f"Pingweave server running on {control_host}:{control_port}"
                 )
 
-                # Start periodic pinglist reading task
                 pinglist_task = asyncio.create_task(read_pinglist_periodically())
 
-                # Keep the server running indefinitely
                 await asyncio.Event().wait()
 
             except asyncio.CancelledError:
@@ -236,79 +218,6 @@ async def pingweave_server():
         logger.error(f"Exception in pingweave_server: {e}")
 
 
-async def handle_result_post(request):
-    client_ip = request.remote
-
-    try:
-        # Request data as text
-        raw_data = await request.text()
-        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
-
-        # Process the data (e.g., data parsing)
-        results = raw_data.strip().split("\n")
-        for result in results:
-            data = result.strip().split(",")
-            print(f"{data}")
-
-        # Return successful response
-        return web.Response(text="Data processed successfully", status=200)
-
-    except Exception as e:
-        logger.error(f"Error processing POST data from {client_ip}: {e}")
-        return web.Response(text="Internal server error", status=500)
-
-
-async def pingweave_collector():
-    # Initially load a config file
-    load_config_ini()
-
-    try:
-        while True:
-
-            if not check_ip_active(control_host):
-                logger.info(
-                    f"No active iface with Control IP {control_host}. Sleep 1 minute..."
-                )
-                await asyncio.sleep(60)  # Sleep 60 seconds
-
-                # Reload a config file and try
-                load_config_ini()
-                continue
-
-            runner = None
-            try:
-                app = web.Application()
-                app.router.add_post("/result", handle_result_post)
-                runner = web.AppRunner(app)
-                await runner.setup()
-                site = web.TCPSite(runner, host="0.0.0.0", port=collect_port)
-                await site.start()
-
-                logger.info(
-                    f"Pingweave collector running on {control_host}:{collect_port}"
-                )
-
-                # Start periodic pinglist reading task
-                pinglist_task = asyncio.create_task(read_pinglist_periodically())
-
-                # Keep the server running indefinitely
-                await asyncio.Event().wait()
-
-            except asyncio.CancelledError:
-                logger.info("pingweave_collector task was cancelled.")
-                break
-            except Exception as e:
-                logger.error(f"Cannot start the pingweave collector: {e}")
-            finally:
-                if runner:
-                    await runner.cleanup()
-                await asyncio.sleep(10)
-    except KeyboardInterrupt:
-        logger.info("pingweave_collector received KeyboardInterrupt. Exiting.")
-    except Exception as e:
-        logger.error(f"Exception in pingweave_collector: {e}")
-
-
 def run_pingweave_server():
     try:
         asyncio.run(pingweave_server())
@@ -316,14 +225,13 @@ def run_pingweave_server():
         logger.info("pingweave_server process received KeyboardInterrupt. Exiting.")
 
 
-def run_pingweave_collector():
-    try:
-        asyncio.run(pingweave_collector())
-    except KeyboardInterrupt:
-        logger.info("pingweave_collector process received KeyboardInterrupt. Exiting.")
-
-
 if __name__ == "__main__":
+    try:
+        from collector import run_pingweave_collector  # Import the collector function
+    except ImportError as e:
+        logger.error(f"Could not import run_pingweave_collector from collector.py: {e}")
+        sys.exit(1)
+
     try:
         process_server = multiprocessing.Process(
             target=run_pingweave_server, name="pingweave_server", daemon=True
@@ -336,7 +244,6 @@ if __name__ == "__main__":
         process_collector.start()
 
         while True:
-            # Periodically check the process status
             if not process_server.is_alive():
                 logger.warning("pingweave_server has stopped unexpectedly.")
                 break
@@ -350,7 +257,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Main loop exception: {e}. Exiting cleanly...")
     finally:
-        # Terminate all processes
         if process_server.is_alive():
             process_server.terminate()
             logger.warning("Terminated pingweave_server process.")

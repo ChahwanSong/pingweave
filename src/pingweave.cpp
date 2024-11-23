@@ -59,12 +59,12 @@ int main() {
             spdlog::info("[main] Child process (PID: {}) terminated.", pid);
         }
 
-        /* 1. Load my IP addresses periodically (pinglist_abs_path) */
-        std::set<std::string> myaddr;
-        get_my_addr_from_pinglist(pinglist_abs_path, myaddr);
+        /* 1. Load my RDMA IP addresses periodically (pinglist_abs_path) */
+        std::set<std::string> myaddr_rdma;
+        get_my_rdma_addr_from_pinglist(pinglist_abs_path, myaddr_rdma);
 
-        // if loading pinglist is failed, myaddr will be empty.
-        spdlog::debug("Myaddr size: {}", myaddr.size());
+        // if loading pinglist is failed, myaddr_rdma will be empty.
+        spdlog::debug("Myaddr_rdma size: {}", myaddr_rdma.size());
 
         /* 2. Terminate threads which are not in pinglist. */
         // python programs - only check server
@@ -89,7 +89,7 @@ int main() {
         std::set<std::string> running_programs_cpp_server;
         for (auto it = processes_cpp_server.begin();
              it != processes_cpp_server.end();) {
-            if (myaddr.find(it->host) == myaddr.end()) {
+            if (myaddr_rdma.find(it->host) == myaddr_rdma.end()) {
                 spdlog::info(
                     "IP {} is not in pinglist anymore. Exit the thread {}.",
                     it->host, it->name);
@@ -109,7 +109,7 @@ int main() {
         std::set<std::string> running_programs_cpp_client;
         for (auto it = processes_cpp_client.begin();
              it != processes_cpp_client.end();) {
-            if (myaddr.find(it->host) == myaddr.end()) {
+            if (myaddr_rdma.find(it->host) == myaddr_rdma.end()) {
                 spdlog::info(
                     "IP {} is not in pinglist anymore. Exit the thread {}.",
                     it->host, it->name);
@@ -167,7 +167,7 @@ int main() {
         }
 
         // cpp programs
-        for (auto it = myaddr.begin(); it != myaddr.end(); ++it) {
+        for (auto it = myaddr_rdma.begin(); it != myaddr_rdma.end(); ++it) {
             if (running_programs_cpp_server.find(*it) ==
                 running_programs_cpp_server.end()) {
                 spdlog::info("Start the thread - {}, {}", *it, "rdma_server");
@@ -176,7 +176,7 @@ int main() {
                      std::bind(rdma_server, *it), "rdma_server", *it});
             }
         }
-        for (auto it = myaddr.begin(); it != myaddr.end(); ++it) {
+        for (auto it = myaddr_rdma.begin(); it != myaddr_rdma.end(); ++it) {
             if (running_programs_cpp_client.find(*it) ==
                 running_programs_cpp_client.end()) {
                 spdlog::info("Start the thread - {}, {}", *it, "rdma_client");

@@ -117,7 +117,8 @@ class MsgScheduler {
                 addressInfo.size());
 
             if (!addressInfo.empty()) {
-                inter_ping_interval_us = PING_INTERVAL_US / addressInfo.size();
+                inter_ping_interval_us =
+                    PING_INTERVAL_RDMA_US / addressInfo.size();
             } else {
                 inter_ping_interval_us = 1000000;  // if nothing to send
             }

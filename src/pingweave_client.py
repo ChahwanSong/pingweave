@@ -1,16 +1,9 @@
 import os
 import sys
-import subprocess
 import configparser
-import asyncio
 import time
-import copy
-import socket
-import psutil
-import socket
-import multiprocessing
 import json
-
+import socket
 import yaml  # python3 -m pip install pyyaml
 import urllib.request  # python3 -m pip install urllib
 import urllib.error
@@ -18,17 +11,16 @@ from logger import initialize_pingweave_logger
 
 logger = initialize_pingweave_logger(socket.gethostname(), "client")
 
-# absolute paths of this script and pinglist.yaml
+# Absolute paths of this script and configuration files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")  # for all
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")  # for server
-UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")  # for client
-DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")  # for client
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
+UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
+DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 
 # ConfigParser object
 config = configparser.ConfigParser()
 
-# global variables
+# Global variables
 control_host = None
 control_port = None
 collect_port = None
@@ -38,7 +30,7 @@ interval_read_pinglist_sec = None
 python_version = sys.version_info
 if python_version < (3, 6):
     logger.critical(f"Python 3.6 or higher is required. Current version: {sys.version}")
-    sys.exit(1)  # 프로그램 종료
+    sys.exit(1)
 
 
 def load_config_ini():
@@ -50,7 +42,7 @@ def load_config_ini():
     try:
         config.read(CONFIG_PATH)
 
-        # 변수 업데이트
+        # Update variables
         control_host = config["controller"]["host"]
         control_port = int(config["controller"]["port_control"])
         collect_port = int(config["controller"]["port_collect"])
@@ -62,14 +54,16 @@ def load_config_ini():
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         logger.error(
-            "Use default parameters - interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
+            "Using default parameters: interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
         )
         interval_sync_pinglist_sec = 60
         interval_read_pinglist_sec = 60
 
 
 def fetch_data(ip, port, data_type):
-    # YAML path
+    """
+    Fetches data from the server and saves it as a YAML file.
+    """
     yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
     is_error = False
     try:
@@ -101,20 +95,23 @@ def fetch_data(ip, port, data_type):
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
         is_error = True
 
-    # if error occurs, write an empty YAML file which makes no ping
+    # If an error occurs, write an empty YAML file to prevent issues
     if is_error:
-        logger.debug(f"-> Dump an empty YAML !!")
+        logger.debug(f"Dumping an empty YAML for {data_type}.")
         with open(yaml_file_path, "w") as yaml_file:
             yaml.dump({}, yaml_file, default_flow_style=False)
 
 
 def send_gid_files(ip, port):
+    """
+    Sends GID files to the server via HTTP POST requests.
+    """
     for filename in os.listdir(UPLOAD_PATH):
         filepath = os.path.join(UPLOAD_PATH, filename)
 
         if (
             os.path.isfile(filepath) and filename.count(".") == 3
-        ):  # Check file name is IP address
+        ):  # Check if filename is an IP address
             with open(filepath, "r") as file:
                 lines = file.read().splitlines()
                 if len(lines) == 4:
