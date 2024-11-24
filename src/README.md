@@ -76,12 +76,25 @@
 
 ```
 sudo vi /etc/redis/redis.conf
+```
 
 Redis 설정 파일에서 Unix Domain Socket 활성화하기.
 Unix Domain Socket은 로컬 통신에만 사용할 수 있습니다.
 원격 접근이 필요하면 TCP 포트(port 6379)를 함께 활성화해야 합니다.
 /tmp/redis.sock 경로는 시스템 재부팅 시 초기화될 수 있으므로, 더 안정적인 경로(예: /var/run/redis/redis.sock)를 사용하는 것이 좋습니다.
 
-
 Reference: https://lhr0419.medium.com/%EB%A0%88%EB%94%94%EC%8A%A4%EC%97%90-%EB%8C%80%ED%95%9C-%EA%B0%84%EB%8B%A8%ED%95%9C-%EC%84%A4%EB%AA%85%EA%B3%BC-%EC%9A%B4%EC%98%81%ED%8C%81-42a52dd71b3e
+
+```
+redis-cli -s /var/run/redis/redis-server.sock
+```
+
+```python
+import redis
+
+# Unix Domain Socket 경로
+r = redis.StrictRedis(unix_socket_path='/var/run/redis/redis-server.sock', decode_responses=True)
+
+# PING 테스트
+print(r.ping())  # 출력: True
 ```
