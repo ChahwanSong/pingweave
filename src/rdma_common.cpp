@@ -245,10 +245,13 @@ int get_gid_table_size(struct pingweave_context *ctx,
     return gid_count;
 }
 
-int get_controller_info_from_ini(const std::string &ini_path, std::string &ip,
-                                 int &port) {
+int get_controller_info_from_ini(std::string &ip, int &port) {
+    // path of pingweave.ini
+    const std::string pingweave_ini_abs_path =
+        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
+
     IniParser parser;
-    if (!parser.load("../config/pingweave.ini")) {
+    if (!parser.load(pingweave_ini_abs_path)) {
         spdlog::error("Failed to load pingweave.ini");
         return false;
     }
@@ -808,13 +811,18 @@ std::string convert_result_to_str(const std::string &srcip,
     return ss.str();
 }
 
-void send_result_to_http_server(const std::string &server_ip, int server_port,
-                                const std::string &message,
-                                std::shared_ptr<spdlog::logger> logger) {
+/**
+ * req_api: /result_rdma, /alarm, etc
+ */
+void send_message_to_http_server(const std::string &server_ip, int server_port,
+                                 const std::string &message,
+                                 const std::string &req_api,
+                                 std::shared_ptr<spdlog::logger> logger) {
     // create socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        logger->error("HTTP Socket creation failed!");
+        logger->error("HTTP Socket creation failed! errno: {} - {}", errno,
+                      strerror(errno));
         return;
     }
 
@@ -825,7 +833,8 @@ void send_result_to_http_server(const std::string &server_ip, int server_port,
     timeout.tv_usec = 0;
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) <
         0) {
-        logger->error("HTTP Failed to set timeout!");
+        logger->error("HTTP Failed to set timeout! errno: {} - {}", errno,
+                      strerror(errno));
         close(sock);
         return;
     }
@@ -834,48 +843,65 @@ void send_result_to_http_server(const std::string &server_ip, int server_port,
     sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(server_port);
-    inet_pton(AF_INET, server_ip.c_str(), &server_addr.sin_addr);
+    if (inet_pton(AF_INET, server_ip.c_str(), &server_addr.sin_addr) <= 0) {
+        logger->error("HTTP Invalid server IP address: {}! errno: {} - {}",
+                      server_ip, errno, strerror(errno));
+        close(sock);
+        return;
+    }
 
-    // 서버 연결
+    // connect to server
     if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
         0) {
-        logger->error("HTTP Connection to server failed!");
+        logger->error("HTTP Connection to server {}:{} failed! errno: {} - {}",
+                      server_ip, server_port, errno, strerror(errno));
         close(sock);
         return;
     }
 
-    // HTTP 요청 작성
-    std::string request =
-        "POST /result_rdma HTTP/1.1\r\n"
-        "Host: " +
-        server_ip + ":" + std::to_string(server_port) +
-        "\r\n"
-        "Content-Type: text/plain\r\n"
-        "Content-Length: " +
-        std::to_string(message.size()) + "\r\n\r\n" + message;
+    // construct HTTP request
+    std::string request = "POST " + req_api +
+                          " HTTP/1.1\r\n"
+                          "Host: " +
+                          server_ip + ":" + std::to_string(server_port) +
+                          "\r\n"
+                          "Content-Type: text/plain\r\n"
+                          "Content-Length: " +
+                          std::to_string(message.size()) + "\r\n\r\n" + message;
 
-    // 요청 전송
-    if (send(sock, request.c_str(), request.size(), 0) < 0) {
-        logger->error("HTTP Failed to send request!");
+    // send request
+    ssize_t bytes_sent = send(sock, request.c_str(), request.size(), 0);
+    if (bytes_sent < 0) {
+        logger->error("HTTP Failed to send request to {}:{}! errno: {} - {}",
+                      server_ip, server_port, errno, strerror(errno));
         close(sock);
         return;
+    } else if (bytes_sent < static_cast<ssize_t>(request.size())) {
+        logger->warn("HTTP Partial send: Only {}/{} bytes sent to {}:{}!",
+                     bytes_sent, request.size(), server_ip, server_port);
     }
 
-    // // 응답 수신
-    // char buffer[1024] = {0};
-    // ssize_t bytes_read = read(sock, buffer, sizeof(buffer) - 1);
-    // if (bytes_read > 0) {
-    //     logger->info("Response from server: {}", buffer);
-    // } else if (bytes_read == 0) {
-    //     logger->error("Connection closed by server!");
-    // } else {
-    //     if (errno == EWOULDBLOCK || errno == EAGAIN) {
-    //         logger->error("Timeout while waiting for server response!");
-    //     } else {
-    //         logger->error("Failed to receive response! Error: {}",
-    //                       strerror(errno));
-    //     }
-    // }
+    // Close the socket
+    if (close(sock) < 0) {
+        logger->error("HTTP Socket close failed! errno: {} - {}", errno,
+                      strerror(errno));
+    }
+}
 
-    close(sock);
+int message_to_http_server(const std::string &message, const std::string &api,
+                           std::shared_ptr<spdlog::logger> logger) {
+    const std::string pingweave_ini_abs_path =
+        get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
+
+    std::string controller_host;
+    int controller_port;
+    if (get_controller_info_from_ini(controller_host, controller_port)) {
+        send_message_to_http_server(controller_host, controller_port, message,
+                                    api, logger);
+        return false;  // success
+    }
+
+    // failed
+    logger->error("Failed to post /result_rdma.");
+    return true;
 }

@@ -59,8 +59,7 @@ int find_active_port(struct pingweave_context *ctx,
 int get_gid_table_size(struct pingweave_context *ctx,
                        std::shared_ptr<spdlog::logger> logger);
 // parse ini file
-int get_controller_info_from_ini(const std::string &ini_path, std::string &ip,
-                                 int &port);
+int get_controller_info_from_ini(std::string &ip, int &port);
 // delete files in directory
 void delete_files_in_directory(const std::string &directoryPath);
 // get thread ID
@@ -100,10 +99,15 @@ std::string convert_result_to_str(const std::string &srcip,
                                   const result_stat_t &client_stat,
                                   const result_stat_t &network_stat,
                                   const result_stat_t &server_stat);
-// send the result to http server
-void send_result_to_http_server(const std::string &server_ip, int server_port,
-                                const std::string &message,
-                                std::shared_ptr<spdlog::logger> logger);
+// send the message to http server
+void send_message_to_http_server(const std::string &server_ip, int server_port,
+                                 const std::string &message,
+                                 const std::string &api,
+                                 std::shared_ptr<spdlog::logger> logger);
+// util function to send message to http server using pingweave.ini
+int message_to_http_server(const std::string &message,
+                           const std::string &req_api,
+                           std::shared_ptr<spdlog::logger> logger);
 /**************************************************************/
 /*************  I N L I N E   F U N C T I O N S  **************/
 /**************************************************************/

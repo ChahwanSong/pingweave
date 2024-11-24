@@ -411,10 +411,6 @@ void client_result_thread(const std::string& ipv4,
     // timer for report
     auto last_report_time = std::chrono::steady_clock::now();
 
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
-
     /** RESULT: (dstip, #success, #failure, mean, max, p50, p95, p99) */
     try {
         while (true) {
@@ -470,14 +466,8 @@ void client_result_thread(const std::string& ipv4,
                 }
 
                 // send to collector
-                std::string controller_host;
-                int controller_port;
-                if (get_controller_info_from_ini(pingweave_ini_abs_path,
-                                                 controller_host,
-                                                 controller_port) &&
-                    agg_result.size() > 0) {
-                    send_result_to_http_server(controller_host, controller_port,
-                                               agg_result, logger);
+                if (agg_result.size() > 0) {
+                    message_to_http_server(agg_result, "/result_rdma", logger);
                 }
 
                 // clear the history

@@ -1,7 +1,8 @@
-.vscode/**
-logs/*
-bin/*
-result/*
-download/*
-upload/*
+.vscode
+logs
+bin
+result
+download
+upload
+!redis/redis.tar.gz
 src/__pycache__

@@ -111,41 +111,71 @@ def send_gid_files(ip, port):
 
         if (
             os.path.isfile(filepath) and filename.count(".") == 3
-        ):  # Check if filename is an IP address
-            with open(filepath, "r") as file:
-                lines = file.read().splitlines()
-                if len(lines) == 4:
-                    gid, lid, qpn, times = lines
-                    ip_address = filename
+        ):  # Validate IP-like filenames
+            try:
+                with open(filepath, "r") as file:
+                    lines = file.read().splitlines()
 
-                    # Prepare data to send
-                    data = {
-                        "ip_address": ip_address,
-                        "gid": gid,
-                        "lid": lid,
-                        "qpn": qpn,
-                        "dtime": times,
-                    }
+                if len(lines) != 4:
+                    logger.warning(
+                        f"Skipping file {filename}: Expected 4 lines, got {len(lines)}."
+                    )
+                    continue
+
+                gid, lid, qpn, times = lines
+                ip_address = filename
+
+                # Prepare data to send
+                data = {
+                    "ip_address": ip_address,
+                    "gid": gid,
+                    "lid": lid,
+                    "qpn": qpn,
+                    "dtime": times,
+                }
+
+                try:
                     data_json = json.dumps(data).encode("utf-8")
+                except (TypeError, ValueError) as json_error:
+                    logger.error(
+                        f"Failed to encode JSON for file {filename}: {json_error}"
+                    )
+                    continue
 
-                    url = f"http://{ip}:{port}/address"
-                    request = urllib.request.Request(url, data=data_json, method="POST")
-                    request.add_header("Content-Type", "application/json")
+                url = f"http://{ip}:{port}/address"
+                request = urllib.request.Request(url, data=data_json, method="POST")
+                request.add_header("Content-Type", "application/json")
 
-                    try:
-                        with urllib.request.urlopen(request) as response:
-                            response_data = response.read()
+                try:
+                    with urllib.request.urlopen(request) as response:
+                        response_data = response.read().decode("utf-8")
+                        if response.status == 200:
                             logger.debug(
-                                f"Sent POST address from {ip_address} to the server."
+                                f"Successfully sent data from {filename} to the server: {response_data}"
                             )
-                    except urllib.error.URLError as e:
-                        logger.error(
-                            f"Failed to send POST gid/lid address from {ip_address}: {e}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"An unexpected error occurred while sending data: {e}"
-                        )
+                        else:
+                            logger.warning(
+                                f"Server responded with status {response.status} for {filename}: {response_data}"
+                            )
+                except urllib.error.HTTPError as e:
+                    logger.error(
+                        f"HTTPError for file {filename} ({e.code}): {e.reason}"
+                    )
+                except urllib.error.URLError as e:
+                    logger.error(
+                        f"URLError while sending data from file {filename}: {e.reason}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Unexpected error while sending data from file {filename}: {e}"
+                    )
+
+            except FileNotFoundError as e:
+                logger.error(f"File {filename} not found: {e}")
+            except IOError as e:
+                logger.error(f"Failed to read file {filename}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error with file {filename}: {e}")
 
 
 def main():

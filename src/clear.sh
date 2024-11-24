@@ -1,7 +1,7 @@
 #!/bin/bash
 
-rm $(pwd)/../logs/*
-rm $(pwd)/../bin/*
-rm $(pwd)/../download/*
-rm $(pwd)/../upload/*
-rm $(pwd)/../result/*
+rm -rf $(pwd)/../logs
+rm -rf $(pwd)/../bin
+rm -rf $(pwd)/../result
+rm -rf $(pwd)/../download
+rm -rf $(pwd)/../upload

@@ -20,24 +20,6 @@ collect_port = None
 config = configparser.ConfigParser()
 
 
-async def handle_result_rdma_post(request):
-    client_ip = request.remote
-
-    try:
-        raw_data = await request.text()
-        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
-
-        results = raw_data.strip().split("\n")
-        for result in results:
-            data = result.strip().split(",")
-            print(f"{data}")
-
-        return web.Response(text="Data processed successfully", status=200)
-    except Exception as e:
-        logger.error(f"Error processing POST data from {client_ip}: {e}")
-        return web.Response(text="Internal server error", status=500)
-
-
 def load_config_ini():
     global control_host, collect_port
 
@@ -75,6 +57,35 @@ def check_ip_active(target_ip):
         return False
 
 
+async def handle_result_rdma_post(request):
+    client_ip = request.remote
+
+    try:
+        raw_data = await request.text()
+        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
+
+        results = raw_data.strip().split("\n")
+        for result in results:
+            data = result.strip().split(",")
+            print(f"{data}")
+
+        return web.Response(text="Data processed successfully", status=200)
+    except Exception as e:
+        logger.error(f"Error processing POST result_rdma from {client_ip}: {e}")
+        return web.Response(text="Internal server error", status=500)
+
+
+async def handle_alarm_post(request):
+    client_ip = request.remote
+    try:
+        raw_data = await request.text()
+        logger.info(f"ALARM from {client_ip}: {raw_data}")
+        return web.Response(text="Data processed successfully", status=200)
+    except Exception as e:
+        logger.error(f"Error processing POST alarm from {client_ip}: {e}")
+        return web.Response(text="Internal server error", status=500)
+
+
 async def pingweave_collector():
     load_config_ini()
 
@@ -92,6 +103,7 @@ async def pingweave_collector():
             try:
                 app = web.Application()
                 app.router.add_post("/result_rdma", handle_result_rdma_post)
+                app.router.add_post("/alarm", handle_alarm_post)
                 runner = web.AppRunner(app)
                 await runner.setup()
                 site = web.TCPSite(runner, host="0.0.0.0", port=collect_port)

@@ -25,8 +25,6 @@ ProcessInfo process_py_server = {0};
 
 bool running = true;
 
-const std::string pingweave_ini_abs_path =
-    get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
 const std::string pinglist_abs_path =
     get_source_directory() + DIR_DOWNLOAD_PATH + "/pinglist.yaml";
 const std::string py_client_abs_path =
@@ -41,6 +39,8 @@ int main() {
     delete_files_in_directory(get_source_directory() + DIR_DOWNLOAD_PATH);
 
     spdlog::info("--- Main thread starts");
+    message_to_http_server("Main thread starts", "/alarm",
+                           spdlog::default_logger());  // alarm to controller
     process_py_client.host = "null";
     process_py_server.host = "null";
 
@@ -52,7 +52,6 @@ int main() {
     // Monitor processes for every second and restart them if they exit
     while (running) {
         int status;
-
         /* 0. Handle zombie child processes */
         pid_t pid;
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
@@ -70,8 +69,7 @@ int main() {
         // python programs - only check server
         std::string controller_host;
         int controller_port;
-        get_controller_info_from_ini(pingweave_ini_abs_path, controller_host,
-                                     controller_port);
+        get_controller_info_from_ini(controller_host, controller_port);
         if (process_py_server.pid > 0 &&
             process_py_server.host != controller_host) {
             spdlog::info("IP {} is no more controller. Exit the python thread",
@@ -222,6 +220,8 @@ pid_t start_process(std::function<void()> func, const char* name) {
 void signal_handler(int sig) {
     running = false;
     spdlog::critical("*** Main thread exits. ***");
+    message_to_http_server("Main thread exits", "/alarm",
+                           spdlog::default_logger());  // send to controller
     for (int i = 0; i < processes_cpp_server.size(); ++i) {
         kill(processes_cpp_server[i].pid, SIGTERM);
     }
@@ -234,23 +234,27 @@ void signal_handler(int sig) {
 }
 
 void sigchld_handler(int sig) {
-    int saved_errno = errno;  // 기존 errno 값을 저장
+    int saved_errno = errno;  // remember previous errno
     int status;
     int result;
     pid_t pid;
+    std::string alarm_msg;
 
-    // 모든 종료된 자식 프로세스의 상태를 수집
+    // collect all terminated child processes status
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        alarm_msg = "Child process termination is detected: ";
         spdlog::info("[sigchld] Child process (PID: {}) terminated.", pid);
 
         // If accidentally killed, handle the status and make logs
         if (process_py_client.pid == pid) {
             spdlog::info("-> process name: {}", process_py_client.name);
+            alarm_msg += process_py_client.name;
             process_py_client = {0};  // renew
             process_py_client.host = "null";
         }
         if (process_py_server.pid == pid) {
             spdlog::info("-> process name: {}", process_py_server.name);
+            alarm_msg += process_py_server.name;
             process_py_server = {0};  // renew
             process_py_server.host = "null";
         }
@@ -258,6 +262,7 @@ void sigchld_handler(int sig) {
              it != processes_cpp_server.end(); ++it) {
             if (it->pid == pid) {
                 spdlog::info("-> process name: {}", it->name);
+                alarm_msg += it->name;
                 processes_cpp_server.erase(it);
                 break;
             }
@@ -266,10 +271,14 @@ void sigchld_handler(int sig) {
              it != processes_cpp_client.end(); ++it) {
             if (it->pid == pid) {
                 spdlog::info("-> process name: {}", it->name);
+                alarm_msg += it->name;
                 processes_cpp_client.erase(it);
                 break;
             }
         }
+
+        // send to controller
+        message_to_http_server(alarm_msg, "/alarm", spdlog::default_logger());
 
         // ensure to kill the process
         kill(pid, SIGTERM);
