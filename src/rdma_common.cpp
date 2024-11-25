@@ -797,13 +797,13 @@ std::string convert_result_to_str(const std::string &srcip,
        << timestamp_ns_to_string(result_info.ts_start) << ","
        << timestamp_ns_to_string(result_info.ts_end) << ","
        << result_info.n_success << "," << result_info.n_failure << ","
-       << "Client:" << client_stat.mean << "," << client_stat.max << ","
+       << "Client," << client_stat.mean << "," << client_stat.max << ","
        << client_stat.percentile_50 << "," << client_stat.percentile_95 << ","
        << client_stat.percentile_99 << ","
-       << "Network:" << network_stat.mean << "," << network_stat.max << ","
+       << "Network," << network_stat.mean << "," << network_stat.max << ","
        << network_stat.percentile_50 << "," << network_stat.percentile_95 << ","
        << network_stat.percentile_99 << ","
-       << "Server:" << server_stat.mean << "," << server_stat.max << ","
+       << "Server," << server_stat.mean << "," << server_stat.max << ","
        << server_stat.percentile_50 << "," << server_stat.percentile_95 << ","
        << server_stat.percentile_99;
 

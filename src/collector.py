@@ -2,7 +2,9 @@ import asyncio
 import os
 import socket
 import configparser
-from aiohttp import web
+from aiohttp import web  # aiohttp for webserver
+import redis  # in-memory key-value storage
+import yaml  # python3 -m pip install pyyaml
 import psutil
 from logger import initialize_pingweave_logger
 
@@ -11,13 +13,36 @@ logger = initialize_pingweave_logger(socket.gethostname(), "collector")
 # Configuration paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
+PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Global variables
 control_host = None
 collect_port = None
 
+# Variables to save pinglist
+pinglist_in_memory = {}
+
 # ConfigParser object
 config = configparser.ConfigParser()
+
+try:
+    # Redis
+    socket_path = "/var/run/redis/redis-server.sock"
+    redis_server = redis.StrictRedis(
+        unix_socket_path=socket_path, decode_responses=True
+    )
+    logger.info(f"Redis server running - {redis_server.ping()}")  # 출력: True
+    assert redis_server.ping()
+except redis.exceptions.ConnectionError as e:
+    logger.error(f"Cannot connect to Redis server: {e}")
+    if not os.path.exists(socket_path):
+        print(f"Socket file does not exist: {socket_path}")
+except FileNotFoundError as e:
+    logger.error(f"Redis socket file does not exist: {e}")
+except Exception as e:
+    logger.error(f"Unexpected error of Redis server: {e}")
+finally:
+    redis_server = None
 
 
 def load_config_ini():
@@ -65,9 +90,16 @@ async def handle_result_rdma_post(request):
         logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
 
         results = raw_data.strip().split("\n")
-        for result in results:
-            data = result.strip().split(",")
-            print(f"{data}")
+
+        if redis_server != None:
+            for result in results:
+                logger.info(f"{result}")
+
+                # send to redis server
+                data = result.strip().split(",")
+                key = ",".join(data[0:2])
+                value = ",".join(data[2])
+                redis_server.set(key, value)
 
         return web.Response(text="Data processed successfully", status=200)
     except Exception as e:
