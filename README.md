@@ -11,8 +11,9 @@ PingWeave
 * redis: in-memory key-value store
 * python packages
     * pyyaml
-    * urllib
+    * psutil
     * pandas
     * numpy
     * plotly
+    * aiohttp
 
