@@ -37,11 +37,12 @@ except redis.exceptions.ConnectionError as e:
     logger.error(f"Cannot connect to Redis server: {e}")
     if not os.path.exists(socket_path):
         print(f"Socket file does not exist: {socket_path}")
+    redis_server = None
 except FileNotFoundError as e:
     logger.error(f"Redis socket file does not exist: {e}")
+    redis_server = None
 except Exception as e:
     logger.error(f"Unexpected error of Redis server: {e}")
-finally:
     redis_server = None
 
 
