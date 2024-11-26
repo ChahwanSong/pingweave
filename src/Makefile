@@ -3,11 +3,22 @@ SOURCE_DIR := $(shell pwd)
 # 컴파일러 설정
 CXX = g++ 
 
+# GCC 버전 체크
+GCC_VERSION := $(shell $(CXX) -dumpversion | cut -f1 -d.)
+
 # 공통 컴파일러 플래그
 CXXFLAGS = -std=c++17 -I ../libs -I /usr/include/yaml-cpp -O2 -pthread -DSOURCE_DIR=\"$(SOURCE_DIR)\"
 
-# 공통 링크 플래그
-LDFLAGS = -l ibverbs
+# GCC 8인 경우 -lstdc++fs 추가
+ifeq ($(shell expr $(GCC_VERSION) \< 8), 1)  # GCC 7 이하
+    # CXXFLAGS += -D_GLIBCXX_USE_CXX11_ABI=0
+    # LDFLAGS = -lstdc++fs -l ibverbs
+	$(error "GCC version $(GCC_VERSION) detected. GCC 8 or higher is required.")
+else ifeq ($(GCC_VERSION), 8)  # GCC 8
+    LDFLAGS = -lstdc++fs -l ibverbs
+else
+    LDFLAGS = -l ibverbs
+endif
 
 # 공통 라이브러리
 LDLIBS =
