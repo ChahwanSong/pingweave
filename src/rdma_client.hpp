@@ -109,7 +109,7 @@ void client_process_rx_cqe(pingweave_context* ctx_rx, PingInfoMap* ping_table,
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
-            num_cqes = ibv_poll_cq(ctx_rx->cq, BATCH_CQE, wc_array);
+            num_cqes = ibv_poll_cq(pingweave_cq(ctx_rx), BATCH_CQE, wc_array);
 
             if (num_cqes < 0) {
                 throw std::runtime_error("Failed to poll CQ");
@@ -238,8 +238,8 @@ void client_process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
-            int num_cqes = ibv_poll_cq(ctx_tx->cq, BATCH_CQE, wc_array);
-
+            int num_cqes =
+                ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
             if (num_cqes < 0) {
                 logger->error("Failed to poll CQ");
                 throw std::runtime_error("Failed to poll CQ");
@@ -258,20 +258,10 @@ void client_process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
                     continue;
                 }
 
-                if (wc.opcode == IBV_WC_RECV) {
-                    // Get current time
-                    cqe_time = get_current_timestamp_steady();
-
+                if (wc.opcode == IBV_WC_SEND) {
                     logger->debug(
-                        "[CQE] Recv completed (ping ID: {}), time: {}",
+                        "[CQE] SEND completed (ping ID: {}), time: {}",
                         wc.wr_id, cqe_time);
-
-                    if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
-                        logger->warn(
-                            "Failed to update send completion time for ping ID "
-                            "{}.",
-                            wc.wr_id);
-                    }
                 } else {
                     logger->error("[CQE] TX WR - status: {}, opcode: {}",
                                   ibv_wc_status_str(wc.status),
@@ -281,7 +271,7 @@ void client_process_tx_cqe(pingweave_context* ctx_tx, PingInfoMap* ping_table,
             }
         }
     } catch (const std::exception& e) {
-        logger->error("RX CQE handler exits unexpectedly: {}", e.what());
+        logger->error("TX CQE handler exits unexpectedly: {}", e.what());
         throw;  // Propagate exception
     }
 
@@ -382,7 +372,14 @@ void client_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
                               logger)) {
                     logger->error("Failed to send PING message, dst_ip: {}.",
                                   dst_ip);
-                    // throw std::runtime_error("Failed to send PING message.");
+                }
+                // Get current time
+                auto cqe_time = get_current_timestamp_steady();
+                if (!ping_table->update_ping_cqe_time(msg.x.pingid, cqe_time)) {
+                    logger->warn(
+                        "Failed to update send completion time for ping ID "
+                        "{}.",
+                        msg.x.pingid);
                 }
             }
 
@@ -439,7 +436,7 @@ void client_result_thread(const std::string& ipv4,
                 }
             }
 
-            // report periodically
+            // Check the interval for report
             auto current_time = std::chrono::steady_clock::now();
             auto elapsed_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -485,21 +482,23 @@ void client_result_thread(const std::string& ipv4,
 void rdma_client(const std::string& ipv4) {
     // Start the RX thread
     const std::string client_logname = "rdma_client_" + ipv4;
-    std::shared_ptr<spdlog::logger> client_logger = initialize_custom_logger(
-        client_logname, LOG_LEVEL_CLIENT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    std::shared_ptr<spdlog::logger> client_logger =
+        initialize_logger(client_logname, DIR_LOG_PATH, LOG_LEVEL_CLIENT,
+                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     client_logger->info("RDMA Client is running on pid {}", getpid());
 
     // Inter-thread queue
     const std::string result_logname = "rdma_" + ipv4;
-    std::shared_ptr<spdlog::logger> result_logger = initialize_result_logger(
-        result_logname, LOG_LEVEL_RESULT, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    std::shared_ptr<spdlog::logger> result_logger =
+        initialize_logger(result_logname, DIR_RESULT_PATH, LOG_LEVEL_RESULT,
+                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     ClientInternalQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = "rdma_table_" + ipv4;
-    std::shared_ptr<spdlog::logger> ping_table_logger =
-        initialize_custom_logger(ping_table_logname, LOG_LEVEL_PING_TABLE,
-                                 LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    std::shared_ptr<spdlog::logger> ping_table_logger = initialize_logger(
+        ping_table_logname, DIR_LOG_PATH, LOG_LEVEL_PING_TABLE, LOG_FILE_SIZE,
+        LOG_FILE_EXTRA_NUM);
     PingInfoMap ping_table(ping_table_logger, &client_queue, 1000);
 
     // Initialize RDMA contexts

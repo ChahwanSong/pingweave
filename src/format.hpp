@@ -85,7 +85,6 @@ struct pingweave_context {
     struct ibv_context *context;
     struct ibv_comp_channel *channel;
     struct ibv_pd *pd;
-    struct ibv_cq *cq;
     struct ibv_qp *qp;
     union {
         struct ibv_cq *cq;

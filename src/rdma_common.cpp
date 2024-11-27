@@ -133,7 +133,8 @@ std::set<std::string> get_all_local_ips() {
 //                 spdlog::debug("Deleted: {}", entry.path().c_str());
 //             }
 //         } else {
-//             spdlog::error("Directory does not exist or is not a directory: {}",
+//             spdlog::error("Directory does not exist or is not a directory:
+//             {}",
 //                           directoryPath);
 //         }
 //     } catch (const std::filesystem::filesystem_error &e) {
@@ -151,7 +152,8 @@ void delete_files_in_directory(const std::string &directoryPath) {
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != nullptr) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
             continue;
         }
         std::string filePath = directoryPath + "/" + entry->d_name;
@@ -258,8 +260,8 @@ int get_gid_table_size(struct pingweave_context *ctx,
     }
 
     union ibv_gid last_gid;
-    int gid_count = -1;           // 마지막 유효 GID 인덱스
-    int preferred_gid_index = -1; // "::ffff:"로 시작하는 GID의 인덱스
+    int gid_count = -1;            // 마지막 유효 GID 인덱스
+    int preferred_gid_index = -1;  // "::ffff:"로 시작하는 GID의 인덱스
 
     for (int i = gid_table_size - 1; i >= 0; --i) {
         if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
@@ -269,7 +271,7 @@ int get_gid_table_size(struct pingweave_context *ctx,
 
                 // "::ffff:"로 시작하는 GID를 우선적으로 처리
                 if (gid_str.find("::ffff:") == 0 && preferred_gid_index == -1) {
-                    preferred_gid_index = i; // 첫 "::ffff:" GID 인덱스를 저장
+                    preferred_gid_index = i;  // 첫 "::ffff:" GID 인덱스를 저장
                     logger->debug("Preferred GID[{}]: {}", i, gid_str);
                 }
 
@@ -284,7 +286,7 @@ int get_gid_table_size(struct pingweave_context *ctx,
     // 최종 선택한 GID 인덱스 결정
     if (preferred_gid_index != -1) {
         logger->info("Using preferred GID index: {}", preferred_gid_index);
-        gid_count = preferred_gid_index; // 우선 순위 GID를 사용
+        gid_count = preferred_gid_index;  // 우선 순위 GID를 사용
     } else if (gid_count != -1) {
         logger->info("Using fallback GID index: {}", gid_count);
     } else {
@@ -377,7 +379,6 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
         ctx->rnic_hw_ts = true;
         ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
     }
-    // ctx->rnic_hw_ts = false; // TODO: for testing
 
     {  // find an active port
         int active_port = find_active_port(ctx, logger);

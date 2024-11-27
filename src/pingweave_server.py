@@ -136,10 +136,14 @@ async def get_address_store(request):
     client_ip = request.remote
     async with address_store_lock:
         global address_store_checkpoint
-        
+
         # condition to filter old entries (every 1 minute)
         if address_store_checkpoint + 60 < current_time:
-            keys_old_entries = [key for key, value in address_store.items() if value[5] + 30 < current_time]
+            keys_old_entries = [
+                key
+                for key, value in address_store.items()
+                if value[5] + 300 < current_time
+            ]
             for key in keys_old_entries:
                 logger.info(f"(EXPIRED) Old address information: {key}")
                 address_store.pop(key)
@@ -162,7 +166,14 @@ async def post_address(request):
 
         if all([ip_address, gid, lid, qpn, dtime]):
             async with address_store_lock:
-                address_store[ip_address] = [ip_address, gid, int(lid), int(qpn), str(dtime), int(utime)]
+                address_store[ip_address] = [
+                    ip_address,
+                    gid,
+                    int(lid),
+                    int(qpn),
+                    str(dtime),
+                    int(utime),
+                ]
                 logger.debug(
                     f"(RECV) POST from {client_ip}. Updated address store (size: {len(address_store)})."
                 )

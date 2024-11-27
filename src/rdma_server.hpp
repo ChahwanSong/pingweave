@@ -91,7 +91,7 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
-            num_cqes = ibv_poll_cq(ctx_rx->cq, BATCH_CQE, wc_array);
+            num_cqes = ibv_poll_cq(pingweave_cq(ctx_rx), BATCH_CQE, wc_array);
 
             if (num_cqes < 0) {
                 logger->error("Failed to poll CQ");
@@ -280,7 +280,7 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
         }
     } else {
         struct ibv_wc wc_array[BATCH_CQE];
-        int num_cqes = ibv_poll_cq(ctx_tx->cq, BATCH_CQE, wc_array);
+        int num_cqes = ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
 
         if (num_cqes < 0) {
             logger->error("Failed to poll CQ");
@@ -296,7 +296,6 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
             // if failure
             if (wc.status != IBV_WC_SUCCESS) {
                 logger->error("CQE TX error: {}", ibv_wc_status_str(wc.status));
-                ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                 continue;
             }
 
@@ -307,7 +306,6 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
                 // PONG ACK's CQE -> ignore
                 if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
                     logger->debug("[CQE] CQE of ACK. Do nothing.");
-                    ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                     continue;
                 }
 
@@ -439,8 +437,8 @@ void server_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
 void rdma_server(const std::string& ipv4) {
     // Initialize logger
     const std::string server_logname = "rdma_server_" + ipv4;
-    std::shared_ptr<spdlog::logger> server_logger = initialize_custom_logger(
-        server_logname, LOG_LEVEL_SERVER, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    std::shared_ptr<spdlog::logger> server_logger = initialize_logger(
+        server_logname, DIR_LOG_PATH, LOG_LEVEL_SERVER, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     server_logger->info("RDMA Server is running on pid {}", getpid());
 
     // Create internal queue

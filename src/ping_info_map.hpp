@@ -60,7 +60,6 @@ enum {
     (PINGWEAVE_MASK_RECV_PING_CQE | PINGWEAVE_MASK_RECV_PONG | \
      PINGWEAVE_MASK_RECV_ACK)
 
-
 class PingInfoMap {
    public:
     using Key = uint64_t;
@@ -112,13 +111,15 @@ class PingInfoMap {
         }
 
         // update ping's cqe time
-        // if this is called after update_pong_info(), update a value properly
         if (it->second.value.network_delay == 0) {
             it->second.value.network_delay = x;
         } else {
-            // CX-6 time mask = 2**63 - 1
+            // This can be called after update_pong_info(), when PONG is
+            // too fast. If then, update a value properly (very rare)
             it->second.value.network_delay = calc_time_delta_with_bitwrap(
-                x, it->second.value.network_delay, 9223372036854775807LL);
+                x, it->second.value.network_delay,
+                9223372036854775807LL  // CX-6 time mask = 2**63 - 1
+            );
         }
 
         // update recv bimap and cnt
