@@ -43,7 +43,8 @@
     - Collector 에서 받은 Ping 결과 publish.
     - database.py -> subscribe 해서 Database 에 저장
     - analyzer.py -> pinglist format을 기반으로 
-
+- Broadcom RNIC 지원 (no support for HW timestamping)
+    -
 
 ## Overhead
 * CPU: Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz

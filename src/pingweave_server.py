@@ -20,7 +20,8 @@ PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Variables to save pinglist
 pinglist_in_memory = {}
-address_store = {}  # ip -> (ip, gid, lid, qpn)
+address_store = {}  # ip -> (ip, gid, lid, qpn, dtime)
+address_store_checkpoint = 0
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()
 
@@ -131,8 +132,18 @@ async def get_pinglist(request):
 
 
 async def get_address_store(request):
+    current_time = int(time.time())
     client_ip = request.remote
     async with address_store_lock:
+        global address_store_checkpoint
+        
+        # condition to filter old entries (every 1 minute)
+        if address_store_checkpoint + 60 < current_time:
+            keys_old_entries = [key for key, value in address_store.items() if value[5] + 30 < current_time]
+            for key in keys_old_entries:
+                logger.info(f"(EXPIRED) Old address information: {key}")
+                address_store.pop(key)
+            address_store_checkpoint = current_time
         response_data = address_store
     logger.debug(f"(SEND) address_store to client: {client_ip}")
     return web.json_response(response_data)
@@ -147,10 +158,11 @@ async def post_address(request):
         lid = data.get("lid")
         qpn = data.get("qpn")
         dtime = data.get("dtime")
+        utime = int(time.time())
 
         if all([ip_address, gid, lid, qpn, dtime]):
             async with address_store_lock:
-                address_store[ip_address] = [ip_address, gid, int(lid), int(qpn)]
+                address_store[ip_address] = [ip_address, gid, int(lid), int(qpn), str(dtime), int(utime)]
                 logger.debug(
                     f"(RECV) POST from {client_ip}. Updated address store (size: {len(address_store)})."
                 )

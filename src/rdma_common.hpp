@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>  // directory
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
@@ -22,8 +23,10 @@
 #include <cerrno>  // errno
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>  // strerror
-#include <filesystem>
+#include <cstring>
+// #include <filesystem> // no use for gcc < 8
 #include <fstream>
 #include <future>
 #include <iostream>

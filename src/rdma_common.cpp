@@ -123,23 +123,53 @@ std::set<std::string> get_all_local_ips() {
     return local_ips;
 }
 
+// void delete_files_in_directory(const std::string &directoryPath) {
+//     try {
+//         if (std::filesystem::exists(directoryPath) &&
+//             std::filesystem::is_directory(directoryPath)) {
+//             for (const auto &entry :
+//                  std::filesystem::directory_iterator(directoryPath)) {
+//                 std::filesystem::remove_all(entry.path());
+//                 spdlog::debug("Deleted: {}", entry.path().c_str());
+//             }
+//         } else {
+//             spdlog::error("Directory does not exist or is not a directory: {}",
+//                           directoryPath);
+//         }
+//     } catch (const std::filesystem::filesystem_error &e) {
+//         spdlog::error("Failed to delete files in directory {}: {}",
+//                       directoryPath, e.what());
+//     }
+// }
+
 void delete_files_in_directory(const std::string &directoryPath) {
-    try {
-        if (std::filesystem::exists(directoryPath) &&
-            std::filesystem::is_directory(directoryPath)) {
-            for (const auto &entry :
-                 std::filesystem::directory_iterator(directoryPath)) {
-                std::filesystem::remove_all(entry.path());
-                spdlog::debug("Deleted: {}", entry.path().c_str());
-            }
-        } else {
-            spdlog::error("Directory does not exist or is not a directory: {}",
-                          directoryPath);
-        }
-    } catch (const std::filesystem::filesystem_error &e) {
-        spdlog::error("Failed to delete files in directory {}: {}",
-                      directoryPath, e.what());
+    DIR *dir = opendir(directoryPath.c_str());
+    if (!dir) {
+        spdlog::error("Failed to open directory: {}", directoryPath);
+        return;
     }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        std::string filePath = directoryPath + "/" + entry->d_name;
+
+        struct stat statbuf;
+        if (stat(filePath.c_str(), &statbuf) == 0) {
+            if (S_ISDIR(statbuf.st_mode)) {
+                delete_files_in_directory(filePath);
+                rmdir(filePath.c_str());
+            } else {
+                std::remove(filePath.c_str());
+            }
+            spdlog::debug("Deleted: {}", filePath);
+        } else {
+            spdlog::error("Failed to stat file: {}", filePath);
+        }
+    }
+    closedir(dir);
 }
 
 // If error occurs, myaddr returned is empty set.
@@ -214,7 +244,6 @@ int find_active_port(struct pingweave_context *ctx,
 // Get GID table size
 int get_gid_table_size(struct pingweave_context *ctx,
                        std::shared_ptr<spdlog::logger> logger) {
-    int gid_count = -1;
     struct ibv_port_attr port_attr;
 
     if (ibv_query_port(ctx->context, ctx->active_port, &port_attr)) {
@@ -229,17 +258,37 @@ int get_gid_table_size(struct pingweave_context *ctx,
     }
 
     union ibv_gid last_gid;
+    int gid_count = -1;           // 마지막 유효 GID 인덱스
+    int preferred_gid_index = -1; // "::ffff:"로 시작하는 GID의 인덱스
+
     for (int i = gid_table_size - 1; i >= 0; --i) {
         if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
             auto gid_str = parsed_gid(&last_gid);
             if (!gid_str.empty() && gid_str != "::") {
                 logger->debug("Device's GID[{}]: {}", i, gid_str);
-                // get the last GID index
+
+                // "::ffff:"로 시작하는 GID를 우선적으로 처리
+                if (gid_str.find("::ffff:") == 0 && preferred_gid_index == -1) {
+                    preferred_gid_index = i; // 첫 "::ffff:" GID 인덱스를 저장
+                    logger->debug("Preferred GID[{}]: {}", i, gid_str);
+                }
+
+                // 마지막 유효 GID 인덱스 저장
                 if (gid_count == -1) {
                     gid_count = i;
                 }
             }
         }
+    }
+
+    // 최종 선택한 GID 인덱스 결정
+    if (preferred_gid_index != -1) {
+        logger->info("Using preferred GID index: {}", preferred_gid_index);
+        gid_count = preferred_gid_index; // 우선 순위 GID를 사용
+    } else if (gid_count != -1) {
+        logger->info("Using fallback GID index: {}", gid_count);
+    } else {
+        logger->error("No valid GID found!");
     }
 
     return gid_count;
@@ -328,6 +377,7 @@ int init_ctx(struct pingweave_context *ctx, const int &is_rx,
         ctx->rnic_hw_ts = true;
         ctx->completion_timestamp_mask = attrx.completion_timestamp_mask;
     }
+    // ctx->rnic_hw_ts = false; // TODO: for testing
 
     {  // find an active port
         int active_port = find_active_port(ctx, logger);
