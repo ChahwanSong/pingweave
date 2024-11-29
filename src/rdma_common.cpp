@@ -179,6 +179,7 @@ void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
                                     std::set<std::string> &myaddr) {
     fkyaml::node config;
     myaddr.clear();  // clean-slate start
+    std::set<std::string> local_ips;
 
     try {
         std::ifstream ifs(pinglist_filename);
@@ -188,11 +189,14 @@ void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
         spdlog::error("Failed to load a pinglist.yaml: {}", e.what());
         return;
     }
-
+    
     try {
         // Retrieve the node's IP addr
-        std::set<std::string> local_ips = get_all_local_ips();
-
+        local_ips = get_all_local_ips();
+    } catch (const std::exception &e) {
+        spdlog::error("Failed to get my local IPs");
+    }
+    try {
         if (config.empty()) {
             spdlog::warn("No entry in pinglist.yaml, skip.");
             return;
@@ -215,7 +219,7 @@ void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
         }
 
     } catch (const std::exception &e) {
-        spdlog::error("Failed to get my IP addresses from pinglist.yaml");
+        spdlog::error("Failed to get my IP from pinglist.yaml");
     }
 }
 

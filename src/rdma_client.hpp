@@ -372,14 +372,18 @@ void client_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
                               logger)) {
                     logger->error("Failed to send PING message, dst_ip: {}.",
                                   dst_ip);
-                }
-                // Get current time
-                auto cqe_time = get_current_timestamp_steady();
-                if (!ping_table->update_ping_cqe_time(msg.x.pingid, cqe_time)) {
-                    logger->warn(
-                        "Failed to update send completion time for ping ID "
-                        "{}.",
-                        msg.x.pingid);
+                } else {
+                    // if RNIC_TIMESTAMP is not supported, update ping cqe here
+                    if (!ctx_tx->rnic_hw_ts) {
+                        auto cqe_time = send_time_steady;
+                        if (!ping_table->update_ping_cqe_time(msg.x.pingid,
+                                                              cqe_time)) {
+                            logger->warn(
+                                "Failed to update send completion time for "
+                                "ping ID {}.",
+                                msg.x.pingid);
+                        }
+                    }
                 }
             }
 

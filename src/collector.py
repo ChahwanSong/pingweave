@@ -91,18 +91,18 @@ async def handle_result_rdma_post(request):
         logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
 
         results = raw_data.strip().split("\n")
-        
-        # TODO: add publish -> for persistent database 
+
+        # TODO: add publish -> for persistent database
 
         if redis_server != None:
             for result in results:
                 # TODO: remove this later
-                logger.info(f"{result}") 
+                logger.info(f"{result}")
 
                 # send to redis server
                 data = result.strip().split(",")
-                key = ",".join(data[0:2])
-                value = ",".join(data[2])
+                key = ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
+                value = ",".join(data[2:])  # ts_start, ts_end, #success,#fail, ...
                 redis_server.set(key, value)
 
         return web.Response(text="Data processed successfully", status=200)

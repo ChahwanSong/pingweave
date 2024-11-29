@@ -200,7 +200,7 @@ class PingInfoMap {
             if (ping_info.recv_cnt != 3) {
                 logger->warn(
                     "[Corrupted] pingid {} (-> {}) recv count must be 3, but "
-                    "{}. ",
+                    "{}.",
                     ping_info.pingid, ping_info.dstip, ping_info.recv_cnt);
                 remove(ping_info.pingid);
                 return true;

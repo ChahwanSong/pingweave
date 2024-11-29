@@ -76,7 +76,7 @@ int main() {
                          process_py_server.host);
             int result = kill(process_py_server.pid, SIGTERM);
             if (result != 0) {
-                spdlog::error("Faile dto send signal to PID {}: {}",
+                spdlog::error("Failed to send signal to PID {}: {}",
                               process_py_server.pid, strerror(errno));
             }
             process_py_server = {0};
