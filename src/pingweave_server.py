@@ -191,6 +191,27 @@ async def post_address(request):
         return web.Response(text="Internal server error", status=500)
 
 
+async def index(request):
+    # 디렉토리 내의 파일 목록을 가져옵니다.
+    files = os.listdir(HTML_DIR)
+    # HTML 파일만 필터링합니다.
+    html_files = [f for f in files if f.endswith(".html")]
+    # 인덱스 페이지를 생성합니다.
+    file_links = [f'<li><a href="/{fname}">{fname}</a></li>' for fname in html_files]
+    content = f"""
+    <html>
+        <head><title>Available HTML Files</title></head>
+        <body>
+            <h1>사용 가능한 HTML 파일 목록</h1>
+            <ul>
+                {''.join(file_links)}
+            </ul>
+        </body>
+    </html>
+    """
+    return web.Response(text=content, content_type="text/html")
+
+
 async def pingweave_server():
     load_config_ini()
 
@@ -206,6 +227,8 @@ async def pingweave_server():
 
             try:
                 app = web.Application()
+                app.router.add_get("/", index)  # indexing for html files
+                app.router.add_static("/", HTML_DIR)  # static route for html
                 app.router.add_get("/pinglist", get_pinglist)
                 app.router.add_get("/address_store", get_address_store)
                 app.router.add_post("/address", post_address)
@@ -219,7 +242,7 @@ async def pingweave_server():
                     f"Pingweave server running on {control_host}:{control_port}"
                 )
 
-                pinglist_task = asyncio.create_task(read_pinglist_periodically())
+                asyncio.create_task(read_pinglist_periodically())
 
                 await asyncio.Event().wait()
 

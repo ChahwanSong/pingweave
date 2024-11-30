@@ -21,13 +21,14 @@ unixsocketperm 700
 port 0  # TCP/IP inactivate (optional)
 ```
 * python >= 3.7 (for aiohttp)
-* python packages
+* python packages (versions do not necessarily be same with clients)
     * pyyaml
     * psutil
     * pandas
     * numpy
     * plotly
-    * aiohttp
+    * aiohttp (+ jinja2)
     * redis (client)
     * logging
+    * datetime
 
