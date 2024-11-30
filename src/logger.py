@@ -1,14 +1,14 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from macro import *
 
 # Create the logs directory if it doesn't exist
-log_dir = "../logs"
 logging_level = logging.INFO  # INFO
 console_level = logging.ERROR  # ERROR
 
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
 
 
 def initialize_pingweave_logger(
@@ -21,10 +21,10 @@ def initialize_pingweave_logger(
         console_handler = logging.StreamHandler()
         console_handler.setLevel(console_level)  # >=ERROR to console
 
-    log_file = os.path.join(log_dir, f"pingweave_{middlename}_{host}.log")
+    log_file = os.path.join(LOG_DIR, f"pingweave_{middlename}_{host}.log")
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=100 * 1024 * 1024,
+        maxBytes=30 * 1024 * 1024,
         backupCount=0,
     )
     file_handler.setLevel(logging_level)  # >=INFO to file

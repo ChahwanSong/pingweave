@@ -8,14 +8,9 @@ import yaml  # python3 -m pip install pyyaml
 import urllib.request  # python3 -m pip install urllib
 import urllib.error
 from logger import initialize_pingweave_logger
+from macro import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "client")
-
-# Absolute paths of this script and configuration files
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
-DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 
 # ConfigParser object
 config = configparser.ConfigParser()

@@ -31,6 +31,7 @@ RESULT_DIR = ../result
 LOGS_DIR = ../logs
 UPLOAD_DIR = ../upload
 DOWNLOAD_DIR = ../download
+HTML_DIR = ../html
 
 # 공통 소스 파일
 SRCS_COMMON = rdma_common.cpp
@@ -57,6 +58,7 @@ $(TARGET_MAIN): $(OBJS_MAIN)
 	@mkdir -p $(LOGS_DIR)
 	@mkdir -p $(UPLOAD_DIR)
 	@mkdir -p $(DOWNLOAD_DIR)
+	@mkdir -p $(HTML_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # 오브젝트 파일 생성 규칙

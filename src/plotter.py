@@ -1,21 +1,19 @@
 import redis  # in-memory key-value storage
 import pandas as pd
+import copy
 import numpy as np
 import socket
 import psutil
 import asyncio
+import yaml
 import plotly.graph_objects as go
 from logger import initialize_pingweave_logger
 import os
 import time
 import configparser
+from macro import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "plotter")
-
-# Configuration paths
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Global variables
 control_host = None
@@ -100,7 +98,13 @@ def read_pinglist():
         logger.error(f"Error loading pinglist: {e}")
 
 
-def plot_heatmap(records):
+def plot_heatmap(records, outname="result"):
+    # records = [
+    #     {"source": src, "destination": dst, "value": val, "time": time}
+    #     for (src, dst), (val, time) in data.items()
+    # ]
+
+    # 데이터를 리스트로 변환하여 DataFrame 생성
     df = pd.DataFrame(records)
 
     # IP 주소를 인덱스로 매핑
@@ -169,12 +173,14 @@ def plot_heatmap(records):
     fig.update_yaxes(visible=False)
 
     # HTML 파일로 저장
-    fig.write_html("heatmap_with_time.html")
+    fig.write_html(f"{HTML_DIR}/{outname}.html")
 
 
 async def pingweave_plotter():
     load_config_ini()
     last_plot_time = int(time.time())
+    pinglist_protocol = ["tcp", "rdma"]
+
     try:
         while True:
             if not check_ip_active(control_host):
@@ -188,37 +194,70 @@ async def pingweave_plotter():
             try:
                 # plot the graph for every 30 seconds
                 now = int(time.time())
-                if last_plot_time + 30 < now and redis_server != None:
-                    logger.info(
-                        f"Pingweave plotter running on {control_host}:{collect_port}"
-                    )
-                    # get data from redis
-                    keys = redis_server.keys("*")
-                    for key in keys:
-                        value = redis_server.get(key)
-                        print(f"Key: {key}, Value: {value}")
-
-                    # # 데이터 준비 (실제 데이터로 대체)
-                    # data = {
-                    #     (f"192.168.0.{i}", f"10.0.0.{j}"): (i * j % 100, i + j)
-                    #     for i in range(1, 1001)
-                    #     for j in range(1, 1001)
-                    # }
-
-                    # # 데이터를 리스트로 변환하여 DataFrame 생성
-                    # records = [
-                    #     {"source": src, "destination": dst, "value": val, "time": time}
-                    #     for (src, dst), (val, time) in data.items()
-                    # ]
-
+                if last_plot_time + 10 < now and redis_server != None:
                     # update the last plot time
                     last_plot_time = now
 
-                await asyncio.Event().wait()
+                    logger.info(
+                        f"Pingweave plotter is running on {control_host}:{collect_port}"
+                    )
+
+                    # read pinglist (synchronous)
+                    read_pinglist()
+
+                    # create template records
+                    # pinglist = {'tcp': {'group1': ['192.168.1.1', '192.168.1.2', '192.168.1.3']}}
+                    records = copy.deepcopy(pinglist_in_memory)
+                    map_ip_to_groups = {}  # dict of set
+                    for proto, cat_data in pinglist_in_memory.items():
+                        for group, ip_list in cat_data.items():
+                            # make a template
+                            records[proto][group] = {
+                                f"{src},{dst}": None
+                                for src in ip_list
+                                for dst in ip_list
+                            }
+
+                            # make a mapping
+                            for ip in ip_list:
+                                if ip not in map_ip_to_groups:
+                                    map_ip_to_groups[ip] = set()
+                                map_ip_to_groups[ip].add(group)
+
+                    # insert process
+                    cursor = "0"
+                    while cursor != 0:
+                        cursor, keys = redis_server.scan(cursor=cursor)  # scan kv-store
+                        for key in keys:
+                            # TODO: skip to insert if no key
+                            value = redis_server.get(key)
+                            proto, src, dst = key.split(",")
+                            record_key = f"{src},{dst}"
+                            if proto not in pinglist_protocol:
+                                raise Exception(f"Not expected protocol type: {proto}")
+
+                            # check which groups to insert
+                            # # TODO: if no key, error handling
+                            src_groups = map_ip_to_groups[src]
+                            dst_groups = map_ip_to_groups[dst]
+                            common_groups = list(set(src_groups) & set(dst_groups))
+
+                            # insertion
+                            for group in common_groups:
+                                if record_key not in records[proto][group]:
+                                    raise Exception(
+                                        f"{record_key} is not in records[{proto}][{group}]"
+                                    )
+                                records[proto][group][record_key] = value.split(",")
+
+                # category/group 별로 plot 그리기
+
+                records
+
             except Exception as e:
-                logger.error(f"Cannot start the pingweave plotter: {e}")
+                logger.error(f"Cannot run the pingweave plotter: {e}")
             finally:
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
     except KeyboardInterrupt:
         logger.info("pingweave_plotter received KeyboardInterrupt. Exiting.")
     except Exception as e:

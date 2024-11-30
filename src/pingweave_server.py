@@ -10,13 +10,9 @@ import multiprocessing
 from logger import initialize_pingweave_logger
 import yaml  # python3 -m pip install pyyaml
 from aiohttp import web  # requires python >= 3.7
+from macro import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "server")
-
-# Absolute paths of this script and configuration files
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Variables to save pinglist
 pinglist_in_memory = {}
@@ -256,15 +252,25 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
+        from plotter import run_pingweave_plotter  # Import the plotter function
+    except ImportError as e:
+        logger.error(f"Could not import run_pingweave_plotter from plotter.py: {e}")
+        sys.exit(1)
+
+    try:
         process_server = multiprocessing.Process(
             target=run_pingweave_server, name="pingweave_server", daemon=True
         )
         process_collector = multiprocessing.Process(
             target=run_pingweave_collector, name="pingweave_collector", daemon=True
         )
+        process_plotter = multiprocessing.Process(
+            target=run_pingweave_plotter, name="pingweave_plotter", daemon=True
+        )
 
         process_server.start()
         process_collector.start()
+        process_plotter.start()
 
         while True:
             if not process_server.is_alive():
@@ -272,6 +278,9 @@ if __name__ == "__main__":
                 break
             if not process_collector.is_alive():
                 logger.warning("pingweave_collector has stopped unexpectedly.")
+                break
+            if not process_plotter.is_alive():
+                logger.warning("pingweave_plotter has stopped unexpectedly.")
                 break
             time.sleep(1)
 
@@ -286,3 +295,6 @@ if __name__ == "__main__":
         if process_collector.is_alive():
             process_collector.terminate()
             logger.warning("Terminated pingweave_collector process.")
+        if process_plotter.is_alive():
+            process_plotter.terminate()
+            logger.warning("Terminated pingweave_plotter process.")

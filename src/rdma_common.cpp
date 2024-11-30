@@ -189,7 +189,7 @@ void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
         spdlog::error("Failed to load a pinglist.yaml: {}", e.what());
         return;
     }
-    
+
     try {
         // Retrieve the node's IP addr
         local_ips = get_all_local_ips();
@@ -840,25 +840,25 @@ result_stat_t calc_stats(const std::vector<uint64_t> &delays) {
     return {mean, max, percentile_50, percentile_95, percentile_99};
 }
 
-std::string convert_result_to_str(const std::string &srcip,
-                                  const std::string &dstip,
-                                  const result_info_t &result_info,
-                                  const result_stat_t &client_stat,
-                                  const result_stat_t &network_stat,
-                                  const result_stat_t &server_stat) {
+std::string convert_rdma_result_to_str(const std::string &srcip,
+                                       const std::string &dstip,
+                                       const result_info_t &result_info,
+                                       const result_stat_t &client_stat,
+                                       const result_stat_t &network_stat,
+                                       const result_stat_t &server_stat) {
     /** TODO: remove texts  */
     std::stringstream ss;
     ss << srcip << "," << dstip << ","
        << timestamp_ns_to_string(result_info.ts_start) << ","
        << timestamp_ns_to_string(result_info.ts_end) << ","
        << result_info.n_success << "," << result_info.n_failure << ","
-       << "Client," << client_stat.mean << "," << client_stat.max << ","
+       << "client," << client_stat.mean << "," << client_stat.max << ","
        << client_stat.percentile_50 << "," << client_stat.percentile_95 << ","
        << client_stat.percentile_99 << ","
-       << "Network," << network_stat.mean << "," << network_stat.max << ","
+       << "network," << network_stat.mean << "," << network_stat.max << ","
        << network_stat.percentile_50 << "," << network_stat.percentile_95 << ","
        << network_stat.percentile_99 << ","
-       << "Server," << server_stat.mean << "," << server_stat.max << ","
+       << "server," << server_stat.mean << "," << server_stat.max << ","
        << server_stat.percentile_50 << "," << server_stat.percentile_95 << ","
        << server_stat.percentile_99;
 

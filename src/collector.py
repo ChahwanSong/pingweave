@@ -7,13 +7,9 @@ import redis  # in-memory key-value storage
 import yaml  # python3 -m pip install pyyaml
 import psutil
 from logger import initialize_pingweave_logger
+from macro import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "collector")
-
-# Configuration paths
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "../config/pingweave.ini")
-PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 
 # Global variables
 control_host = None
@@ -33,10 +29,13 @@ try:
     )
     logger.info(f"Redis server running - {redis_server.ping()}")  # 출력: True
     assert redis_server.ping()
+    redis_server.flushdb()
+    logger.info(f"Redis server cleanup - flushdb()")
+
 except redis.exceptions.ConnectionError as e:
     logger.error(f"Cannot connect to Redis server: {e}")
     if not os.path.exists(socket_path):
-        print(f"Socket file does not exist: {socket_path}")
+        logger.error(f"Socket file does not exist: {socket_path}")
     redis_server = None
 except FileNotFoundError as e:
     logger.error(f"Redis socket file does not exist: {e}")
@@ -101,7 +100,7 @@ async def handle_result_rdma_post(request):
 
                 # send to redis server
                 data = result.strip().split(",")
-                key = ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
+                key = "rdma," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
                 value = ",".join(data[2:])  # ts_start, ts_end, #success,#fail, ...
                 redis_server.set(key, value)
 

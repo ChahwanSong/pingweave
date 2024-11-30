@@ -96,12 +96,12 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
 // statistics
 result_stat_t calc_stats(const std::vector<uint64_t> &delays);
 // convert result to string
-std::string convert_result_to_str(const std::string &srcip,
-                                  const std::string &dstip,
-                                  const result_info_t &result_info,
-                                  const result_stat_t &client_stat,
-                                  const result_stat_t &network_stat,
-                                  const result_stat_t &server_stat);
+std::string convert_rdma_result_to_str(const std::string &srcip,
+                                       const std::string &dstip,
+                                       const result_info_t &result_info,
+                                       const result_stat_t &client_stat,
+                                       const result_stat_t &network_stat,
+                                       const result_stat_t &server_stat);
 // send the message to http server
 void send_message_to_http_server(const std::string &server_ip, int server_port,
                                  const std::string &message,

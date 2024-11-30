@@ -459,7 +459,7 @@ void client_result_thread(const std::string& ipv4,
                     result_stat_t server_stat =
                         calc_stats(result_info.server_delays);
 
-                    auto result = convert_result_to_str(
+                    auto result = convert_rdma_result_to_str(
                         ipv4, uint2ip(dstip), result_info, client_stat,
                         network_stat, server_stat);
                     logger->info(result);         // logging
