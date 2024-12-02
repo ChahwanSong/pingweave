@@ -38,7 +38,7 @@ cd "$SCRIPT_DIR/src" || {
 
 if [[ -x "./clear.sh" ]]; then
     echo "Running ./clear.sh ..."
-    ./clear
+    bash ./clear.sh
 else
     echo "Error: './clear.sh' is not executable or not found."
     exit 1
@@ -50,7 +50,7 @@ cd "$SCRIPT_DIR/src" || {
     echo "Error: Directory '$SCRIPT_DIR/src' not found or not accessible."
     exit 1
 }
-./make || {
+make || {
     echo "Error: 'make' command failed."
     exit 1
 }
