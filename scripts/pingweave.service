@@ -1,0 +1,27 @@
+[Unit]
+Description=RDMA and TCP Ping Service
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/pingweave/bin/pingweave 
+WorkingDirectory=/pingweave
+Restart=always
+RestartSec=5s
+
+# CPU and memory resource limit
+CPUQuota=10%
+MemoryLimit=2G
+
+# file and process limit
+LimitNOFILE=1024
+LimitNPROC=512
+
+# stop & kill
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+[Install]
+WantedBy=multi-user.target

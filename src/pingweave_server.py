@@ -202,7 +202,7 @@ async def index(request):
     <html>
         <head><title>Available HTML Files</title></head>
         <body>
-            <h1>사용 가능한 HTML 파일 목록</h1>
+            <h1>Available pingmesh list</h1>
             <ul>
                 {''.join(file_links)}
             </ul>
