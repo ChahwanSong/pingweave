@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(pwd)
+
 ######## prerequisite ########
 # (1) systemd
 # Check if systemd is running
@@ -26,12 +28,40 @@ else
     echo "Python version is 3.6 or higher: $PYTHON_VERSION"
 fi
 
+######### Make ########
+# ./clear.sh
+
+cd "$SCRIPT_DIR/src" || {
+    echo "Error: Directory '$SCRIPT_DIR/src' not found or not accessible."
+    exit 1
+}
+
+if [[ -x "./clear.sh" ]]; then
+    echo "Running ./clear.sh ..."
+    ./clear
+else
+    echo "Error: './clear.sh' is not executable or not found."
+    exit 1
+fi
+
+# make
+echo "Running make ..."
+cd "$SCRIPT_DIR/src" || {
+    echo "Error: Directory '$SCRIPT_DIR/src' not found or not accessible."
+    exit 1
+}
+./make || {
+    echo "Error: 'make' command failed."
+    exit 1
+}
+
+
 ######### INSTALL ########
 # register pingweave service to systemd
 sudo cp ./scripts/pingweave.service /etc/systemd/system/
 
-# pingweavectl
-sudo cp ./scripts/pingweavectl /usr/local/bin
+# # pingweavectl
+# sudo cp ./scripts/pingweavectl /usr/local/bin
 
 # start pingweave service
 sudo systemctl daemon-reload                
