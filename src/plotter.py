@@ -19,6 +19,7 @@ logger = initialize_pingweave_logger(socket.gethostname(), "plotter")
 # Global variables
 control_host = None
 collect_port = None
+interval_report_ping_result_millisec = None
 
 
 # Variables to save pinglist
@@ -49,12 +50,15 @@ except Exception as e:
 
 
 def load_config_ini():
-    global control_host, collect_port
+    global control_host, collect_port, interval_report_ping_result_millisec
 
     try:
         config.read(CONFIG_PATH)
         control_host = config["controller"]["host"]
         collect_port = int(config["controller"]["port_collect"])
+        interval_report_ping_result_millisec = int(
+            config["param"]["interval_report_ping_result_millisec"]
+        )
         logger.debug("Configuration loaded successfully from config file.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
@@ -101,7 +105,6 @@ def read_pinglist():
 
 
 def plot_heatmap_value(records, value_name, time_name, outname):
-    print(f"Plotting a heatmap of {outname}")
     # 데이터를 리스트로 변환하여 DataFrame 생성
     df = pd.DataFrame(records)
 
@@ -275,14 +278,17 @@ async def pingweave_plotter():
                 logger.info(
                     f"No active interface with Control IP {control_host}. Sleep 1 minute..."
                 )
-                await asyncio.sleep(60)
+                await asyncio.sleep(INTERVAL_INTERFACE_ACTIVE_SEC)
                 load_config_ini()
                 continue
 
             try:
                 # plot the graph for every X seconds
                 now = int(time.time())
-                if last_plot_time + 10 < now and redis_server != None:
+                if (
+                    last_plot_time + int(interval_report_ping_result_millisec/1000) < now
+                    and redis_server != None
+                ):
                     # update the last plot time
                     last_plot_time = now
 
@@ -314,8 +320,8 @@ async def pingweave_plotter():
 
                     # insert process
                     cursor = "0"
-                    current_time = datetime.now()
                     while cursor != 0:
+                        current_time = datetime.now()
                         cursor, keys = redis_server.scan(cursor=cursor)  # scan kv-store
                         for key in keys:
                             value = redis_server.get(key)
@@ -336,8 +342,8 @@ async def pingweave_plotter():
                                 (current_time - measure_time).total_seconds()
                             )
 
-                            # skip if the info is stale more than 30 seconds
-                            if time_difference > 30:
+                            # skip if the info is stale
+                            if time_difference > INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC:
                                 continue
 
                             proto, src, dst = key.split(",")

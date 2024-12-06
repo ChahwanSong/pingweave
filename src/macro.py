@@ -10,3 +10,10 @@ UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
 DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
 WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
+
+
+# interval to check if the control IP is in this node but if the interface is not active
+INTERVAL_INTERFACE_ACTIVE_SEC = 60
+
+# filter out in plotting if a data is too old
+INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 60 
