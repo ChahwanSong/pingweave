@@ -20,6 +20,7 @@ logger = initialize_pingweave_logger(socket.gethostname(), "plotter")
 control_host = None
 collect_port = None
 
+
 # Variables to save pinglist
 pinglist_in_memory = {}
 
@@ -279,7 +280,7 @@ async def pingweave_plotter():
                 continue
 
             try:
-                # plot the graph for every 30 seconds
+                # plot the graph for every X seconds
                 now = int(time.time())
                 if last_plot_time + 10 < now and redis_server != None:
                     # update the last plot time

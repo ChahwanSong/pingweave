@@ -58,10 +58,10 @@ make || {
 
 ######### INSTALL ########
 # register pingweave service to systemd
-sudo cp ./scripts/pingweave.service /etc/systemd/system/
+sudo cp $SCRIPT_DIR/scripts/pingweave.service /etc/systemd/system/
 
 # # pingweavectl
-# sudo cp ./scripts/pingweavectl /usr/local/bin
+# sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin
 
 # start pingweave service
 sudo systemctl daemon-reload                

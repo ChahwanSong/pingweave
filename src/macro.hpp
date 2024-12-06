@@ -36,7 +36,5 @@ const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
 
 // Ping interval / Report interval
 // PING_INTERVAL_US is the ping interval between each src-dst pair.
-const static uint64_t PING_INTERVAL_RDMA_US = 1 * 1000000;  // microseconds
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;      // seconds
-const static uint64_t LOAD_CONFIG_INTERVAL_MS = 10 * 1000;  // milliseconds
-const static uint64_t REPORT_INTERVAL_MS = 10 * 1000;       // milliseconds
+const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 10;  // seconds

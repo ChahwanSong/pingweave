@@ -9,7 +9,15 @@ class MsgScheduler {
           logger(logger),
           last_access_time(std::chrono::steady_clock::now()),
           last_load_time(std::chrono::steady_clock::now()),
-          addr_idx(0) {}
+          addr_idx(0) {
+        int dummy1, dummy2, dummy3;
+        if (!get_params_info_from_ini(dummy1, dummy2, dummy3,
+                                      interval_send_ping_microsec)) {
+            logger->error(
+                "Failed to load report_interval parameter from pingwewave.ini. Use default - 1 second.");
+            interval_send_ping_microsec = 1000000;
+        }
+    }
     ~MsgScheduler() {}
 
     int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
@@ -18,11 +26,11 @@ class MsgScheduler {
             std::chrono::duration_cast<std::chrono::microseconds>(
                 now - last_access_time);
         auto loadDuration =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::duration_cast<std::chrono::seconds>(
                 now - last_load_time);
 
         // Check the time to load the address_store
-        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_MS) {
+        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_SEC) {
             load_address_info();
             last_load_time = now;
         }
@@ -64,6 +72,7 @@ class MsgScheduler {
     std::chrono::steady_clock::time_point last_load_time;
     uint64_t inter_ping_interval_us = 1000;  // interval btw each ping
     std::shared_ptr<spdlog::logger> logger;
+    int interval_send_ping_microsec = 1000000;  // ping interval
 
     void load_address_info() {
         try {
@@ -118,7 +127,7 @@ class MsgScheduler {
 
             if (!addressInfo.empty()) {
                 inter_ping_interval_us =
-                    PING_INTERVAL_RDMA_US / addressInfo.size();
+                    interval_send_ping_microsec / addressInfo.size();
             } else {
                 inter_ping_interval_us = 1000000;  // if nothing to send
             }

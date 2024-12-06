@@ -287,7 +287,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
     for (int i = 0; i < ctx_rx->buf.size(); ++i) {
         if (post_recv(ctx_rx, i, RX_DEPTH) != RX_DEPTH) {
             logger->error("Failed to post RECV WRs when initialization.");
-            exit(EXIT_FAILURE);
+            throw;  // Propagate exception
         }
     }
 
@@ -295,7 +295,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
         logger->error("Couldn't register CQE notification");
-        exit(EXIT_FAILURE);
+        throw;  // Propagate exception`
     }
 
     // Start the receive loop
@@ -312,7 +312,7 @@ void client_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in RX thread: {}", e.what());
-        exit(EXIT_FAILURE);
+        throw;  // Propagate exception`
     }
 }
 
@@ -400,6 +400,13 @@ void client_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
 void client_result_thread(const std::string& ipv4,
                           ClientInternalQueue* client_queue,
                           std::shared_ptr<spdlog::logger> logger) {
+    
+    int dummy1, dummy2, dummy3, report_interval_ms = 10000;
+    if (!get_params_info_from_ini(dummy1, dummy2, report_interval_ms, dummy3)) {
+        logger->error("Failed to load report_interval parameter from pingwewave.ini. Use default - 10 seconds");
+        report_interval_ms = 10000;
+    }
+
     // dstip -> result history
     std::unordered_map<uint32_t, struct result_info_t> dstip2result;
 
@@ -447,7 +454,7 @@ void client_result_thread(const std::string& ipv4,
                     current_time - last_report_time)
                     .count();
 
-            if (elapsed_time >= REPORT_INTERVAL_MS) {
+            if (elapsed_time >= report_interval_ms) {
                 // aggregated results
                 std::string agg_result = "";
 

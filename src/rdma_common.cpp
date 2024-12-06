@@ -327,6 +327,47 @@ int get_controller_info_from_ini(std::string &ip, int &port) {
     return true;
 }
 
+int get_params_info_from_ini(int &val_1, int& val_2, int& val_3, int& val_4) {
+    // path of pingweave.ini
+    const std::string pingweave_ini_abs_path =
+        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
+    
+    IniParser parser;
+    if (!parser.load(pingweave_ini_abs_path)) {
+        spdlog::error("Failed to load pingweave.ini");
+        return false;
+    }
+
+    val_1 = parser.getInt("param", "interval_sync_pinglist_sec");
+    if (val_1 < 1) {
+        spdlog::error("pingweave.ini gives an erratic value for sync_pinglist_sec.");
+        return false;
+    }
+
+    val_2 = parser.getInt("param", "interval_read_pinglist_sec");
+    if (val_2 < 1) {
+        spdlog::error("pingweave.ini gives an erratic value for read_pinglist_sec.");
+        return false;
+    }
+
+    val_3 = parser.getInt("param", "interval_report_ping_result_millisec");
+    if (val_3 < 1) {
+        spdlog::error("pingweave.ini gives an erratic value for report_ping_result_millisec.");
+        return false;
+    }
+
+    val_4 = parser.getInt("param", "interval_send_ping_microsec");
+    if (val_4 < 1) {
+        spdlog::error("pingweave.ini gives an erratic value for send_ping_microsec.");
+        return false;
+    }
+
+    // success
+    return true;
+}
+
+
+
 // thread ID and cast to string
 std::string get_thread_id() {
     std::stringstream ss;

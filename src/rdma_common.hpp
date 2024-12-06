@@ -26,7 +26,6 @@
 #include <cstdio>
 #include <cstring>  // strerror
 #include <cstring>
-// #include <filesystem> // no use for gcc < 8
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -63,6 +62,7 @@ int get_gid_table_size(struct pingweave_context *ctx,
                        std::shared_ptr<spdlog::logger> logger);
 // parse ini file
 int get_controller_info_from_ini(std::string &ip, int &port);
+int get_params_info_from_ini(int &val_1, int& val_2, int& val_3, int& val_4);
 // delete files in directory
 void delete_files_in_directory(const std::string &directoryPath);
 // get thread ID
