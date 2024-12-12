@@ -101,7 +101,34 @@ async def handle_result_rdma_post(request):
                 # send to redis server
                 data = result.strip().split(",")
                 key = "rdma," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
-                value = ",".join(data[2:])  # ts_start, ts_end, #success,#fail, ...
+                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
+                redis_server.set(key, value)
+
+        return web.Response(text="Data processed successfully", status=200)
+    except Exception as e:
+        logger.error(f"Error processing POST result_rdma from {client_ip}: {e}")
+        return web.Response(text="Internal server error", status=500)
+
+async def handle_result_udp_post(request):
+    client_ip = request.remote
+
+    try:
+        raw_data = await request.text()
+        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
+
+        results = raw_data.strip().split("\n")
+
+        # TODO: add publish -> for persistent database
+
+        if redis_server != None:
+            for result in results:
+                # TODO: remove this later
+                logger.info(f"{result}")
+
+                # send to redis server
+                data = result.strip().split(",")
+                key = "udp," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
+                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
                 redis_server.set(key, value)
 
         return web.Response(text="Data processed successfully", status=200)
@@ -138,6 +165,7 @@ async def pingweave_collector():
             try:
                 app = web.Application()
                 app.router.add_post("/result_rdma", handle_result_rdma_post)
+                app.router.add_post("/result_udp", handle_result_udp_post)
                 app.router.add_post("/alarm", handle_alarm_post)
                 runner = web.AppRunner(app)
                 await runner.setup()

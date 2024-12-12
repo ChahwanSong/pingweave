@@ -104,11 +104,16 @@ def read_pinglist():
         logger.error(f"Error loading pinglist: {e}")
 
 
-def plot_heatmap_value(records, value_name, time_name, outname):
-    # 데이터를 리스트로 변환하여 DataFrame 생성
+def plot_heatmap_value(records, value_name, time_name, steps, outname):
+    # dataframe
     df = pd.DataFrame(records)
+    
+    # sanity check
+    if len(steps) != 3:
+        logger.error(f"Heatmap step list size must be 3, but given {steps}")
+        return
 
-    # IP 주소를 인덱스로 매핑
+    # index mapping to ip address
     source_ips = df["source"].unique()
     destination_ips = df["destination"].unique()
     source_ip_to_index = {ip: idx for idx, ip in enumerate(source_ips)}
@@ -116,19 +121,19 @@ def plot_heatmap_value(records, value_name, time_name, outname):
     df["source_idx"] = df["source"].map(source_ip_to_index)
     df["destination_idx"] = df["destination"].map(destination_ip_to_index)
 
-    # 피벗 테이블 생성 (value)
+    # create pivot table
     pivot_table = df.pivot(
         index="destination_idx", columns="source_idx", values=value_name
     ).fillna(-1)
     z_values = pivot_table.values
 
-    # 시간 데이터 피벗 테이블 생성
+    # time-series pivot table
     time_pivot = df.pivot(
         index="destination_idx", columns="source_idx", values=time_name
     ).fillna("N/A")
     time_values = time_pivot.values
 
-    # 텍스트 매트릭스 생성
+    # create text matrix
     text_matrix = []
     for i in range(z_values.shape[0]):
         row = []
@@ -141,51 +146,51 @@ def plot_heatmap_value(records, value_name, time_name, outname):
             row.append(text)
         text_matrix.append(row)
 
-    # 값에 따라 색상 인덱스로 매핑하는 함수 정의
+    # value to color index mapping
     def map_value_to_color_index(value):
         if value == -1:
-            return 0  # 검은색
-        elif 0 <= value < 100000:
-            return 1  # 초록색
-        elif 100000 <= value < 500000:
-            return 2  # 노란색
-        elif 500000 <= value < 5000000:
-            return 3  # 주황색
-        elif value >= 5000000:
-            return 4  # 빨간색
+            return 0  # black
+        elif 0 <= value < int(steps[0]):
+            return 1  # green
+        elif int(steps[0]) <= value < int(steps[1]):
+            return 2  # yellow
+        elif int(steps[1]) <= value < int(steps[2]):
+            return 3  # orange
+        elif value >= int(steps[2]):
+            return 4  # red
         else:
-            return 5  # 기타 경우는 보라색
+            return 5  # purple
 
-    # 함수 벡터화 및 적용
+    # function vectorize
     map_func = np.vectorize(map_value_to_color_index)
     z_colors = map_func(z_values)
 
-    # 색상 스케일 정의
+    # color scale
     colorscale = ["black", "green", "yellow", "orange", "red", "purple"]
 
-    # 셀의 수 계산
+    # cell number calc
     num_x = len(pivot_table.columns)
     num_y = len(pivot_table.index)
 
-    # xgap과 ygap을 셀의 수에 따라 동적으로 설정
+    # dynamic xgap and ygap
     xgap = max(1, int(20 / num_x))
     ygap = max(1, int(20 / num_y))
 
-    # 히트맵 생성
+    # create a heatmap
     fig = go.Figure(
         data=go.Heatmap(
             z=z_colors,
             colorscale=colorscale,
             x=pivot_table.columns.values,
             y=pivot_table.index.values,
-            zmin=0,  # 최소값 설정
-            zmax=5,  # 최대값 설정
-            xgap=xgap,  # 동적으로 계산된 수평 여백
-            ygap=ygap,  # 동적으로 계산된 수직 여백
-            customdata=text_matrix,  # customdata에 텍스트 매트릭스 전달
-            hovertemplate="%{customdata}",  # 마우스 오버 시 텍스트 표시
-            hoverinfo="text",  # 호버 시 텍스트 정보 사용
-            name="",  # trace 이름을 빈 문자열로 설정하여 'trace 0' 제거
+            zmin=0,  # setting min
+            zmax=5,  # setting max
+            xgap=xgap,  # dynamic horizontal space
+            ygap=ygap,  # dynamic vertical space
+            customdata=text_matrix,  # customdata <- text matrix
+            hovertemplate="%{customdata}",  # mouse cursor
+            hoverinfo="text",  # hover info
+            name="",  # empty trace name 
             colorbar=dict(
                 tickmode="array",
                 tickvals=[0, 1, 2, 3, 4, 5],
@@ -195,7 +200,7 @@ def plot_heatmap_value(records, value_name, time_name, outname):
         )
     )
 
-    # 레이아웃 업데이트 (배경색 설정)
+    # update layout
     fig.update_layout(
         xaxis_title="Source IP",
         yaxis_title="Destination IP",
@@ -204,15 +209,16 @@ def plot_heatmap_value(records, value_name, time_name, outname):
         paper_bgcolor="white",
     )
 
-    # 축 라벨 숨기기 (필요에 따라 표시 가능)
+    # hide an axis label
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
 
-    # HTML 파일로 저장
+    # save to HTML file
     fig.write_html(f"{HTML_DIR}/{outname}.html")
 
 
-def plot_heatmap(data, outname="result"):
+def plot_heatmap_udp(data, outname="result"):
+    steps = [100000, 500000, 5000000]
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -225,6 +231,54 @@ def plot_heatmap(data, outname="result"):
                 success_ratio = 0.0
             else:
                 success_ratio = 1.0 * n_success / total_attempts
+
+            _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
+                4:10
+            ]
+            records.append(
+                {
+                    "source": src,
+                    "destination": dst,
+                    "success_ratio": success_ratio,
+                    "network_mean": float(network_mean),
+                    "network_p99": float(network_p99),
+                    "ping_start_time": ts_ping_start,
+                    "ping_end_time": ts_ping_end,
+                }
+            )
+        else:
+            records.append(
+                {
+                    "source": src,
+                    "destination": dst,
+                    "success_ratio": 0.0,
+                    "network_mean": -1,
+                    "network_p99": -1,
+                    "ping_start_time": "N/A",
+                    "ping_end_time": "N/A",
+                }
+            )
+
+    plot_heatmap_value(
+        records, "network_mean", "ping_end_time", steps, outname + "_network_mean"
+    )
+
+
+def plot_heatmap_rdma(data, outname="result"):
+    steps = [500000, 2000000, 10000000]
+    records = []
+    for k, v in data.items():
+        src, dst = k.split(",")
+        if v:
+            ts_ping_start, ts_ping_end, n_success, n_failure = v[0:4]
+            n_success = int(n_success)
+            n_failure = int(n_failure)
+            total_attempts = n_success + n_failure
+            if total_attempts == 0:
+                success_ratio = 0.0
+            else:
+                success_ratio = 1.0 * n_success / total_attempts
+
             _, client_mean, client_max, client_p50, client_p95, client_p99 = v[4:10]
             _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
                 10:16
@@ -263,14 +317,14 @@ def plot_heatmap(data, outname="result"):
             )
 
     plot_heatmap_value(
-        records, "network_mean", "ping_end_time", outname + "_network_mean"
+        records, "network_mean", "ping_end_time", steps, outname + "_network_mean"
     )
 
 
 async def pingweave_plotter():
     load_config_ini()
     last_plot_time = int(time.time())
-    pinglist_protocol = ["tcp", "rdma"]
+    pinglist_protocol = ["udp", "rdma"]
 
     try:
         while True:
@@ -286,7 +340,8 @@ async def pingweave_plotter():
                 # plot the graph for every X seconds
                 now = int(time.time())
                 if (
-                    last_plot_time + int(interval_report_ping_result_millisec/1000) < now
+                    last_plot_time + int(interval_report_ping_result_millisec / 1000)
+                    < now
                     and redis_server != None
                 ):
                     # update the last plot time
@@ -296,11 +351,10 @@ async def pingweave_plotter():
                         f"Pingweave plotter is running on {control_host}:{collect_port}"
                     )
 
-                    # read pinglist (synchronous)
+                    # read pinglist (synchronous) -> pinglist_in_memory
+                    # then, create template records
+                    # pinglist = {'udp': {'group1': ['192.168.1.1', '192.168.1.2', '192.168.1.3']}}
                     read_pinglist()
-
-                    # create template records
-                    # pinglist = {'tcp': {'group1': ['192.168.1.1', '192.168.1.2', '192.168.1.3']}}
                     records = copy.deepcopy(pinglist_in_memory)
                     map_ip_to_groups = {}  # dict of set
                     for proto, cat_data in pinglist_in_memory.items():
@@ -317,7 +371,7 @@ async def pingweave_plotter():
                                 if ip not in map_ip_to_groups:
                                     map_ip_to_groups[ip] = set()
                                 map_ip_to_groups[ip].add(group)
-
+                    
                     # insert process
                     cursor = "0"
                     while cursor != 0:
@@ -359,16 +413,20 @@ async def pingweave_plotter():
 
                             # insertion
                             for group in common_groups:
-                                if record_key not in records[proto][group]:
-                                    raise Exception(
-                                        f"{record_key} is not in records[{proto}][{group}]"
-                                    )
-                                records[proto][group][record_key] = value
-
+                                if group in records[proto]:
+                                    if record_key not in records[proto][group]:
+                                        raise Exception(
+                                            f"{record_key} is not in records[{proto}][{group}]"
+                                        )
+                                    records[proto][group][record_key] = value
+                    
                     # category/group 별로 plot 그리기
                     for category, data in records.items():
                         for group, group_data in data.items():
-                            plot_heatmap(group_data, f"{category}_{group}")
+                            if category == "udp":
+                                plot_heatmap_udp(group_data, f"{category}_{group}")
+                            elif category == "rdma":
+                                plot_heatmap_rdma(group_data, f"{category}_{group}")
 
             except KeyError as e:
                 logger.error(f"Plotter - Missing key error: {e}")

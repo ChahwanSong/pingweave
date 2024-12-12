@@ -20,7 +20,7 @@ class PingMsgMap {
         : threshold(thresholdSeconds) {}
 
     // if already exists, return false
-    bool insert(const Key& key, const ping_msg_t& value) {
+    bool insert(const Key& key, const rdma_pingmsg_t& value) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
@@ -37,7 +37,7 @@ class PingMsgMap {
     }
 
     // if fail to find, return false
-    bool get(const Key& key, ping_msg_t& value) {
+    bool get(const Key& key, rdma_pingmsg_t& value) {
         std::shared_lock lock(mutex_);
         auto it = map.find(key);
         if (it != map.end()) {
@@ -73,7 +73,7 @@ class PingMsgMap {
 
    private:
     struct MapEntry {
-        ping_msg_t value;
+        rdma_pingmsg_t value;
         TimePoint timestamp;
         typename std::list<Key>::iterator listIter;
     };

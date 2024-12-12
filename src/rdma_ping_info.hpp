@@ -1,17 +1,8 @@
 #pragma once
 
-#include <infiniband/verbs.h>  // ibv_gid
-
-#include <chrono>
-#include <cstdint>
-#include <list>
-#include <mutex>
-#include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
-#include <unordered_map>
-
 #include "rdma_common.hpp"
 
-struct ping_info_t {
+struct rdma_pinginfo_t {
     uint64_t pingid;    // ping ID
     uint32_t qpn;       // destination qpn
     ibv_gid gid;        // destination gid
@@ -28,7 +19,7 @@ struct ping_info_t {
     int recv_bitmap;    // ACK | PONG | CQE
 
     // Assignment operator
-    ping_info_t& operator=(const ping_info_t& other) {
+    rdma_pinginfo_t& operator=(const rdma_pinginfo_t& other) {
         if (this == &other) {
             return *this;  // Self-assignment check
         }
@@ -60,19 +51,19 @@ enum {
     (PINGWEAVE_MASK_RECV_PING_CQE | PINGWEAVE_MASK_RECV_PONG | \
      PINGWEAVE_MASK_RECV_ACK)
 
-class PingInfoMap {
+class RdmaPinginfoMap {
    public:
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    explicit PingInfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
-                         ClientInternalQueue* queue, int threshold_ms = 1000)
+    explicit RdmaPinginfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
+                             RdmaClientQueue* queue, int threshold_ms = 1000)
         : threshold_ms(threshold_ms),
           client_queue(queue),
           logger(ping_table_logger) {}
 
     // if already exists, return false
-    bool insert(const Key& key, const ping_info_t& value) {
+    bool insert(const Key& key, const rdma_pinginfo_t& value) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
@@ -81,17 +72,17 @@ class PingInfoMap {
             return false;
         }
 
-        // 리스트 끝에 추가
+        // Add at the end of list
         auto listIter = keyList.emplace(keyList.end(), key);
 
-        // 맵에 추가
+        // Add to map
         TimePoint now = std::chrono::steady_clock::now();
         map[key] = {value, now, listIter};
         return true;
     }
 
     // if fail to find, return false
-    bool get(const Key& key, ping_info_t& value) {
+    bool get(const Key& key, rdma_pinginfo_t& value) {
         std::shared_lock lock(mutex_);
         auto it = map.find(key);
         if (it != map.end()) {
@@ -114,12 +105,13 @@ class PingInfoMap {
         if (it->second.value.network_delay == 0) {
             it->second.value.network_delay = x;
         } else {
-            // This can be called after update_pong_info(), when PONG is
-            // too fast. If then, update a value properly (very rare)
+            /** 
+             * This can be called after update_pong_info(), when PONG is
+             * too fast. If then, update a value properly (very rare)
+             * TODO: Currently, it is hard-coded to CX-6 time mask = 2**63 - 1
+             */
             it->second.value.network_delay = calc_time_delta_with_bitwrap(
-                x, it->second.value.network_delay,
-                9223372036854775807LL  // CX-6 time mask = 2**63 - 1
-            );
+                x, it->second.value.network_delay, 9223372036854775807LL);
         }
 
         // update recv bimap and cnt
@@ -180,7 +172,7 @@ class PingInfoMap {
         return true;
     }
 
-    bool logging(const ping_info_t& ping_info) {
+    bool logging(const rdma_pinginfo_t& ping_info) {
         if (ping_info.recv_bitmap == PINGWEAVE_MASK_RECV) {
             // Final result output or storage
             uint64_t client_process_time =
@@ -212,7 +204,7 @@ class PingInfoMap {
                     {ping_info.pingid, ip2uint(ping_info.dstip),
                      ping_info.time_ping_send, client_process_time, network_rtt,
                      server_process_time, true})) {
-                logger->error(
+                logger->warn(
                     "pingid {} (-> {}): Failed to enqueue to result queue",
                     ping_info.pingid, ping_info.dstip);
             }
@@ -242,7 +234,7 @@ class PingInfoMap {
 
    private:
     struct MapEntry {
-        ping_info_t value;
+        rdma_pinginfo_t value;
         TimePoint timestamp;
         typename std::list<Key>::iterator listIter;
     };
@@ -263,11 +255,11 @@ class PingInfoMap {
                 continue;
             }
 
-            auto& entry = it->second;
             auto elapsed_ms =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - entry.timestamp)
+                    now - it->second.timestamp)
                     .count();
+            auto& ping_info = it->second.value;
 
             // no more "stale" entries to remove
             if (elapsed_ms < threshold_ms) {
@@ -275,29 +267,28 @@ class PingInfoMap {
             }
 
             // remove from map and list
-            if (it->second.value.recv_cnt >= 3) {
+            if (ping_info.recv_cnt >= 3) {
                 // ignore the case of buffer overlaid
                 logger->warn(
                     "[Overlaid?] Pingid {} (-> {}) has recv count {} and "
                     "bitmap "
                     "{}.",
-                    it->second.value.pingid, it->second.value.dstip,
-                    it->second.value.recv_cnt, it->second.value.recv_bitmap);
+                    ping_info.pingid, ping_info.dstip, ping_info.recv_cnt,
+                    ping_info.recv_bitmap);
             } else {
                 logger->debug(
                     "[Failed] Pingid {} (-> {}), recv cnt {} and bitmap {}.",
-                    it->second.value.pingid, it->second.value.dstip,
-                    it->second.value.recv_cnt, it->second.value.recv_bitmap);
+                    ping_info.pingid, ping_info.dstip, ping_info.recv_cnt,
+                    ping_info.recv_bitmap);
 
                 // failure (packets might be lost)
-                if (!client_queue->try_enqueue({it->second.value.pingid,
-                                                ip2uint(it->second.value.dstip),
-                                                it->second.value.time_ping_send,
-                                                0, 0, 0, false})) {
+                if (!client_queue->try_enqueue(
+                        {ping_info.pingid, ip2uint(ping_info.dstip),
+                         ping_info.time_ping_send, 0, 0, 0, false})) {
                     logger->error(
                         "Failed to enqueue (pingid {}, failed) to result "
                         "thread",
-                        it->second.value.pingid);
+                        ping_info.pingid);
                 }
             }
 
@@ -326,5 +317,5 @@ class PingInfoMap {
     const int threshold_ms;
     mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
     std::shared_ptr<spdlog::logger> logger;
-    ClientInternalQueue* client_queue;
+    RdmaClientQueue* client_queue;
 };

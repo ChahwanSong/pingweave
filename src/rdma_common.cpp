@@ -1,7 +1,7 @@
 #include "rdma_common.hpp"
 
 // Helper function to find RDMA device by matching network interface
-int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
+int get_context_by_ifname(const char *ifname, struct rdma_context *ctx) {
     char path[512];
     snprintf(path, sizeof(path), "/sys/class/net/%s/device/infiniband", ifname);
 
@@ -39,7 +39,7 @@ int get_context_by_ifname(const char *ifname, struct pingweave_context *ctx) {
     return 1;
 }
 
-int get_context_by_ip(struct pingweave_context *ctx,
+int get_context_by_ip(struct rdma_context *ctx,
                       std::shared_ptr<spdlog::logger> logger) {
     struct ifaddrs *ifaddr, *ifa;
     int family;
@@ -88,143 +88,8 @@ int get_context_by_ip(struct pingweave_context *ctx,
     return false;
 }
 
-std::set<std::string> get_all_local_ips() {
-    std::set<std::string> local_ips;
-    struct ifaddrs *interfaces, *ifa;
-    char ip[INET_ADDRSTRLEN];
-
-    if (getifaddrs(&interfaces) == -1) {
-        std::cerr << "Error getting interfaces." << std::endl;
-        return local_ips;
-    }
-
-    for (ifa = interfaces; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr) {
-            continue;
-        }
-
-        std::string ifa_name = ifa->ifa_name;
-
-        // Ignore interfaces starting with "virbr", "docker" or same as "lo"
-        if (ifa_name == "lo" || ifa_name.rfind("virbr", 0) == 0 ||
-            ifa_name.rfind("docker", 0) == 0) {
-            continue;
-        }
-
-        if (ifa->ifa_addr->sa_family == AF_INET) {
-            struct sockaddr_in *addr =
-                reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
-            inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
-            local_ips.insert(ip);
-        }
-    }
-
-    freeifaddrs(interfaces);
-    return local_ips;
-}
-
-// void delete_files_in_directory(const std::string &directoryPath) {
-//     try {
-//         if (std::filesystem::exists(directoryPath) &&
-//             std::filesystem::is_directory(directoryPath)) {
-//             for (const auto &entry :
-//                  std::filesystem::directory_iterator(directoryPath)) {
-//                 std::filesystem::remove_all(entry.path());
-//                 spdlog::debug("Deleted: {}", entry.path().c_str());
-//             }
-//         } else {
-//             spdlog::error("Directory does not exist or is not a directory:
-//             {}",
-//                           directoryPath);
-//         }
-//     } catch (const std::filesystem::filesystem_error &e) {
-//         spdlog::error("Failed to delete files in directory {}: {}",
-//                       directoryPath, e.what());
-//     }
-// }
-
-void delete_files_in_directory(const std::string &directoryPath) {
-    DIR *dir = opendir(directoryPath.c_str());
-    if (!dir) {
-        spdlog::error("Failed to open directory: {}", directoryPath);
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        if (strcmp(entry->d_name, ".") == 0 ||
-            strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        std::string filePath = directoryPath + "/" + entry->d_name;
-
-        struct stat statbuf;
-        if (stat(filePath.c_str(), &statbuf) == 0) {
-            if (S_ISDIR(statbuf.st_mode)) {
-                delete_files_in_directory(filePath);
-                rmdir(filePath.c_str());
-            } else {
-                std::remove(filePath.c_str());
-            }
-            spdlog::debug("Deleted: {}", filePath);
-        } else {
-            spdlog::error("Failed to stat file: {}", filePath);
-        }
-    }
-    closedir(dir);
-}
-
-// If error occurs, myaddr returned is empty set.
-void get_my_rdma_addr_from_pinglist(const std::string &pinglist_filename,
-                                    std::set<std::string> &myaddr) {
-    fkyaml::node config;
-    myaddr.clear();  // clean-slate start
-    std::set<std::string> local_ips;
-
-    try {
-        std::ifstream ifs(pinglist_filename);
-        config = fkyaml::node::deserialize(ifs);
-        spdlog::debug("Pinglist.yaml loaded successfully.");
-    } catch (const std::exception &e) {
-        spdlog::error("Failed to load a pinglist.yaml: {}", e.what());
-        return;
-    }
-
-    try {
-        // Retrieve the node's IP addr
-        local_ips = get_all_local_ips();
-    } catch (const std::exception &e) {
-        spdlog::error("Failed to get my local IPs");
-    }
-    try {
-        if (config.empty()) {
-            spdlog::warn("No entry in pinglist.yaml, skip.");
-            return;
-        }
-
-        // Get the RDMA category groups
-        if (!config.contains("rdma")) {
-            spdlog::warn("No 'rdma' category found in pinglist.yaml");
-        } else {
-            // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["rdma"]) {
-                for (auto &ip : group) {
-                    // If IP is on the current node, add it
-                    std::string ip_addr = ip.get_value_ref<std::string &>();
-                    if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr.insert(ip_addr);
-                    }
-                }
-            }
-        }
-
-    } catch (const std::exception &e) {
-        spdlog::error("Failed to get my IP from pinglist.yaml");
-    }
-}
-
 // Find a valid active port on RDMA devices
-int find_active_port(struct pingweave_context *ctx,
+int find_active_port(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger) {
     ibv_device_attr device_attr;
     if (ibv_query_device(ctx->context, &device_attr)) {
@@ -248,7 +113,7 @@ int find_active_port(struct pingweave_context *ctx,
 }
 
 // Get GID table size
-int get_gid_table_size(struct pingweave_context *ctx,
+int get_gid_table_size(struct rdma_context *ctx,
                        std::shared_ptr<spdlog::logger> logger) {
     struct ibv_port_attr port_attr;
 
@@ -300,82 +165,7 @@ int get_gid_table_size(struct pingweave_context *ctx,
     return gid_count;
 }
 
-int get_controller_info_from_ini(std::string &ip, int &port) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-
-    IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
-        spdlog::error("Failed to load pingweave.ini");
-        return false;
-    }
-
-    ip = parser.get("controller", "host");
-    if (ip.empty()) {
-        spdlog::error("pingweave.ini gives an erratic controller host ip.");
-        return false;
-    }
-
-    port = parser.getInt("controller", "port_collect");
-    if (port < 0) {
-        spdlog::error("pingweave.ini gives an erratic controller port.");
-        return false;
-    }
-
-    // success
-    return true;
-}
-
-int get_params_info_from_ini(int &val_1, int& val_2, int& val_3, int& val_4) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-    
-    IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
-        spdlog::error("Failed to load pingweave.ini");
-        return false;
-    }
-
-    val_1 = parser.getInt("param", "interval_sync_pinglist_sec");
-    if (val_1 < 1) {
-        spdlog::error("pingweave.ini gives an erratic value for sync_pinglist_sec.");
-        return false;
-    }
-
-    val_2 = parser.getInt("param", "interval_read_pinglist_sec");
-    if (val_2 < 1) {
-        spdlog::error("pingweave.ini gives an erratic value for read_pinglist_sec.");
-        return false;
-    }
-
-    val_3 = parser.getInt("param", "interval_report_ping_result_millisec");
-    if (val_3 < 1) {
-        spdlog::error("pingweave.ini gives an erratic value for report_ping_result_millisec.");
-        return false;
-    }
-
-    val_4 = parser.getInt("param", "interval_send_ping_microsec");
-    if (val_4 < 1) {
-        spdlog::error("pingweave.ini gives an erratic value for send_ping_microsec.");
-        return false;
-    }
-
-    // success
-    return true;
-}
-
-
-
-// thread ID and cast to string
-std::string get_thread_id() {
-    std::stringstream ss;
-    ss << std::this_thread::get_id();
-    return ss.str();
-}
-
-struct ibv_cq *pingweave_cq(struct pingweave_context *ctx) {
+struct ibv_cq *pingweave_cq(struct rdma_context *ctx) {
     return ctx->rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
 }
 
@@ -406,7 +196,7 @@ bool allocate_and_register_buffer(struct ibv_pd *pd, Buffer &buffer,
     return true;
 }
 
-int init_ctx(struct pingweave_context *ctx, const int &is_rx,
+int init_ctx(struct rdma_context *ctx, const int &is_rx,
              std::shared_ptr<spdlog::logger> logger) {
     // initialize
     ctx->rnic_hw_ts = false;
@@ -570,7 +360,7 @@ clean_device:
     return true;
 }
 
-int prepare_ctx(struct pingweave_context *ctx,
+int prepare_ctx(struct rdma_context *ctx,
                 std::shared_ptr<spdlog::logger> logger) {
     struct ibv_qp_attr attr = {};
     attr.qp_state = IBV_QPS_RTR;
@@ -591,7 +381,7 @@ int prepare_ctx(struct pingweave_context *ctx,
     return false;
 }
 
-int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
+int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
              const int &is_rx, std::shared_ptr<spdlog::logger> logger) {
     ctx->ipv4 = ipv4;
     ctx->is_rx = is_rx;
@@ -626,8 +416,8 @@ int make_ctx(struct pingweave_context *ctx, const std::string &ipv4,
 }
 
 // Function to initialize RDMA contexts
-int initialize_contexts(pingweave_context &ctx_tx, pingweave_context &ctx_rx,
-                        const std::string &ipv4,
+int initialize_contexts(struct rdma_context &ctx_tx,
+                        struct rdma_context &ctx_rx, const std::string &ipv4,
                         std::shared_ptr<spdlog::logger> logger) {
     if (make_ctx(&ctx_tx, ipv4, false, logger)) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
@@ -640,8 +430,7 @@ int initialize_contexts(pingweave_context &ctx_tx, pingweave_context &ctx_rx,
     return false;
 }
 
-int post_recv(struct pingweave_context *ctx, const uint64_t &wr_id,
-              const int &n) {
+int post_recv(struct rdma_context *ctx, const uint64_t &wr_id, const int &n) {
     // buffer index from wr_id
     auto buf_idx = wr_id % ctx->buf.size();
 
@@ -667,7 +456,7 @@ int post_recv(struct pingweave_context *ctx, const uint64_t &wr_id,
     return cnt;
 }
 
-int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
+int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
               const char *msg, const size_t &msg_len, const int &buf_idx,
               const uint64_t &wr_id, std::shared_ptr<spdlog::logger> logger) {
     struct ibv_ah_attr ah_attr = {};
@@ -730,7 +519,7 @@ int post_send(struct pingweave_context *ctx, union rdma_addr rem_dest,
 }
 
 // Utility function: Wait for CQ event and handle it
-int wait_for_cq_event(struct pingweave_context *ctx,
+int wait_for_cq_event(struct rdma_context *ctx,
                       std::shared_ptr<spdlog::logger> logger) {
     struct ibv_cq *ev_cq;
     void *ev_ctx;
@@ -746,20 +535,11 @@ int wait_for_cq_event(struct pingweave_context *ctx,
         return false;
     }
 
-    // // Acknowledge the CQ event
-    // ibv_ack_cq_events(pingweave_cq(ctx), 1);
-
-    // // Re-register for CQ event notifications
-    // if (ibv_req_notify_cq(pingweave_cq(ctx), 0)) {
-    //     logger->error("Couldn't register CQE notification");
-    //     return false;
-    // }
-
     return true;
 }
 
 // save RDMA device's Server RX QP information
-int save_device_info(struct pingweave_context *ctx,
+int save_device_info(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger) {
     const std::string directory = get_source_directory() + DIR_UPLOAD_PATH;
     struct stat st = {0};
@@ -853,41 +633,12 @@ int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
     return 0;
 }
 
-// calculate stats from delay histroy
-result_stat_t calc_stats(const std::vector<uint64_t> &delays) {
-    if (delays.empty()) {
-        // 벡터가 비어 있을 때 -1 반환
-        return {static_cast<uint64_t>(0), static_cast<uint64_t>(0),
-                static_cast<uint64_t>(0), static_cast<uint64_t>(0),
-                static_cast<uint64_t>(0)};
-    }
-
-    // 평균(mean)
-    uint64_t sum = std::accumulate(delays.begin(), delays.end(), uint64_t(0));
-    uint64_t mean = sum / delays.size();
-
-    // 최대값(max)
-    uint64_t max = *std::max_element(delays.begin(), delays.end());
-
-    // 백분위수를 계산하기 위해 벡터를 정렬
-    std::vector<uint64_t> sorted_delays = delays;
-    std::sort(sorted_delays.begin(), sorted_delays.end());
-
-    // 중간값(50-percentile), 95-percentile, 99-percentile 인덱스 계산
-    uint64_t percentile_50 = sorted_delays[sorted_delays.size() * 50 / 100];
-    uint64_t percentile_95 = sorted_delays[sorted_delays.size() * 95 / 100];
-    uint64_t percentile_99 = sorted_delays[sorted_delays.size() * 99 / 100];
-
-    return {mean, max, percentile_50, percentile_95, percentile_99};
-}
-
 std::string convert_rdma_result_to_str(const std::string &srcip,
                                        const std::string &dstip,
-                                       const result_info_t &result_info,
+                                       const rdma_result_info_t &result_info,
                                        const result_stat_t &client_stat,
                                        const result_stat_t &network_stat,
                                        const result_stat_t &server_stat) {
-    /** TODO: remove texts  */
     std::stringstream ss;
     ss << srcip << "," << dstip << ","
        << timestamp_ns_to_string(result_info.ts_start) << ","
@@ -907,97 +658,33 @@ std::string convert_rdma_result_to_str(const std::string &srcip,
     return ss.str();
 }
 
-/**
- * req_api: /result_rdma, /alarm, etc
- */
-void send_message_to_http_server(const std::string &server_ip, int server_port,
-                                 const std::string &message,
-                                 const std::string &req_api,
-                                 std::shared_ptr<spdlog::logger> logger) {
-    // create socket
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        logger->error("HTTP Socket creation failed! errno: {} - {}", errno,
-                      strerror(errno));
-        return;
+void wire_gid_to_gid(const char *wgid, union ibv_gid *gid) {
+    char tmp[9];
+    __be32 v32;
+    int i;
+    uint32_t tmp_gid[4];
+    for (tmp[8] = 0, i = 0; i < 4; ++i) {
+        memcpy(tmp, wgid + i * 8, 8);
+        sscanf(tmp, "%x", &v32);
+        tmp_gid[i] = be32toh(v32);
     }
+    memcpy(gid, tmp_gid, sizeof(*gid));
+}
 
-    // set timeout (3 seconds, by default)
-    const int timeout_sec = 3;
-    timeval timeout{};
-    timeout.tv_sec = timeout_sec;
-    timeout.tv_usec = 0;
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) <
-        0) {
-        logger->error("HTTP Failed to set timeout! errno: {} - {}", errno,
-                      strerror(errno));
-        close(sock);
-        return;
-    }
+// use when reading from file
+void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]) {
+    uint32_t tmp_gid[4];
+    int i;
 
-    // set http server address
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(server_port);
-    if (inet_pton(AF_INET, server_ip.c_str(), &server_addr.sin_addr) <= 0) {
-        logger->error("HTTP Invalid server IP address: {}! errno: {} - {}",
-                      server_ip, errno, strerror(errno));
-        close(sock);
-        return;
-    }
-
-    // connect to server
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) <
-        0) {
-        logger->error("HTTP Connection to server {}:{} failed! errno: {} - {}",
-                      server_ip, server_port, errno, strerror(errno));
-        close(sock);
-        return;
-    }
-
-    // construct HTTP request
-    std::string request = "POST " + req_api +
-                          " HTTP/1.1\r\n"
-                          "Host: " +
-                          server_ip + ":" + std::to_string(server_port) +
-                          "\r\n"
-                          "Content-Type: text/plain\r\n"
-                          "Content-Length: " +
-                          std::to_string(message.size()) + "\r\n\r\n" + message;
-
-    // send request
-    ssize_t bytes_sent = send(sock, request.c_str(), request.size(), 0);
-    if (bytes_sent < 0) {
-        logger->error("HTTP Failed to send request to {}:{}! errno: {} - {}",
-                      server_ip, server_port, errno, strerror(errno));
-        close(sock);
-        return;
-    } else if (bytes_sent < static_cast<ssize_t>(request.size())) {
-        logger->warn("HTTP Partial send: Only {}/{} bytes sent to {}:{}!",
-                     bytes_sent, request.size(), server_ip, server_port);
-    }
-
-    // Close the socket
-    if (close(sock) < 0) {
-        logger->error("HTTP Socket close failed! errno: {} - {}", errno,
-                      strerror(errno));
+    memcpy(tmp_gid, gid, sizeof(tmp_gid));
+    for (i = 0; i < 4; ++i) {
+        sprintf(&wgid[i * 8], "%08x", htobe32(tmp_gid[i]));
     }
 }
 
-int message_to_http_server(const std::string &message, const std::string &api,
-                           std::shared_ptr<spdlog::logger> logger) {
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
-
-    std::string controller_host;
-    int controller_port;
-    if (get_controller_info_from_ini(controller_host, controller_port)) {
-        send_message_to_http_server(controller_host, controller_port, message,
-                                    api, logger);
-        return false;  // success
-    }
-
-    // failed
-    logger->error("Failed to post /result_rdma.");
-    return true;
+// GID parser
+std::string parsed_gid(union ibv_gid *gid) {
+    char parsed_gid[33];
+    inet_ntop(AF_INET6, gid, parsed_gid, sizeof(parsed_gid));
+    return std::string(parsed_gid);
 }

@@ -18,16 +18,6 @@ const enum spdlog::level::level_enum LOG_LEVEL_CLIENT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_RESULT = spdlog::level::info;
 const enum spdlog::level::level_enum LOG_LEVEL_PING_TABLE = spdlog::level::info;
 
-inline std::string get_source_directory() {
-#ifndef SOURCE_DIR
-    // If missed, give a current directory
-    return ".";
-#else
-    // SOURCE_DIR will be defined in Makefile
-    return SOURCE_DIR;
-#endif
-}
-
 // calculate time difference with considering bit wrap-around
 inline uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1,
                                              const uint64_t &t2,

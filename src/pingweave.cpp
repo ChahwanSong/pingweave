@@ -2,10 +2,12 @@
 
 #include "rdma_client.hpp"
 #include "rdma_server.hpp"
+#include "udp_client.hpp"
+#include "udp_server.hpp"
 
 // using namespace pingweave;
 
-pid_t start_process(std::function<void()> func, const char* name);
+pid_t start_process(std::function<void()> func, const std::string& name);
 void signal_handler(int sig);
 void sigchld_handler(int sig);
 
@@ -13,7 +15,7 @@ void sigchld_handler(int sig);
 struct ProcessInfo {
     pid_t pid;
     std::function<void()> func;
-    const char* name;
+    std::string name;
     std::string host;
 };
 
@@ -24,13 +26,6 @@ ProcessInfo process_py_client = {0};
 ProcessInfo process_py_server = {0};
 
 bool running = true;
-
-const std::string pinglist_abs_path =
-    get_source_directory() + DIR_DOWNLOAD_PATH + "/pinglist.yaml";
-const std::string py_client_abs_path =
-    get_source_directory() + "/pingweave_client.py";
-const std::string py_server_abs_path =
-    get_source_directory() + "/pingweave_server.py";
 
 /* main function */
 int main() {
@@ -49,6 +44,7 @@ int main() {
     signal(SIGTERM, signal_handler);
     signal(SIGCHLD, sigchld_handler);  // to handle zombie processes
 
+    int pinglist_load_retry_cnt = -1;
     // Monitor processes for every second and restart them if they exit
     while (running) {
         int status;
@@ -58,18 +54,38 @@ int main() {
             spdlog::info("[main] Child process (PID: {}) terminated.", pid);
         }
 
-        /* 1. Load my RDMA IP addresses periodically (pinglist_abs_path) */
-        std::set<std::string> myaddr_rdma;
-        get_my_rdma_addr_from_pinglist(pinglist_abs_path, myaddr_rdma);
+        /* 1. Load my RDMA/UDP IP addresses */
+        std::set<std::string> myaddr_rdma, myaddr_udp;
+        if (get_my_addr_from_pinglist(pinglist_abs_path, myaddr_rdma,
+                                      myaddr_udp)) {
+            if (pinglist_load_retry_cnt >= 0 &&
+                ++pinglist_load_retry_cnt < 10) {
+                spdlog::warn(
+                    "Reload pinglist (retry count: {}). Retry after 3 seconds.",
+                    pinglist_load_retry_cnt);
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                continue;
+            }
+        } else {
+            pinglist_load_retry_cnt = 0;
+        }
 
-        // if loading pinglist is failed, myaddr_rdma will be empty.
-        spdlog::debug("Myaddr_rdma size: {}", myaddr_rdma.size());
+        // if loading pinglist is failed, return the empty set.
+        spdlog::debug("myaddr_rdma size: {}, myaddr_udp size: {}",
+                      myaddr_rdma.size(), myaddr_udp.size());
+        if (myaddr_rdma.empty()) {
+            spdlog::debug("Empty RDMA info in pinglist.yaml.");
+        }
+        if (myaddr_udp.empty()) {
+            spdlog::debug("Empty UDP info in pinglist.yaml.");
+        }
 
         /* 2. Terminate threads which are not in pinglist. */
-        // python programs - only check server
         std::string controller_host;
         int controller_port;
         get_controller_info_from_ini(controller_host, controller_port);
+
+        // python programs - only check server
         if (process_py_server.pid > 0 &&
             process_py_server.host != controller_host) {
             spdlog::info("IP {} is no more controller. Exit the python thread",
@@ -84,12 +100,16 @@ int main() {
         }
 
         // cpp programs
-        std::set<std::string> running_programs_cpp_server;
+        std::set<std::string> running_cpp_server;
+        std::set<std::string> running_cpp_client;
+
+        // check rdma_server
         for (auto it = processes_cpp_server.begin();
              it != processes_cpp_server.end();) {
-            if (myaddr_rdma.find(it->host) == myaddr_rdma.end()) {
+            if (myaddr_rdma.find(it->host) == myaddr_rdma.end() &&
+                it->name == "rdma_server") {
                 spdlog::info(
-                    "IP {} is not in pinglist anymore. Exit the thread {}.",
+                    "IP {} is not in pinglist anymore. Exit the thread: {}.",
                     it->host, it->name);
                 int result = kill(it->pid, SIGTERM);
                 if (result != 0) {
@@ -99,15 +119,37 @@ int main() {
                 it = processes_cpp_server.erase(it);
             } else {
                 // memorize the running cpp threads
-                running_programs_cpp_server.insert(it->host);
+                running_cpp_server.insert(it->host + it->name);
                 ++it;
             }
         }
 
-        std::set<std::string> running_programs_cpp_client;
+        // check udp_server
+        for (auto it = processes_cpp_server.begin();
+             it != processes_cpp_server.end();) {
+            if (myaddr_udp.find(it->host) == myaddr_udp.end() &&
+                it->name == "udp_server") {
+                spdlog::info(
+                    "IP {} is not in pinglist anymore. Exit the thread: {}.",
+                    it->host, it->name);
+                int result = kill(it->pid, SIGTERM);
+                if (result != 0) {
+                    spdlog::error("Failed to send signal to PID {} ({}): {}",
+                                  it->pid, it->name, strerror(errno));
+                }
+                it = processes_cpp_server.erase(it);
+            } else {
+                // memorize the running cpp threads
+                running_cpp_server.insert(it->host + it->name);
+                ++it;
+            }
+        }
+
+        // check rdma_client
         for (auto it = processes_cpp_client.begin();
              it != processes_cpp_client.end();) {
-            if (myaddr_rdma.find(it->host) == myaddr_rdma.end()) {
+            if (myaddr_rdma.find(it->host) == myaddr_rdma.end() &&
+                it->name == "rdma_client") {
                 spdlog::info(
                     "IP {} is not in pinglist anymore. Exit the thread {}.",
                     it->host, it->name);
@@ -119,14 +161,36 @@ int main() {
                 it = processes_cpp_client.erase(it);
             } else {
                 // memorize the running cpp threads
-                running_programs_cpp_client.insert(it->host);
+                running_cpp_client.insert(it->host + it->name);
+                ++it;
+            }
+        }
+
+        // check udp_client
+        for (auto it = processes_cpp_client.begin();
+             it != processes_cpp_client.end();) {
+            if (myaddr_udp.find(it->host) == myaddr_udp.end() &&
+                it->name == "udp_client") {
+                spdlog::info(
+                    "IP {} is not in pinglist anymore. Exit the thread {}.",
+                    it->host, it->name);
+                int result = kill(it->pid, SIGTERM);
+                if (result != 0) {
+                    spdlog::error("Failed to send signal to PID {} ({}): {}",
+                                  it->pid, it->name, strerror(errno));
+                }
+                it = processes_cpp_client.erase(it);
+            } else {
+                // memorize the running cpp threads
+                running_cpp_client.insert(it->host + it->name);
                 ++it;
             }
         }
 
         /* 3. Start new threads which are added to pinglist */
         std::set<std::string> local_ips = get_all_local_ips();
-        // python programs
+        
+        // python server
         if (process_py_server.host == "null") {  // if nothing is running
             if (local_ips.find(controller_host) != local_ips.end()) {
                 spdlog::info("Start the pingweave-server thread at {}",
@@ -141,12 +205,13 @@ int main() {
                     std::bind(execlp, "python3", "python3",
                               py_server_abs_path.c_str(),
                               (char*)nullptr),  // function
-                    "py_server",                // name
-                    controller_host             // host
+                    "py_server",        // name
+                    controller_host     // host
                 };
             }
         }
-
+        
+        // python client
         if (process_py_client.host == "null") {  // if nothing is running
             spdlog::info("Start the pingweave-client thread");
             process_py_client = {
@@ -159,28 +224,47 @@ int main() {
                 std::bind(execlp, "python3", "python3",
                           py_client_abs_path.c_str(),
                           (char*)nullptr),  // function
-                "py_client",                // name
-                "localhost"                 // host
+                "py_client",        // name
+                "localhost"         // host
             };
         }
 
         // cpp programs
+        // rdma server
         for (auto it = myaddr_rdma.begin(); it != myaddr_rdma.end(); ++it) {
-            if (running_programs_cpp_server.find(*it) ==
-                running_programs_cpp_server.end()) {
+            if (running_cpp_server.find(*it + "rdma_server") == running_cpp_server.end()) {
                 spdlog::info("Start the thread - {}, {}", *it, "rdma_server");
                 processes_cpp_server.push_back(
                     {start_process([&] { rdma_server(*it); }, "rdma_server"),
                      std::bind(rdma_server, *it), "rdma_server", *it});
             }
         }
+        // udp server
+        for (auto it = myaddr_udp.begin(); it != myaddr_udp.end(); ++it) {
+            if (running_cpp_server.find(*it + "udp_server") == running_cpp_server.end()) {
+                spdlog::info("Start the thread - {}, {}", *it, "udp_server");
+                processes_cpp_server.push_back(
+                    {start_process([&] { udp_server(*it); }, "udp_server"),
+                     std::bind(udp_server, *it), "udp_server", *it});
+            }
+        }
+
+        // rdma client
         for (auto it = myaddr_rdma.begin(); it != myaddr_rdma.end(); ++it) {
-            if (running_programs_cpp_client.find(*it) ==
-                running_programs_cpp_client.end()) {
+            if (running_cpp_client.find(*it + "rdma_client") == running_cpp_client.end()) {
                 spdlog::info("Start the thread - {}, {}", *it, "rdma_client");
                 processes_cpp_client.push_back(
                     {start_process([&] { rdma_client(*it); }, "rdma_client"),
                      std::bind(rdma_client, *it), "rdma_client", *it});
+            }
+        }
+        // udp client
+        for (auto it = myaddr_udp.begin(); it != myaddr_udp.end(); ++it) {
+            if (running_cpp_client.find(*it + "udp_client") == running_cpp_client.end()) {
+                spdlog::info("Start the thread - {}, {}", *it, "udp_client");
+                processes_cpp_client.push_back(
+                    {start_process([&] { udp_client(*it); }, "udp_client"),
+                     std::bind(udp_client, *it), "udp_client", *it});
             }
         }
 
@@ -193,7 +277,7 @@ int main() {
 }
 
 // Function to start a new process running the given function
-pid_t start_process(std::function<void()> func, const char* name) {
+pid_t start_process(std::function<void()> func, const std::string& name) {
     pid_t pid = fork();
     if (pid < 0) {
         spdlog::error("Failed to fork process for {}: {}", name,

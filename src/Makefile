@@ -7,18 +7,7 @@ CXX = g++
 GCC_VERSION := $(shell $(CXX) -dumpversion | cut -f1 -d.)
 
 # 공통 컴파일러 플래그
-CXXFLAGS = -std=c++17 -I ../libs -I /usr/include/yaml-cpp -O2 -pthread -DSOURCE_DIR=\"$(SOURCE_DIR)\"
-
-# # GCC 8인 경우 -lstdc++fs 추가
-# ifeq ($(shell expr $(GCC_VERSION) \< 8), 1)  # GCC 7 이하
-#     # CXXFLAGS += -D_GLIBCXX_USE_CXX11_ABI=0
-#     # LDFLAGS = -lstdc++fs -l ibverbs
-# 	$(error "GCC version $(GCC_VERSION) detected. GCC 8 or higher is required.")
-# else ifeq ($(GCC_VERSION), 8)  # GCC 8
-#     LDFLAGS = -lstdc++fs -l ibverbs
-# else
-#     LDFLAGS = -l ibverbs
-# endif
+CXXFLAGS = -std=c++17 -I ../libs -I /usr/include/yaml-cpp -O2 -pthread -DSOURCE_DIR=\"$(SOURCE_DIR)\" -g
 
 LDFLAGS = -l ibverbs
 
@@ -34,7 +23,7 @@ DOWNLOAD_DIR = ../download
 HTML_DIR = ../html
 
 # 공통 소스 파일
-SRCS_COMMON = rdma_common.cpp
+SRCS_COMMON = common.cpp rdma_common.cpp udp_common.cpp
 OBJS_COMMON = $(addprefix $(BIN_DIR)/, $(SRCS_COMMON:.cpp=.o))
 
 # 메인용 소스 파일 및 오브젝트 파일

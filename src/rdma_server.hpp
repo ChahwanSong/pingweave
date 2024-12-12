@@ -1,16 +1,16 @@
 #pragma once
 
-#include "ping_info_map.hpp"
-#include "ping_msg_map.hpp"
+#include "rdma_ping_info.hpp"
+#include "rdma_ping_msg.hpp"
 #include "rdma_common.hpp"
 
-void server_process_rx_cqe(pingweave_context* ctx_rx,
-                           ServerInternalQueue* server_queue,
+void server_process_rx_cqe(rdma_context* ctx_rx,
+                           RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
-    union ping_msg_t ping_msg = {};
+    union rdma_pingmsg_t ping_msg = {};
     int num_cqes = 0;
 
     try {
@@ -46,7 +46,7 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
                     // Parse the received message
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
-                                sizeof(ping_msg_t));
+                                sizeof(rdma_pingmsg_t));
                     ping_msg.x.time = ibv_wc_read_completion_ts(
                         ctx_rx->cq_s.cq_ex);  // Get current time
 
@@ -118,7 +118,7 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
                     // Parse the received message
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
-                                sizeof(ping_msg_t));
+                                sizeof(rdma_pingmsg_t));
                     ping_msg.x.time =
                         get_current_timestamp_steady();  // Get current time
 
@@ -171,16 +171,16 @@ void server_process_rx_cqe(pingweave_context* ctx_rx,
 }
 
 // Utility function: Process PONG CQE
-bool server_process_pong_cqe(struct pingweave_context* ctx_tx,
+bool server_process_pong_cqe(struct rdma_context* ctx_tx,
                              const struct ibv_wc& wc, const uint64_t& cqe_time,
                              PingMsgMap* ping_table,
                              std::shared_ptr<spdlog::logger> logger) {
     logger->debug("[CQE] PONG's pingID: {}", wc.wr_id);
-    union ping_msg_t ping_msg = {0};
+    union rdma_pingmsg_t ping_msg = {0};
 
     if (ping_table->get(wc.wr_id, ping_msg)) {
         // Create ACK message
-        union pong_msg_t pong_msg = {};
+        union rdma_pongmsg_t pong_msg = {};
         pong_msg.x.opcode = PINGWEAVE_OPCODE_ACK;
         pong_msg.x.pingid = wc.wr_id;
         pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
@@ -198,7 +198,7 @@ bool server_process_pong_cqe(struct pingweave_context* ctx_tx,
         dst_addr.x.qpn = ping_msg.x.qpn;
 
         // send PONG ACK
-        if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(pong_msg_t),
+        if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(rdma_pongmsg_t),
                       wc.wr_id % ctx_tx->buf.size(), PINGWEAVE_WRID_PONG_ACK,
                       logger)) {
             return false;  // failed
@@ -216,7 +216,7 @@ bool server_process_pong_cqe(struct pingweave_context* ctx_tx,
     return true;
 }
 
-void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
+void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     std::shared_ptr<spdlog::logger> logger) {
     struct ibv_wc wc = {};
     uint64_t cqe_time = 0;
@@ -325,8 +325,8 @@ void process_tx_cqe(pingweave_context* ctx_tx, PingMsgMap* ping_table,
 }
 
 // Server RX thread
-void server_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
-                      ServerInternalQueue* server_queue,
+void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
+                      RdmaServerQueue* server_queue,
                       std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
@@ -363,8 +363,8 @@ void server_rx_thread(struct pingweave_context* ctx_rx, const std::string& ipv4,
     }
 }
 
-void server_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
-                      ServerInternalQueue* server_queue,
+void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
+                      RdmaServerQueue* server_queue,
                       std::shared_ptr<spdlog::logger> logger) {
     // TX thread loop - handle messages
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
@@ -373,8 +373,8 @@ void server_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
     PingMsgMap ping_table(1);
 
     // Variables
-    union ping_msg_t ping_msg;
-    union pong_msg_t pong_msg;
+    union rdma_pingmsg_t ping_msg;
+    union rdma_pongmsg_t pong_msg;
     uint64_t cqe_time;
     struct ibv_wc wc = {};
     int ret;
@@ -416,7 +416,7 @@ void server_tx_thread(struct pingweave_context* ctx_tx, const std::string& ipv4,
                     parsed_gid(&dst_addr.x.gid), dst_addr.x.lid);
 
                 if (post_send(ctx_tx, dst_addr, pong_msg.raw,
-                              sizeof(pong_msg_t),
+                              sizeof(rdma_pongmsg_t),
                               pong_msg.x.pingid % ctx_tx->buf.size(),
                               pong_msg.x.pingid, logger)) {
                     throw std::runtime_error("SEND PONG post failed");
@@ -442,10 +442,10 @@ void rdma_server(const std::string& ipv4) {
     server_logger->info("RDMA Server is running on pid {}", getpid());
 
     // Create internal queue
-    ServerInternalQueue server_queue(QUEUE_SIZE);
+    RdmaServerQueue server_queue(QUEUE_SIZE);
 
     // Initialize RDMA context
-    pingweave_context ctx_tx, ctx_rx;
+    rdma_context ctx_tx, ctx_rx;
     if (initialize_contexts(ctx_tx, ctx_rx, ipv4, server_logger)) {
         throw std::runtime_error("Failed to initialize RDMA contexts.");
     }
@@ -457,11 +457,11 @@ void rdma_server(const std::string& ipv4) {
     }
 
     // Start RX thread
-    std::thread rx_thread(server_rx_thread, &ctx_rx, ipv4, &server_queue,
+    std::thread rx_thread(rdma_server_rx_thread, &ctx_rx, ipv4, &server_queue,
                           server_logger);
 
     // Start TX thread
-    std::thread tx_thread(server_tx_thread, &ctx_tx, ipv4, &server_queue,
+    std::thread tx_thread(rdma_server_tx_thread, &ctx_tx, ipv4, &server_queue,
                           server_logger);
 
     // termination

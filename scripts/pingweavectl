@@ -178,7 +178,7 @@
 
 
 
-
+# redis-cli -s /var/run/redis/redis-server.sock keys '*' | while read key; do echo "$key => $(redis-cli -s /var/run/redis/redis-server.sock get "$key")"; done
 
 
 # journalctl -u rdma-ping.service

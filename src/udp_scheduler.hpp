@@ -1,20 +1,18 @@
 #pragma once
 
-#include "rdma_common.hpp"
 #include "scheduler.hpp"
 
-// Vector to store (IP, GID, LID, QPN)
-typedef std::vector<std::tuple<std::string, std::string, uint32_t, uint32_t>>
-    rdmaAddressInfo_t;
+// Vector to store (IP)
+typedef std::vector<std::string> udpAddressInfo_t;
 
-class RdmaMsgScheduler : public MsgScheduler {
+class UdpMsgScheduler : public MsgScheduler {
    public:
-    RdmaMsgScheduler(const std::string& ip,
+    UdpMsgScheduler(const std::string& ip,
                      std::shared_ptr<spdlog::logger> logger)
         : MsgScheduler(ip, logger) {}
-    ~RdmaMsgScheduler() {}
+    ~UdpMsgScheduler() {}
 
-    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
+    int next(std::string& result) {
         auto now = std::chrono::steady_clock::now();
         auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
             now - last_load_time);
@@ -44,52 +42,30 @@ class RdmaMsgScheduler : public MsgScheduler {
     }
 
    private:
-    rdmaAddressInfo_t addressInfo;
-    
+    udpAddressInfo_t addressInfo;
+
     void load_address_info() {
         // start with clean-slate
-        rdmaAddressInfo_t addressInfoNew;
+        udpAddressInfo_t addressInfoNew;
         addr_idx = 0;
 
-        try {            
+        try {
             // Load pinglist.yaml
             std::ifstream ifs_pinglist(get_source_directory() +
                                        DIR_DOWNLOAD_PATH + "/pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
-            std::vector<std::string> relevantIps;
-
-            if (pinglist.contains("rdma")) {
-                for (auto& group : pinglist["rdma"]) {
+            
+            if (pinglist.contains("udp")) {
+                for (auto& group : pinglist["udp"]) {
                     for (auto& ip : group) {
                         if (ip.get_value_ref<std::string&>() == ipaddr) {
                             for (auto& targetIp : group) {
-                                relevantIps.push_back(
+                                addressInfoNew.push_back(
                                     targetIp.get_value_ref<std::string&>());
                             }
                             break;  // move to next group
                         }
                     }
-                }
-            }
-
-            // Load address_store.yaml
-            std::ifstream ifs_addressStore(get_source_directory() +
-                                           DIR_DOWNLOAD_PATH +
-                                           "/address_store.yaml");
-            fkyaml::node addressStore =
-                fkyaml::node::deserialize(ifs_addressStore);
-
-            for (auto& it : addressStore) {
-                std::string ip = it[0].get_value_ref<std::string&>();
-                if (std::find(relevantIps.begin(), relevantIps.end(), ip) !=
-                    relevantIps.end()) {
-                    std::string gid = it[1].get_value_ref<std::string&>();
-                    uint32_t lid = static_cast<uint32_t>(
-                        it[2].get_value_ref<fkyaml::node::integer_type&>());
-                    uint32_t qpn = static_cast<uint32_t>(
-                        it[3].get_value_ref<fkyaml::node::integer_type&>());
-
-                    addressInfoNew.emplace_back(ip, gid, lid, qpn);
                 }
             }
 
