@@ -95,9 +95,6 @@ async def handle_result_rdma_post(request):
 
         if redis_server != None:
             for result in results:
-                # TODO: remove this later
-                logger.info(f"{result}")
-
                 # send to redis server
                 data = result.strip().split(",")
                 key = "rdma," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
@@ -122,9 +119,6 @@ async def handle_result_udp_post(request):
 
         if redis_server != None:
             for result in results:
-                # TODO: remove this later
-                logger.info(f"{result}")
-
                 # send to redis server
                 data = result.strip().split(",")
                 key = "udp," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2

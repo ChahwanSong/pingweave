@@ -406,7 +406,6 @@ async def pingweave_plotter():
                                 raise Exception(f"Not expected protocol type: {proto}")
 
                             # check which groups to insert
-                            # # TODO: if no key, error handling
                             src_groups = map_ip_to_groups[src]
                             dst_groups = map_ip_to_groups[dst]
                             common_groups = list(set(src_groups) & set(dst_groups))
