@@ -101,17 +101,20 @@ class RdmaPinginfoMap {
             return false;
         }
 
-        // update ping's cqe time
         if (it->second.value.network_delay == 0) {
             it->second.value.network_delay = x;
         } else {
-            /** 
-             * This can be called after update_pong_info(), when PONG is
-             * too fast. If then, update a value properly (very rare)
-             * TODO: Currently, it is hard-coded to CX-6 time mask = 2**63 - 1
+            /**
+             * NOTE: For self-ping, from time to time, At client, CQE of PONG's
+             * arrival can be earlier than PING's CQE. This is because self-ping
+             * delay can be only 10s of nanoseconds but PING's CQE delay is
+             * longer than that. In this case, we handle the timestamp
+             * accordingly.
              */
             it->second.value.network_delay = calc_time_delta_with_bitwrap(
-                x, it->second.value.network_delay, 9223372036854775807LL);
+                x, it->second.value.network_delay,
+                9223372036854775807LL  // CX-6 time mask = 2**63 - 1
+            );
         }
 
         // update recv bimap and cnt
@@ -140,7 +143,12 @@ class RdmaPinginfoMap {
             it->second.value.network_delay = calc_time_delta_with_bitwrap(
                 it->second.value.network_delay, cqe_time, mask_cqe);
         } else {
-            // if PING CQE is somehow delayed and retrieved after PONG
+            /**
+             * NOTE: As the above case, if CQE of PONG's arrival is earlier
+             * than PING's CQE, the network delay variable is initially zero.
+             * So, we just over-write to cqe_time. It will be handled
+             * accordingly when PING's CQE arrives.
+             */
             it->second.value.network_delay = cqe_time;
         }
 
@@ -174,20 +182,6 @@ class RdmaPinginfoMap {
 
     bool logging(const rdma_pinginfo_t& ping_info) {
         if (ping_info.recv_bitmap == PINGWEAVE_MASK_RECV) {
-            // Final result output or storage
-            uint64_t client_process_time =
-                ping_info.client_delay - ping_info.network_delay;
-            uint64_t network_rtt =
-                ping_info.network_delay > ping_info.server_delay
-                    ? ping_info.network_delay - ping_info.server_delay
-                    : ping_info.network_delay;
-            uint64_t server_process_time = ping_info.server_delay;
-
-            // logging
-            logger->debug("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
-                          client_process_time, network_rtt,
-                          server_process_time);
-
             // sanity check
             if (ping_info.recv_cnt != 3) {
                 logger->warn(
@@ -197,6 +191,43 @@ class RdmaPinginfoMap {
                 remove(ping_info.pingid);
                 return true;
             }
+
+            // ping delay of purely client's processing part
+            uint64_t client_process_time =
+                ping_info.client_delay - ping_info.network_delay;
+
+            // ping delay of purely network inflight part
+            /**
+             * NOTE: If HW timestamp for CQE is not supported,
+             * we emulate the HW timestamp by measuring a steady
+             * clock. However, because of approximation, the network_delay
+             * (PONG's arrival time at client - PING's departure time) can
+             * be even smaller than server-side delay.
+             * This can happen very rarely, especially for self-ping which
+             * has very small network delay.
+             * In this case, we just report the network delay but make logging
+             * with a warning message.
+             */
+            uint64_t network_rtt =
+                ping_info.network_delay > ping_info.server_delay
+                    ? ping_info.network_delay - ping_info.server_delay
+                    : ping_info.network_delay;
+            // sanity check
+            if (ping_info.network_delay <= ping_info.server_delay) {
+                logger->warn(
+                    "pingid {} - network_delay {} is lower than server_delay "
+                    "{}",
+                    ping_info.pingid, ping_info.network_delay,
+                    ping_info.server_delay);
+            }
+
+            // ping delay of purely server's processing part
+            uint64_t server_process_time = ping_info.server_delay;
+
+            // logging
+            logger->debug("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
+                          client_process_time, network_rtt,
+                          server_process_time);
 
             // send out for analysis
             // ping_time, dstip, ping_time, {each entity's process delays}

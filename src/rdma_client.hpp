@@ -303,7 +303,7 @@ void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     try {
         while (true) {
             // Wait for the next CQE
-            if (!wait_for_cq_event(ctx_rx, logger)) {
+            if (wait_for_cq_event(ctx_rx, logger)) {
                 logger->error("Failed during CQ event waiting");
                 throw std::runtime_error("Failed during CQ event waiting");
             }

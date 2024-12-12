@@ -526,16 +526,16 @@ int wait_for_cq_event(struct rdma_context *ctx,
 
     if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
         logger->error("Failed to get cq_event");
-        return false;
+        return true;
     }
 
     // Verify that the event is from the correct CQ
     if (ev_cq != pingweave_cq(ctx)) {
         logger->error("CQ event for unknown CQ");
-        return false;
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 // save RDMA device's Server RX QP information

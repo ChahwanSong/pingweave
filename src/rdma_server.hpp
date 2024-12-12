@@ -1,11 +1,10 @@
 #pragma once
 
+#include "rdma_common.hpp"
 #include "rdma_ping_info.hpp"
 #include "rdma_ping_msg.hpp"
-#include "rdma_common.hpp"
 
-void server_process_rx_cqe(rdma_context* ctx_rx,
-                           RdmaServerQueue* server_queue,
+void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
@@ -53,9 +52,9 @@ void server_process_rx_cqe(rdma_context* ctx_rx,
                     // Parse GRH header (for debugging)
                     struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(
                         ctx_rx->buf[wc.wr_id].addr);
-                    logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
+                    logger->debug("-> from: {}", parsed_gid(&grh->sgid));
                     logger->debug(
-                        "  -> id: {}, gid: {}, lid: {}, qpn: {}, time: "
+                        "-> id: {}, gid: {}, lid: {}, qpn: {}, time: "
                         "{}",
                         ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
                         ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
@@ -71,8 +70,6 @@ void server_process_rx_cqe(rdma_context* ctx_rx,
                             "Failed to enqueue ping message, pingid: {}, gid: "
                             "{}",
                             ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
-                        // throw std::runtime_error(
-                        //     "Failed to handle PING message");
                     }
                 } else {
                     logger->error("Unexpected opcode: {}",
@@ -108,7 +105,6 @@ void server_process_rx_cqe(rdma_context* ctx_rx,
                 if (wc.status != IBV_WC_SUCCESS) {
                     logger->error("CQE RX error: {}",
                                   ibv_wc_status_str(wc.status));
-                    /** TODO: is it correct? */
                     continue;
                 }
 
@@ -125,10 +121,9 @@ void server_process_rx_cqe(rdma_context* ctx_rx,
                     // Parse GRH header (for debugging)
                     struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(
                         ctx_rx->buf[wc.wr_id].addr);
-                    logger->debug("  -> from: {}", parsed_gid(&grh->sgid));
+                    logger->debug("-> from: {}", parsed_gid(&grh->sgid));
                     logger->debug(
-                        "  -> id: {}, gid: {}, lid: {}, qpn: {}, time: "
-                        "{}",
+                        "-> id: {}, gid: {}, lid: {}, qpn: {}, time: {}",
                         ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
                         ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
 
@@ -140,8 +135,7 @@ void server_process_rx_cqe(rdma_context* ctx_rx,
                     // Handle the received message
                     if (!server_queue->try_enqueue(ping_msg)) {
                         logger->warn(
-                            "Failed to enqueue ping message, pingid: {}, gid: "
-                            "{}",
+                            "Failed to enqueue ping msg, pingid: {}, gid: {}",
                             ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
                         // throw std::runtime_error(
                         //     "Failed to handle PING message");
@@ -326,8 +320,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
 
 // Server RX thread
 void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
-                      RdmaServerQueue* server_queue,
-                      std::shared_ptr<spdlog::logger> logger) {
+                           RdmaServerQueue* server_queue,
+                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     // RECV WR uses wr_id as a buffer index
@@ -350,7 +344,7 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         // Polling loop
         while (true) {
             // Wait for the next CQE
-            if (!wait_for_cq_event(ctx_rx, logger)) {
+            if (wait_for_cq_event(ctx_rx, logger)) {
                 throw std::runtime_error("Failed during CQ event waiting");
             }
 
@@ -364,8 +358,8 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
 }
 
 void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
-                      RdmaServerQueue* server_queue,
-                      std::shared_ptr<spdlog::logger> logger) {
+                           RdmaServerQueue* server_queue,
+                           std::shared_ptr<spdlog::logger> logger) {
     // TX thread loop - handle messages
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
@@ -386,8 +380,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
             if (server_queue->try_dequeue(ping_msg)) {
                 logger->debug(
                     "Internal queue received a ping_msg - pingid: {}, qpn: "
-                    "{}, "
-                    "gid: {}, lid: {}, ping arrival time: {}",
+                    "{}, gid: {}, lid: {}, ping arrival time: {}",
                     ping_msg.x.pingid, ping_msg.x.qpn,
                     parsed_gid(&ping_msg.x.gid), ping_msg.x.lid,
                     ping_msg.x.time);
@@ -437,8 +430,9 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
 void rdma_server(const std::string& ipv4) {
     // Initialize logger
     const std::string server_logname = "rdma_server_" + ipv4;
-    std::shared_ptr<spdlog::logger> server_logger = initialize_logger(
-        server_logname, DIR_LOG_PATH, LOG_LEVEL_SERVER, LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    std::shared_ptr<spdlog::logger> server_logger =
+        initialize_logger(server_logname, DIR_LOG_PATH, LOG_LEVEL_SERVER,
+                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
     server_logger->info("RDMA Server is running on pid {}", getpid());
 
     // Create internal queue
