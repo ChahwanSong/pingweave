@@ -1,5 +1,5 @@
 [Unit]
-Description=PingWeave - High-resolution and low-overhead network monitoring tool
+Description=PingWeave - High-resolutional end-to-end RoCE/Infiniband/TCP network monitoring tool 
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -11,8 +11,8 @@ Restart=always
 RestartSec=5s
 
 # CPU and memory resource limit
-CPUQuota=10%
-MemoryMax=2G
+CPUQuota=5%
+MemoryMax=1G
 
 # file and process limit
 LimitNOFILE=1024

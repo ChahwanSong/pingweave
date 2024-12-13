@@ -4,8 +4,7 @@ PingWeave
 ## Prerequisites
 ### Nodes
 * python >= 3.6 (for asyncio)
-* ibverbs library (e.g., libibverbs) - rdma-core-dev
-* python3 -m pip install logging
+* ibverbs library (e.g., libibverbs) - rdma-core-dev for RHEL.
 
 ### Control plane
 * redis: in-memory key-value store
@@ -33,3 +32,8 @@ port 0  # TCP/IP inactivate (optional)
     * datetime
 
 ### Install & Build
+
+
+
+### pingweavectl
+`sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin`

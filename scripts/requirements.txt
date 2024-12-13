@@ -1,0 +1,9 @@
+pyyaml
+psutil
+pandas
+numpy
+plotly
+aiohttp
+jinja2
+redis
+datetime
