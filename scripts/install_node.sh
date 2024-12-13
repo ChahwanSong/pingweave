@@ -95,31 +95,38 @@ else
 fi
 
 ###### RDMA CORE ######
-cecho "YELLOW" "Checking RDMA Core installation..."
+cecho "YELLOW" "Checking RDMA Core and related packages installation..."
+
 if [[ -f /etc/redhat-release ]]; then
     # RHEL-based system
-    if ! rpm -q rdma-core &>/dev/null; then
-        cecho "YELLOW" "RDMA Core is not installed. Installing..."
-        sudo yum install -y rdma-core || {
-            cecho "RED" "Error: Failed to install RDMA Core."
-            exit 1
-        }
-    else
-        cecho "GREEN" "RDMA Core is already installed."
-    fi
+    PACKAGES=("rdma-core" "rdma-core-devel" "ibverbs-utils")
+    for package in "${PACKAGES[@]}"; do
+        if ! rpm -q $package &>/dev/null; then
+            cecho "YELLOW" "$package is not installed. Installing..."
+            sudo yum install -y $package || {
+                cecho "RED" "Error: Failed to install $package."
+                exit 1
+            }
+        else
+            cecho "GREEN" "$package is already installed."
+        fi
+    done
 elif [[ -f /etc/lsb-release || -f /etc/debian_version ]]; then
     # Ubuntu-based system
-    if ! dpkg -l | grep -q rdma-core; then
-        cecho "YELLOW" "RDMA Core is not installed. Installing..."
-        sudo apt update && sudo apt install -y rdma-core || {
-            cecho "RED" "Error: Failed to install RDMA Core."
-            exit 1
-        }
-    else
-        cecho "GREEN" "RDMA Core is already installed."
-    fi
+    PACKAGES=("rdma-core" "libibverbs-dev" "ibverbs-utils")
+    for package in "${PACKAGES[@]}"; do
+        if ! dpkg -l | grep -q $package; then
+            cecho "YELLOW" "$package is not installed. Installing..."
+            sudo apt update && sudo apt install -y $package || {
+                cecho "RED" "Error: Failed to install $package."
+                exit 1
+            }
+        else
+            cecho "GREEN" "$package is already installed."
+        fi
+    done
 else
-    cecho "RED" "Unsupported OS. Please manually install RDMA Core."
+    cecho "RED" "Unsupported OS. Please manually install RDMA Core and related packages."
     exit 1
 fi
 
@@ -130,6 +137,7 @@ cd "$SCRIPT_DIR/../src" || {
     exit 1
 }
 
+chmod +x "$SCRIPT_DIR/../src/clear.sh"
 if [[ -x "./clear.sh" ]]; then
     bash ./clear.sh
     cecho "GREEN" "Cleanup completed."
