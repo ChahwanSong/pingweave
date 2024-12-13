@@ -60,7 +60,7 @@
 ### ping ~4K/second for TX, ~4K/second for RX
 - non-hyperthreading
     mason    2814898 14.9  0.1 554772 410512 pts/0   Sl+  05:38   0:48 ../bin/pingweave
-    mason    2814899 17.3  0.0 432944 218112 pts/0   Sl+  05:38   0:55 ../bin/pingweave
+    mason    2814899 17.3  0.0 432944 218112 pts/0   Sl+  05:38   0:55 ../bin/pingweaveccccccccc
 - hyperthreading
     mason     257428 24.3  0.1 554772 409000 pts/0   Sl+  05:38   1:20 ../bin/pingweave
     mason     257429 36.6  0.0 432948 203864 pts/0   Sl+  05:38   2:01 ../bin/pingweave

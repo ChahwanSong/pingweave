@@ -11,6 +11,61 @@ cecho(){  # source: https://stackoverflow.com/a/53463162/2886168
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+print_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help       Show this help message and exit"
+    echo "  -c               Install Python requirements from requirements.txt"
+    echo "  -d               Stop and remove pingweave.service"
+    echo ""
+    echo "If no options are provided, the script will perform the following steps:"
+    echo "  1. Check system prerequisites (systemd and Python >= 3.6)."
+    echo "  2. Verify RDMA Core installation and install it if necessary."
+    echo "  3. Navigate to the source directory, clean up, and build the project using make."
+    echo "  4. Install and start the pingweave service."
+}
+
+# Report selected option or lack of options
+if [[ -z "$1" ]]; then
+    cecho "YELLOW" "No options provided. The script will proceed with the default operations."
+else
+    cecho "YELLOW" "Selected option: $1"
+fi
+
+# Handle -h or --help option
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    print_help
+    exit 0
+fi
+
+# Handle -d option to stop and remove pingweave service immediately
+if [[ "$1" == "-d" ]]; then
+    cecho "YELLOW" "Stopping and removing pingweave service..."
+    sudo systemctl stop pingweave.service || {
+        cecho "RED" "Error: Failed to stop pingweave service."
+        exit 1
+    }
+    sudo systemctl disable pingweave.service || {
+        cecho "RED" "Error: Failed to disable pingweave service."
+        exit 1
+    }
+    sudo rm /etc/systemd/system/pingweave.service || {
+        cecho "RED" "Error: Failed to remove pingweave.service file."
+        exit 1
+    }
+    sudo systemctl daemon-reload
+    cecho "GREEN" "Pingweave service stopped and removed successfully."
+    exit 0
+fi
+
+# Handle invalid options
+if [[ -n "$1" && "$1" != "-c" ]]; then
+    cecho "RED" "Error: Invalid option '$1'"
+    print_help
+    exit 1
+fi
+
 ######## prerequisite ########
 # (1) Check systemd
 cecho "YELLOW" "Checking if systemd is running..."
@@ -40,37 +95,33 @@ else
 fi
 
 ###### RDMA CORE ######
-check_install_rdma_core() {
-    cecho "YELLOW" "Checking RDMA Core installation..."
-    if [[ -f /etc/redhat-release ]]; then
-        # RHEL-based system
-        if ! rpm -q rdma-core &>/dev/null; then
-            cecho "YELLOW" "RDMA Core is not installed. Installing..."
-            sudo yum install -y rdma-core || {
-                cecho "RED" "Error: Failed to install RDMA Core."
-                exit 1
-            }
-        else
-            cecho "GREEN" "RDMA Core is already installed."
-        fi
-    elif [[ -f /etc/lsb-release || -f /etc/debian_version ]]; then
-        # Ubuntu-based system
-        if ! dpkg -l | grep -q rdma-core; then
-            cecho "YELLOW" "RDMA Core is not installed. Installing..."
-            sudo apt update && sudo apt install -y rdma-core || {
-                cecho "RED" "Error: Failed to install RDMA Core."
-                exit 1
-            }
-        else
-            cecho "GREEN" "RDMA Core is already installed."
-        fi
+cecho "YELLOW" "Checking RDMA Core installation..."
+if [[ -f /etc/redhat-release ]]; then
+    # RHEL-based system
+    if ! rpm -q rdma-core &>/dev/null; then
+        cecho "YELLOW" "RDMA Core is not installed. Installing..."
+        sudo yum install -y rdma-core || {
+            cecho "RED" "Error: Failed to install RDMA Core."
+            exit 1
+        }
     else
-        cecho "RED" "Unsupported OS. Please manually install RDMA Core."
-        exit 1
+        cecho "GREEN" "RDMA Core is already installed."
     fi
-}
-
-check_install_rdma_core
+elif [[ -f /etc/lsb-release || -f /etc/debian_version ]]; then
+    # Ubuntu-based system
+    if ! dpkg -l | grep -q rdma-core; then
+        cecho "YELLOW" "RDMA Core is not installed. Installing..."
+        sudo apt update && sudo apt install -y rdma-core || {
+            cecho "RED" "Error: Failed to install RDMA Core."
+            exit 1
+        }
+    else
+        cecho "GREEN" "RDMA Core is already installed."
+    fi
+else
+    cecho "RED" "Unsupported OS. Please manually install RDMA Core."
+    exit 1
+fi
 
 ######### Make ########
 cecho "YELLOW" "Navigating to source directory and cleaning up..."
@@ -95,10 +146,20 @@ make || {
 }
 cecho "GREEN" "Make completed successfully."
 
+# check the result binary file
+cecho "YELLOW" "Checking pingweave binary file exists..."
+PINGWEAVE_BINARY_PATH="/pingweave/bin/pingweave"
+if [ ! -f "$PINGWEAVE_BINARY_PATH" ]; then
+  cecho "RED" "Error: pingweave directory must be located at /pingwewave. Current directory is $SCRIPT_DIR. "
+  exit 1
+fi
+cecho "GREEN" "pingweave binary file -> $PINGWEAVE_BINARY_PATH"
+
+
 ######### INSTALL ########
 cecho "YELLOW" "Installing pingweave service..."
 # Register pingweave service to systemd
-sudo cp "$SCRIPT_DIR/pingweave.service" /etc/systemd/system/ || {
+sudo cp "$SCRIPT_DIR/scripts/pingweave.service" /etc/systemd/system/ || {
     cecho "RED" "Error: Failed to copy pingweave.service to /etc/systemd/system/."
     exit 1
 }
@@ -107,7 +168,7 @@ sudo cp "$SCRIPT_DIR/pingweave.service" /etc/systemd/system/ || {
 sudo systemctl daemon-reload
 sudo systemctl enable pingweave.service
 sudo systemctl start pingweave.service || {
-    cecho "RED" "Error: Failed to start pingweave.service."
+    cecho "RED" "Error: Failed to start pingweave service."
     exit 1
 }
 
@@ -119,3 +180,19 @@ sudo systemctl status pingweave.service || {
 }
 cecho "GREEN" "Pingweave service installed and running successfully."
 
+######### Additional Option ########
+# Handle -c option for pip requirements
+if [[ "$1" == "-c" ]]; then
+    cecho "YELLOW" "Installing Python requirements from requirements.txt..."
+    REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
+    if [[ -f "$REQUIREMENTS_FILE" ]]; then
+        pip3 install -r "$REQUIREMENTS_FILE" || {
+            cecho "RED" "Error: Failed to install Python requirements."
+            exit 1
+        }
+        cecho "GREEN" "Python requirements installed successfully."
+    else
+        cecho "RED" "Error: requirements.txt not found at $REQUIREMENTS_FILE."
+        exit 1
+    fi
+fi
