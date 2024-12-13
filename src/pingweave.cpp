@@ -74,10 +74,10 @@ int main() {
         spdlog::debug("myaddr_rdma size: {}, myaddr_udp size: {}",
                       myaddr_rdma.size(), myaddr_udp.size());
         if (myaddr_rdma.empty()) {
-            spdlog::debug("Empty RDMA info in pinglist.yaml.");
+            spdlog::warn("Empty RDMA info in pinglist.yaml.");
         }
         if (myaddr_udp.empty()) {
-            spdlog::debug("Empty UDP info in pinglist.yaml.");
+            spdlog::warn("Empty UDP info in pinglist.yaml.");
         }
 
         /* 2. Terminate threads which are not in pinglist. */
