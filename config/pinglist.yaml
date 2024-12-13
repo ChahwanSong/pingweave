@@ -1,3 +1,7 @@
+udp:
+  udp_test:
+    - 10.200.200.3 # terra
+    - 10.200.200.2 # mare    
 rdma:
   roce_test:
     - 10.200.200.3 # terra
