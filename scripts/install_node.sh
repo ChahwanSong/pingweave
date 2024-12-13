@@ -99,7 +99,7 @@ cecho "YELLOW" "Checking RDMA Core and related packages installation..."
 
 if [[ -f /etc/redhat-release ]]; then
     # RHEL-based system
-    PACKAGES=("rdma-core" "rdma-core-devel" "ibverbs-utils")
+    PACKAGES=("rdma-core" "rdma-core-devel")
     for package in "${PACKAGES[@]}"; do
         if ! rpm -q $package &>/dev/null; then
             cecho "YELLOW" "$package is not installed. Installing..."
@@ -113,7 +113,7 @@ if [[ -f /etc/redhat-release ]]; then
     done
 elif [[ -f /etc/lsb-release || -f /etc/debian_version ]]; then
     # Ubuntu-based system
-    PACKAGES=("rdma-core" "libibverbs-dev" "ibverbs-utils")
+    PACKAGES=("rdma-core" "libibverbs-dev")
     for package in "${PACKAGES[@]}"; do
         if ! dpkg -l | grep -q $package; then
             cecho "YELLOW" "$package is not installed. Installing..."
@@ -167,7 +167,7 @@ cecho "GREEN" "pingweave binary file -> $PINGWEAVE_BINARY_PATH"
 ######### INSTALL ########
 cecho "YELLOW" "Installing pingweave service..."
 # Register pingweave service to systemd
-sudo cp "$SCRIPT_DIR/scripts/pingweave.service" /etc/systemd/system/ || {
+sudo cp "$SCRIPT_DIR/pingweave.service" /etc/systemd/system/ || {
     cecho "RED" "Error: Failed to copy pingweave.service to /etc/systemd/system/."
     exit 1
 }
