@@ -171,8 +171,7 @@ def send_gid_files(ip, port):
                 logger.error(f"Failed to read file {filename}: {e}")
             except Exception as e:
                 logger.error(f"Unexpected error with file {filename}: {e}")
-
-
+        
 def main():
     while True:
         # Load the config file

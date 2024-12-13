@@ -468,7 +468,7 @@ int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
 
     if (rem_dest.x.gid.global.interface_id) {  // IP addr for RoCEv2
         ah_attr.is_global = 1;
-        ah_attr.grh.hop_limit = 1;
+        ah_attr.grh.hop_limit = 255;
         ah_attr.grh.dgid = rem_dest.x.gid;
         ah_attr.grh.sgid_index = ctx->gid_index;
         ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;

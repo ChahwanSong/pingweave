@@ -41,7 +41,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
                               std::set<std::string> &myaddr_udp) {
     fkyaml::node config;
     myaddr_rdma.clear();
-    myaddr_udp.clear(); 
+    myaddr_udp.clear();
     std::set<std::string> local_ips;
 
     try {
@@ -68,10 +68,10 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         return true;
     }
 
-    try {        
+    try {
         // Get the RDMA category groups
         if (!config.contains("rdma")) {
-            spdlog::warn("No 'rdma' category found in pinglist.yaml");
+            spdlog::debug("No 'rdma' category found in pinglist.yaml");
         } else {
             // find all my ip addrs is in pinglist ip addrs
             for (auto &group : config["rdma"]) {
@@ -84,10 +84,16 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
                 }
             }
         }
+    } catch (const std::exception &e) {
+        spdlog::error("RDMA: Failure occurs while getting IP from pinglist: {}",
+                      e.what());
+        return true;
+    }
 
+    try {
         // Get the UDP category groups
         if (!config.contains("udp")) {
-            spdlog::warn("No 'udp' category found in pinglist.yaml");
+            spdlog::debug("No 'udp' category found in pinglist.yaml");
         } else {
             // find all my ip addrs is in pinglist ip addrs
             for (auto &group : config["udp"]) {
@@ -101,7 +107,8 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
             }
         }
     } catch (const std::exception &e) {
-        spdlog::error("Failure occurs while getting IP from pinglist: {}", e.what());
+        spdlog::error("UDP: Failure occurs while getting IP from pinglist: {}",
+                      e.what());
         return true;
     }
 
