@@ -16,7 +16,7 @@ logger = initialize_pingweave_logger(socket.gethostname(), "server")
 
 # Variables to save pinglist
 pinglist_in_memory = {}
-address_store = {}  # ip -> (ip, gid, lid, qpn, dtime)
+address_store = {}  # (forr RDMA) ip -> (ip, gid, lid, qpn, dtime)
 address_store_checkpoint = 0
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()
@@ -135,13 +135,14 @@ async def get_address_store(request):
 
         # condition to filter old entries (every 1 minute)
         if address_store_checkpoint + 60 < current_time:
+            # get keys which was not updated in last 5 minutes
             keys_old_entries = [
                 key
                 for key, value in address_store.items()
                 if value[5] + 300 < current_time
             ]
             for key in keys_old_entries:
-                logger.info(f"(EXPIRED) Old address information: {key}")
+                logger.error(f"(EXPIRED) Remove old address information: {key}")
                 address_store.pop(key)
             address_store_checkpoint = current_time
         response_data = address_store
@@ -175,10 +176,10 @@ async def post_address(request):
                 )
 
                 if len(address_store) > 10000:
-                    logger.error(
+                    logger.critical(
                         f"Too many entries in address_store: {len(address_store)}"
                     )
-                    logger.critical(
+                    logger.error(
                         "Cleaning up address_store. Check your configuration."
                     )
                     address_store.clear()
