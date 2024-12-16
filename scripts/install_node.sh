@@ -194,7 +194,7 @@ if [[ "$1" == "-c" ]]; then
     cecho "YELLOW" "Installing Python requirements from requirements.txt..."
     REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
     if [[ -f "$REQUIREMENTS_FILE" ]]; then
-        pip3 install -r "$REQUIREMENTS_FILE" || {
+        python3 -m pip install -r "$REQUIREMENTS_FILE" || {
             cecho "RED" "Error: Failed to install Python requirements."
             exit 1
         }
