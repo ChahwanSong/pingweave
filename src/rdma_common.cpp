@@ -141,7 +141,13 @@ int get_gid_table_size(struct rdma_context *ctx,
                 // Prioritize GID index starting with "::ffff:"
                 if (gid_str.find("::ffff:") == 0 && preferred_gid_index == -1) {
                     preferred_gid_index = i;  // First "::ffff:" GID index
-                    logger->debug("Preferred GID [{}]: {}", i, gid_str);
+                    logger->debug("-> Preferred GID [{}]: {}", i, gid_str);
+                }
+
+                // ignore an empty gid "fe80::"
+                if (gid_str == "fe80::") {
+                    logger->debug("-> Skip the empty gid [{}]: {}", i, gid_str);
+                    continue;
                 }
 
                 // Last valid GID index 
