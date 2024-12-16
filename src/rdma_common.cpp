@@ -215,6 +215,7 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
         logger->info("Couldn't query device for extension features.");
     } else if (!attrx.completion_timestamp_mask) {
         logger->info("The device isn't completion timestamp capable.");
+        ctx->completion_timestamp_mask = UINT64_MAX; // for bit wrap-around
     } else {
         logger->info("RNIC HW timestamping is available.");
         ctx->rnic_hw_ts = true;
@@ -233,7 +234,7 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
 
     {
         int gid_index = get_gid_table_index(ctx, logger);
-        logger->debug("GID table size is {}, where we use the last GID index",
+        logger->debug("We use the last index {} among valid GID indices",
                       gid_index);
         if (gid_index == 0) {
             logger->info("-> probably, Infiniband device.");

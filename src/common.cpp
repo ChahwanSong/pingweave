@@ -306,6 +306,7 @@ std::string get_current_timestamp_string() {
 
     return std::string(time_buffer);
 }
+
 // Function to get current timestamp
 uint64_t get_current_timestamp_steady() {
     struct timespec ts = {};

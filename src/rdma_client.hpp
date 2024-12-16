@@ -39,7 +39,7 @@ void handle_received_message(rdma_context* ctx_rx,
 // Function to process RX CQEs
 void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                            std::shared_ptr<spdlog::logger> logger) {
-    uint64_t cqe_time = 0, recv_time = 0;
+    uint64_t cqe_time = 0, recv_time = 0, current_steady_clock = 0;
     struct ibv_wc wc = {};
     int ret = 0;
     union rdma_pongmsg_t pong_msg = {};
@@ -71,6 +71,26 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
+                current_steady_clock = get_current_timestamp_steady();
+
+                /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+                if (ctx_rx->archive_cqe_hw_clock < cqe_time) {
+                    ctx_rx->archive_cqe_hw_clock = cqe_time;
+                    ctx_rx->archive_cqe_steady_clock = current_steady_clock;
+                } else {
+                    // adjust the timestamp jump using a steady clock
+                    auto adjusted_cqe_time = ctx_rx->archive_cqe_hw_clock +
+                                             (current_steady_clock -
+                                              ctx_rx->archive_cqe_steady_clock);
+                    logger->critical(
+                        "[CQE] Adjusted CQE time : {}, original cqe time: {}, "
+                        "adj-ori: {}",
+                        adjusted_cqe_time, cqe_time,
+                        adjusted_cqe_time - cqe_time);
+                    ctx_rx->archive_cqe_hw_clock = adjusted_cqe_time;
+                    ctx_rx->archive_cqe_steady_clock = current_steady_clock;
+                }
+                /*--------------------------------------*/
 
                 if (wc.opcode == IBV_WC_RECV) {
                     logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
@@ -175,7 +195,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
 // Function to process TX CQEs
 void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                            std::shared_ptr<spdlog::logger> logger) {
-    uint64_t cqe_time = 0;
+    uint64_t cqe_time = 0, current_steady_clock = 0;
     struct ibv_wc wc = {};
     int ret = 0;
     int num_cqes = 0;
@@ -210,10 +230,30 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
+                current_steady_clock = get_current_timestamp_steady();
+
+                /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+                if (ctx_tx->archive_cqe_hw_clock < cqe_time) {
+                    ctx_tx->archive_cqe_hw_clock = cqe_time;
+                    ctx_tx->archive_cqe_steady_clock = current_steady_clock;
+                } else {
+                    // adjust the timestamp jump using a steady clock
+                    auto adjusted_cqe_time = ctx_tx->archive_cqe_hw_clock +
+                                             (current_steady_clock -
+                                              ctx_tx->archive_cqe_steady_clock);
+                    logger->critical(
+                        "[CQE] Adjusted CQE time : {}, original cqe time: {}, "
+                        "adj-ori: {}",
+                        adjusted_cqe_time, cqe_time,
+                        adjusted_cqe_time - cqe_time);
+                    ctx_tx->archive_cqe_hw_clock = adjusted_cqe_time;
+                    ctx_tx->archive_cqe_steady_clock = current_steady_clock;
+                }
+                /*--------------------------------------*/
 
                 if (wc.opcode == IBV_WC_SEND) {
                     logger->debug(
-                        "[CQE] Send complete (ping ID: {}), time: {}.",
+                        "[CQE] Send complete (ping ID: {}), cqe_time: {}.",
                         wc.wr_id, cqe_time);
                     if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
                         logger->warn(
@@ -377,7 +417,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), time: {}, dst_GID:{}",
+                    "{}), cqe_time: {}, dst_GID:{}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
                     timestamp_ns_to_string(send_time_system),
                     parsed_gid(&dst_addr.x.gid));

@@ -6,7 +6,7 @@
 
 void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
-    uint64_t cqe_time = 0;
+    uint64_t cqe_time = 0, current_steady_clock = 0;
     struct ibv_wc wc = {};
     int ret = 0;
     union rdma_pingmsg_t ping_msg = {};
@@ -46,15 +46,38 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
-                    ping_msg.x.time = ibv_wc_read_completion_ts(
-                        ctx_rx->cq_s.cq_ex);  // Get current time
+                    cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
+                    current_steady_clock = get_current_timestamp_steady();
+
+                    /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+                    if (ctx_rx->archive_cqe_hw_clock < cqe_time) {
+                        ctx_rx->archive_cqe_hw_clock = cqe_time;
+                        ctx_rx->archive_cqe_steady_clock = current_steady_clock;
+                    } else {
+                        // adjust the timestamp jump using a steady clock
+                        auto adjusted_cqe_time =
+                            ctx_rx->archive_cqe_hw_clock +
+                            (current_steady_clock -
+                             ctx_rx->archive_cqe_steady_clock);
+                        logger->critical(
+                            "[CQE] Adjusted CQE time : {}, original cqe time: "
+                            "{}, "
+                            "adj-ori: {}",
+                            adjusted_cqe_time, cqe_time,
+                            adjusted_cqe_time - cqe_time);
+                        ctx_rx->archive_cqe_hw_clock = adjusted_cqe_time;
+                        ctx_rx->archive_cqe_steady_clock = current_steady_clock;
+                    }
+                    /*--------------------------------------*/
+
+                    ping_msg.x.time = cqe_time;
 
                     // Parse GRH header (for debugging)
                     struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(
                         ctx_rx->buf[wc.wr_id].addr);
                     logger->debug("-> from: {}", parsed_gid(&grh->sgid));
                     logger->debug(
-                        "-> id: {}, gid: {}, lid: {}, qpn: {}, time: "
+                        "-> id: {}, gid: {}, lid: {}, qpn: {}, cqe_time: "
                         "{}",
                         ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
                         ping_msg.x.lid, ping_msg.x.qpn, ping_msg.x.time);
@@ -115,8 +138,9 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
-                    ping_msg.x.time =
-                        get_current_timestamp_steady();  // Get current time
+
+                    cqe_time = get_current_timestamp_steady();
+                    ping_msg.x.time = cqe_time;
 
                     // Parse GRH header (for debugging)
                     struct ibv_grh* grh = reinterpret_cast<struct ibv_grh*>(
@@ -165,10 +189,10 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
 }
 
 // Utility function: Process PONG CQE
-bool server_process_pong_cqe(struct rdma_context* ctx_tx,
-                             const struct ibv_wc& wc, const uint64_t& cqe_time,
-                             PingMsgMap* ping_table,
-                             std::shared_ptr<spdlog::logger> logger) {
+int server_process_pong_cqe(struct rdma_context* ctx_tx,
+                            const struct ibv_wc& wc, const uint64_t& cqe_time,
+                            PingMsgMap* ping_table,
+                            std::shared_ptr<spdlog::logger> logger) {
     logger->debug("[CQE] PONG's pingID: {}", wc.wr_id);
     union rdma_pingmsg_t ping_msg = {0};
 
@@ -181,8 +205,7 @@ bool server_process_pong_cqe(struct rdma_context* ctx_tx,
             ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
         logger->debug(
             "-> SEND post with ACK message pingid: {} to qpn: {}, gid: {}, "
-            "lid: "
-            "{}, delay: {}",
+            "lid: {}, delay: {}",
             pong_msg.x.pingid, ping_msg.x.qpn, parsed_gid(&ping_msg.x.gid),
             ping_msg.x.lid, pong_msg.x.server_delay);
 
@@ -195,7 +218,7 @@ bool server_process_pong_cqe(struct rdma_context* ctx_tx,
         if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(rdma_pongmsg_t),
                       wc.wr_id % ctx_tx->buf.size(), PINGWEAVE_WRID_PONG_ACK,
                       logger)) {
-            return false;  // failed
+            return true;  // failed
         }
     } else {
         logger->warn("pingid {} entry does not exist at ping_table (expired?)",
@@ -207,13 +230,13 @@ bool server_process_pong_cqe(struct rdma_context* ctx_tx,
     }
 
     // success
-    return true;
+    return false;
 }
 
 void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     std::shared_ptr<spdlog::logger> logger) {
     struct ibv_wc wc = {};
-    uint64_t cqe_time = 0;
+    uint64_t cqe_time = 0, current_steady_clock=0;
     int ret = 0;
 
     /**
@@ -234,6 +257,28 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
             wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
+            current_steady_clock = get_current_timestamp_steady();
+
+            /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+            if (ctx_tx->archive_cqe_hw_clock < cqe_time) {
+                ctx_tx->archive_cqe_hw_clock = cqe_time;
+                ctx_tx->archive_cqe_steady_clock = current_steady_clock;
+            } else {
+                // adjust the timestamp jump using a steady clock
+                auto adjusted_cqe_time =
+                    ctx_tx->archive_cqe_hw_clock +
+                    (current_steady_clock -
+                        ctx_tx->archive_cqe_steady_clock);
+                logger->critical(
+                    "[CQE] Adjusted CQE time : {}, original cqe time: "
+                    "{}, "
+                    "adj-ori: {}",
+                    adjusted_cqe_time, cqe_time,
+                    adjusted_cqe_time - cqe_time);
+                ctx_tx->archive_cqe_hw_clock = adjusted_cqe_time;
+                ctx_tx->archive_cqe_steady_clock = current_steady_clock;
+            }
+            /*--------------------------------------*/
 
             // if failure
             if (wc.status != IBV_WC_SUCCESS) {
@@ -251,8 +296,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                 }
 
                 // PONG's CQE
-                if (!server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
-                                             logger)) {
+                if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
+                                            logger)) {
                     throw std::runtime_error("Failed to process PONG CQE");
                 }
 
@@ -304,8 +349,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                 }
 
                 // PONG's CQE
-                if (!server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
-                                             logger)) {
+                if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
+                                            logger)) {
                     throw std::runtime_error("Failed to process PONG CQE");
                 }
 
@@ -380,7 +425,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
             if (server_queue->try_dequeue(ping_msg)) {
                 logger->debug(
                     "Internal queue received a ping_msg - pingid: {}, qpn: "
-                    "{}, gid: {}, lid: {}, ping arrival time: {}",
+                    "{}, gid: {}, lid: {}, ping arrival cqe_time: {}",
                     ping_msg.x.pingid, ping_msg.x.qpn,
                     parsed_gid(&ping_msg.x.gid), ping_msg.x.lid,
                     ping_msg.x.time);
