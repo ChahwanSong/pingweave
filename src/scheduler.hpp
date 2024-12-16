@@ -9,7 +9,7 @@ class MsgScheduler {
     MsgScheduler(const std::string& ip, std::shared_ptr<spdlog::logger> logger)
         : ipaddr(ip),
           logger(logger),
-          last_access_time(std::chrono::steady_clock::now()),
+          last_ping_time(std::chrono::steady_clock::now()),
           last_load_time(std::chrono::steady_clock::now()),
           addr_idx(0) {
         int dummy1, dummy2, dummy3;
@@ -29,7 +29,7 @@ class MsgScheduler {
     uint64_t pingid;
     std::string ipaddr;
     size_t addr_idx;
-    std::chrono::steady_clock::time_point last_access_time;
+    std::chrono::steady_clock::time_point last_ping_time;
     std::chrono::steady_clock::time_point last_load_time;
     uint64_t inter_ping_interval_us = 1000;  // interval btw each ping
     std::shared_ptr<spdlog::logger> logger;
@@ -43,12 +43,12 @@ class MsgScheduler {
     }
     // schedule for RDMA (dstip, gid, lid, qpn)
     virtual int next(
-        std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
+        std::tuple<std::string, std::string, uint32_t, uint32_t>& result, uint64_t& time_sleep_us) {
         logger->error("Virtual function 'next' must not be called");
         throw std::runtime_error("virtual function must not be called");
     }
     // schedule for UDP (dstip)
-    virtual int next(std::string& result) {
+    virtual int next(std::string& result, uint64_t& time_sleep_us) {
         logger->error("Virtual function 'next' must not be called");
         throw std::runtime_error("virtual function must not be called");
     }

@@ -54,9 +54,15 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         return true;
     }
 
-    // check empty or not
-    if (config.empty()) {
-        spdlog::warn("No entry in pinglist.yaml, skip.");
+    try {
+        // check empty or not
+        if (config.empty()) {
+            spdlog::warn("No entry in pinglist.yaml, skip.");
+            return true;
+        }
+    } catch (const std::exception &e) {
+        spdlog::error("Failed to load a pinglist.yaml - fkyaml:empty: {}",
+                      e.what());
         return true;
     }
 

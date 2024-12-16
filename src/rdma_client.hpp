@@ -22,7 +22,6 @@ void handle_received_message(rdma_context* ctx_rx,
             logger->warn("PONG ({}): No entry in ping_table.",
                          pong_msg.x.pingid);
         }
-
     } else if (pong_msg.x.opcode == PINGWEAVE_OPCODE_ACK) {
         // Handle ACK message
         logger->debug("[CQE] -> Recv PONG_ACK ({}): server_delay {}",
@@ -179,6 +178,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
     uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
+    int num_cqes = 0;
 
     /**
      * IMPORTANT: Use non-blocking polling.
@@ -188,10 +188,12 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
         if (ctx_tx->rnic_hw_ts) {
             // Use extended CQ polling for hardware timestamping
             struct ibv_poll_cq_attr attr = {};
-            ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
             bool has_events = false;
+            ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
 
             while (!ret) {
+                ++num_cqes;
+                logger->debug("CQ Event loop {}", num_cqes);
                 has_events = true;
 
                 // Process the current CQE
@@ -239,8 +241,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
-            int num_cqes =
-                ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
+            num_cqes = ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
             if (num_cqes < 0) {
                 logger->error("Failed to poll CQ");
                 throw std::runtime_error("Failed to poll CQ");
@@ -271,6 +272,17 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 }
             }
         }
+
+        // Acknowledge the CQ event
+        ibv_ack_cq_events(pingweave_cq(ctx_tx), num_cqes);
+
+        // Re-register for CQ event notifications
+        if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
+            logger->error("Couldn't register CQE notification");
+            throw std::runtime_error(
+                "Failed to post cqe request notification.");
+        }
+
     } catch (const std::exception& e) {
         logger->error("TX CQE handler exits unexpectedly: {}", e.what());
         throw;  // Propagate exception
@@ -280,8 +292,8 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
 }
 
 void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
-                      RdmaPinginfoMap* ping_table,
-                      std::shared_ptr<spdlog::logger> logger) {
+                           RdmaPinginfoMap* ping_table,
+                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     // RECV WR uses wr_id as a buffer index
@@ -317,20 +329,24 @@ void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     }
 }
 
-void rdma_client_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
-                      RdmaPinginfoMap* ping_table, const union ibv_gid& rx_gid,
-                      const uint32_t& rx_lid, const uint32_t& rx_qpn,
-                      std::shared_ptr<spdlog::logger> logger) {
-    logger->info("Running TX thread (Thead ID: {})...", get_thread_id());
+void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
+                                 const std::string& ipv4,
+                                 RdmaPinginfoMap* ping_table,
+                                 const union ibv_gid& rx_gid,
+                                 const uint32_t& rx_lid, const uint32_t& rx_qpn,
+                                 std::shared_ptr<spdlog::logger> logger) {
+    logger->info("Running TX Scheduler thread (Thead ID: {})...",
+                 get_thread_id());
 
     uint32_t ping_uid = 0;
+    uint64_t time_sleep_us = 0;
     RdmaMsgScheduler scheduler(ipv4, logger);
     std::tuple<std::string, std::string, uint32_t, uint32_t> dst_addr;
 
     try {
         while (true) {
             // Retrieve the next destination for sending
-            if (scheduler.next(dst_addr)) {
+            if (scheduler.next(dst_addr, time_sleep_us)) {
                 const auto& [dst_ip, dst_gid_str, dst_lid, dst_qpn] = dst_addr;
 
                 // Set the destination address
@@ -387,11 +403,11 @@ void rdma_client_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                         }
                     }
                 }
+            } else {
+                // sleep until next ping schedule
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(time_sleep_us));
             }
-
-            /** NOTE: Client's TX loop must be non-blocking. */
-            // Process TX CQEs
-            client_process_tx_cqe(ctx_tx, ping_table, logger);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
@@ -399,9 +415,42 @@ void rdma_client_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
     }
 }
 
+void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
+                               const std::string& ipv4,
+                               RdmaPinginfoMap* ping_table,
+                               const union ibv_gid& rx_gid,
+                               const uint32_t& rx_lid, const uint32_t& rx_qpn,
+                               std::shared_ptr<spdlog::logger> logger) {
+    logger->info("Running TX CQE thread (Thead ID: {})...", get_thread_id());
+
+    /** IMPORTANT: Use event-driven polling to reduce CPU overhead */
+    // Register for CQ event notifications
+    if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
+        logger->error("Couldn't register CQE notification");
+        throw;  // Propagate exception`
+    }
+
+    // Start the receive loop
+    try {
+        while (true) {
+            // Wait for the next CQE
+            if (wait_for_cq_event(ctx_tx, logger)) {
+                logger->error("Failed during CQ event waiting");
+                throw std::runtime_error("Failed during CQ event waiting");
+            }
+
+            // Process TX CQEs
+            client_process_tx_cqe(ctx_tx, ping_table, logger);
+        }
+    } catch (const std::exception& e) {
+        logger->error("Exception in TX thread: {}", e.what());
+        throw;  // Propagate exception`
+    }
+}
+
 void rdma_client_result_thread(const std::string& ipv4,
-                          RdmaClientQueue* client_queue,
-                          std::shared_ptr<spdlog::logger> logger) {
+                               RdmaClientQueue* client_queue,
+                               std::shared_ptr<spdlog::logger> logger) {
     int dummy1, dummy2, dummy3, report_interval_ms = 10000;
     if (!get_params_info_from_ini(dummy1, dummy2, report_interval_ms, dummy3)) {
         logger->error(
@@ -531,14 +580,23 @@ void rdma_client(const std::string& ipv4) {
     std::thread rx_thread(rdma_client_rx_thread, &ctx_rx, ipv4, &ping_table,
                           client_logger);
 
-    // Start the TX thread
-    std::thread tx_thread(rdma_client_tx_thread, &ctx_tx, ipv4, &ping_table,
-                          ctx_rx.gid, ctx_rx.portinfo.lid, ctx_rx.qp->qp_num,
-                          client_logger);
+    // Start the TX thread (scheduler)
+    std::thread tx_sched_thread(rdma_client_tx_sched_thread, &ctx_tx, ipv4,
+                                &ping_table, ctx_rx.gid, ctx_rx.portinfo.lid,
+                                ctx_rx.qp->qp_num, client_logger);
+
+    // Start the TX thread (CQE handler)
+    std::thread tx_cqe_thread(rdma_client_tx_cqe_thread, &ctx_tx, ipv4,
+                              &ping_table, ctx_rx.gid, ctx_rx.portinfo.lid,
+                              ctx_rx.qp->qp_num, client_logger);
 
     // termination
-    if (tx_thread.joinable()) {
-        tx_thread.join();
+    if (tx_sched_thread.joinable()) {
+        tx_sched_thread.join();
+    }
+
+    if (tx_cqe_thread.joinable()) {
+        tx_cqe_thread.join();
     }
 
     if (result_thread.joinable()) {

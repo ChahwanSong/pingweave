@@ -104,10 +104,35 @@ def read_pinglist():
         logger.error(f"Error loading pinglist: {e}")
 
 
-def plot_heatmap_value(records, value_name, time_name, steps, outname):
+def clear_directory(directory_path):
+    try:
+        # 디렉터리 내 항목들 가져오기
+        for entry in os.listdir(directory_path):
+            entry_path = os.path.join(directory_path, entry)
+            # 파일이면 삭제
+            if os.path.isfile(entry_path) or os.path.islink(entry_path):
+                os.remove(entry_path)
+            # 서브 디렉토리면 통째로 삭제
+            elif os.path.isdir(entry_path):
+                # 재귀적으로 삭제
+                for root, dirs, files in os.walk(entry_path, topdown=False):
+                    for file in files:
+                        os.remove(os.path.join(root, file))
+                    for dir_name in dirs:
+                        os.rmdir(os.path.join(root, dir_name))
+                os.rmdir(entry_path)
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+
+
+def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outname):
+    if len(steps) != 3 or len(tick_steps) != 6:
+        logger.error(f"Step size must be 3, and tick_steps size must be 6")
+        return
+
     # dataframe
     df = pd.DataFrame(records)
-    
+
     # sanity check
     if len(steps) != 3:
         logger.error(f"Heatmap step list size must be 3, but given {steps}")
@@ -190,21 +215,23 @@ def plot_heatmap_value(records, value_name, time_name, steps, outname):
             customdata=text_matrix,  # customdata <- text matrix
             hovertemplate="%{customdata}",  # mouse cursor
             hoverinfo="text",  # hover info
-            name="",  # empty trace name 
+            name="",  # empty trace name
             colorbar=dict(
                 tickmode="array",
                 tickvals=[0, 1, 2, 3, 4, 5],
-                ticktext=["No Data", "~100µs", "~500µs", "~5ms", ">5ms", "Unknown"],
+                ticktext=tick_steps,
                 title=value_name,
             ),
         )
     )
 
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     # update layout
     fig.update_layout(
         xaxis_title="Source IP",
         yaxis_title="Destination IP",
-        title=f"{outname}",
+        title=f"{outname} ({current_time})",
         plot_bgcolor="white",
         paper_bgcolor="white",
     )
@@ -218,7 +245,8 @@ def plot_heatmap_value(records, value_name, time_name, steps, outname):
 
 
 def plot_heatmap_udp(data, outname="result"):
-    steps = [100000, 500000, 5000000]
+    steps = [500000, 2000000, 10000000]
+    tick_steps = ["No Data", "~500µs", "~2ms", "~10ms", ">10ms", "Unknown"]
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -260,12 +288,18 @@ def plot_heatmap_udp(data, outname="result"):
             )
 
     plot_heatmap_value(
-        records, "network_mean", "ping_end_time", steps, outname + "_network_mean"
+        records,
+        "network_mean",
+        "ping_end_time",
+        steps,
+        tick_steps,
+        outname + "_network_mean",
     )
 
 
 def plot_heatmap_rdma(data, outname="result"):
-    steps = [500000, 2000000, 10000000]
+    steps = [100000, 500000, 5000000]
+    tick_steps = ["No Data", "~100µs", "~500µs", "~5ms", ">5ms", "Unknown"]
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -317,7 +351,12 @@ def plot_heatmap_rdma(data, outname="result"):
             )
 
     plot_heatmap_value(
-        records, "network_mean", "ping_end_time", steps, outname + "_network_mean"
+        records,
+        "network_mean",
+        "ping_end_time",
+        steps,
+        tick_steps,
+        outname + "_network_mean",
     )
 
 
@@ -371,7 +410,7 @@ async def pingweave_plotter():
                                 if ip not in map_ip_to_groups:
                                     map_ip_to_groups[ip] = set()
                                 map_ip_to_groups[ip].add(group)
-                    
+
                     # insert process
                     cursor = "0"
                     while cursor != 0:
@@ -418,8 +457,10 @@ async def pingweave_plotter():
                                             f"{record_key} is not in records[{proto}][{group}]"
                                         )
                                     records[proto][group][record_key] = value
-                    
+
                     # category/group 별로 plot 그리기
+                    # TODO: delete all .html files in /html
+                    clear_directory(HTML_DIR)
                     for category, data in records.items():
                         for group, group_data in data.items():
                             if category == "udp":

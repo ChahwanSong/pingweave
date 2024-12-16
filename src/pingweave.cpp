@@ -68,16 +68,17 @@ int main() {
             }
         } else {
             pinglist_load_retry_cnt = 0;
-        }
 
-        // if loading pinglist is failed, return the empty set.
-        spdlog::debug("myaddr_rdma size: {}, myaddr_udp size: {}",
-                      myaddr_rdma.size(), myaddr_udp.size());
-        if (myaddr_rdma.empty()) {
-            spdlog::warn("Empty RDMA info in pinglist.yaml.");
-        }
-        if (myaddr_udp.empty()) {
-            spdlog::warn("Empty UDP info in pinglist.yaml.");
+            // if loading pinglist is failed, return the empty set.
+            spdlog::debug("myaddr_rdma size: {}, myaddr_udp size: {}",
+                        myaddr_rdma.size(), myaddr_udp.size());
+            if (myaddr_rdma.empty()) {
+                spdlog::warn("Empty RDMA info in pinglist.yaml.");
+            }
+            if (myaddr_udp.empty()) {
+                spdlog::warn("Empty UDP info in pinglist.yaml.");
+            }
+
         }
 
         /* 2. Terminate threads which are not in pinglist. */

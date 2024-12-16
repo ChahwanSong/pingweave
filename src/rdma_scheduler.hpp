@@ -14,31 +14,35 @@ class RdmaMsgScheduler : public MsgScheduler {
         : MsgScheduler(ip, logger) {}
     ~RdmaMsgScheduler() {}
 
-    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result) {
-        auto now = std::chrono::steady_clock::now();
-        auto loadDuration = std::chrono::duration_cast<std::chrono::seconds>(
-            now - last_load_time);
+    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result, uint64_t& time_sleep_us) {
+        auto load_now = std::chrono::steady_clock::now();
+        auto load_elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(
+            load_now - last_load_time);
 
         // Check the time to load the address_store
-        if (loadDuration.count() > LOAD_CONFIG_INTERVAL_SEC) {
+        if (load_elapsed_time.count() > LOAD_CONFIG_INTERVAL_SEC) {
             load_address_info();
-            last_load_time = now;
+            last_load_time = load_now;
         }
 
-        auto pingDuration =
+        auto ping_now = std::chrono::steady_clock::now();
+        auto ping_elapsed_time =
             std::chrono::duration_cast<std::chrono::microseconds>(
-                now - last_access_time);
-        if (pingDuration.count() >= inter_ping_interval_us) {
-            last_access_time = now;
+                ping_now - last_ping_time);
+        if (ping_elapsed_time.count() >= inter_ping_interval_us) {
+            last_ping_time = ping_now;
 
             if (!addressInfo.empty()) {
                 result = addressInfo[addr_idx % addressInfo.size()];
                 addr_idx = (addr_idx + 1) % addressInfo.size();
+                time_sleep_us = 0;
                 return 1;  // Success
             } else {
+                time_sleep_us = 1000000; // if no addr to send, sleep 1 second
                 return 0;  // Failure: No address information available
             }
         } else {
+            time_sleep_us = inter_ping_interval_us - ping_elapsed_time.count(); //
             return 0;  // Failure: Called too soon
         }
     }

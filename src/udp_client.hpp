@@ -5,18 +5,19 @@
 #include "udp_scheduler.hpp"
 
 void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
-                      UdpPinginfoMap* ping_table,
-                      std::shared_ptr<spdlog::logger> logger) {
+                          UdpPinginfoMap* ping_table,
+                          std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
     uint32_t ping_uid = 0;
+    uint64_t time_sleep_us = 0;
     UdpMsgScheduler scheduler(ipv4, logger);
     std::string dst_addr;
 
     try {
         while (true) {
             // Retrieve the next destination for sending
-            if (scheduler.next(dst_addr)) {
+            if (scheduler.next(dst_addr, time_sleep_us)) {
                 // Create a pingid
                 auto pingid = make_pingid(ip2uint(ipv4), ping_uid++);
 
@@ -34,10 +35,14 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                 logger->debug("Sending PING message (ping ID:{}), time: {}",
                               pingid, timestamp_ns_to_string(send_time_system));
 
-                if (send_message(ctx_tx, dst_addr, PINGWEAVE_UDP_PORT_SERVER, pingid, logger)) {
+                if (send_message(ctx_tx, dst_addr, PINGWEAVE_UDP_PORT_SERVER,
+                                 pingid, logger)) {
                     // something went wrong
                     continue;
                 }
+            } else {
+                // sleep until next ping schedule
+                std::this_thread::sleep_for(std::chrono::microseconds(time_sleep_us));
             }
         }
     } catch (const std::exception& e) {
@@ -47,8 +52,8 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
 }
 
 void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
-                      UdpPinginfoMap* ping_table,
-                      std::shared_ptr<spdlog::logger> logger) {
+                          UdpPinginfoMap* ping_table,
+                          std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     try {
@@ -56,7 +61,8 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
             // Wait for the next UDP message event
             uint64_t pingid = 0;
             std::string sender;
-            if (receive_message(ctx_rx, pingid, sender, logger)) { // something wrong 
+            if (receive_message(ctx_rx, pingid, sender, logger)) {
+                // something wrong
                 continue;
             }
 
@@ -72,10 +78,9 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
     }
 }
 
-
 void udp_client_result_thread(const std::string& ipv4,
-                          UdpClientQueue* client_queue,
-                          std::shared_ptr<spdlog::logger> logger) {
+                              UdpClientQueue* client_queue,
+                              std::shared_ptr<spdlog::logger> logger) {
     int dummy1, dummy2, dummy3, report_interval_ms = 10000;
     if (!get_params_info_from_ini(dummy1, dummy2, report_interval_ms, dummy3)) {
         logger->error(
@@ -135,7 +140,7 @@ void udp_client_result_thread(const std::string& ipv4,
                 for (auto& [dstip, result_info] : dstip2result) {
                     result_stat_t network_stat =
                         calc_result_stats(result_info.network_delays);
-                    
+
                     auto result = convert_udp_result_to_str(
                         ipv4, uint2ip(dstip), result_info, network_stat);
                     logger->info(result);         // logging
@@ -158,7 +163,6 @@ void udp_client_result_thread(const std::string& ipv4,
         logger->error("Exception in result thread: {}", e.what());
     }
 }
-
 
 void udp_client(const std::string& ipv4) {
     // Start the RX thread

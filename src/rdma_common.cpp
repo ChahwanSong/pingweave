@@ -129,22 +129,22 @@ int get_gid_table_size(struct rdma_context *ctx,
     }
 
     union ibv_gid last_gid;
-    int gid_count = -1;            // 마지막 유효 GID 인덱스
-    int preferred_gid_index = -1;  // "::ffff:"로 시작하는 GID의 인덱스
+    int gid_count = -1;            // last valid  GID index
+    int preferred_gid_index = -1;  // GID index starting with "::ffff:"
 
     for (int i = gid_table_size - 1; i >= 0; --i) {
         if (ibv_query_gid(ctx->context, ctx->active_port, i, &last_gid) == 0) {
             auto gid_str = parsed_gid(&last_gid);
             if (!gid_str.empty() && gid_str != "::") {
-                logger->debug("Device's GID[{}]: {}", i, gid_str);
+                logger->debug("Device's GID [{}]: {}", i, gid_str);
 
-                // "::ffff:"로 시작하는 GID를 우선적으로 처리
+                // Prioritize GID index starting with "::ffff:"
                 if (gid_str.find("::ffff:") == 0 && preferred_gid_index == -1) {
-                    preferred_gid_index = i;  // 첫 "::ffff:" GID 인덱스를 저장
-                    logger->debug("Preferred GID[{}]: {}", i, gid_str);
+                    preferred_gid_index = i;  // First "::ffff:" GID index
+                    logger->debug("Preferred GID [{}]: {}", i, gid_str);
                 }
 
-                // 마지막 유효 GID 인덱스 저장
+                // Last valid GID index 
                 if (gid_count == -1) {
                     gid_count = i;
                 }
@@ -152,10 +152,10 @@ int get_gid_table_size(struct rdma_context *ctx,
         }
     }
 
-    // 최종 선택한 GID 인덱스 결정
+    // Finally selected GID index 
     if (preferred_gid_index != -1) {
         logger->info("Using preferred GID index: {}", preferred_gid_index);
-        gid_count = preferred_gid_index;  // 우선 순위 GID를 사용
+        gid_count = preferred_gid_index;  // choose a high-priority GID index
     } else if (gid_count != -1) {
         logger->info("Using fallback GID index: {}", gid_count);
     } else {

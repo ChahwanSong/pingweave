@@ -4,6 +4,7 @@ import configparser
 import time
 import json
 import socket
+import random
 import yaml  # python3 -m pip install pyyaml
 import urllib.request  # python3 -m pip install urllib
 import urllib.error
@@ -185,7 +186,7 @@ def main():
         fetch_data(control_host, control_port, "address_store")
 
         # Sleep to prevent high CPU usage + small delay
-        time.sleep(interval_sync_pinglist_sec + 0.01)
+        time.sleep(interval_sync_pinglist_sec + random.randint(0,10) * 0.01)
 
 
 if __name__ == "__main__":
