@@ -40,8 +40,9 @@ def initialize_pingweave_logger(
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
-
+    
+    mypid = os.getpid()
     logger.info(
-        f"Logger initialization is successful - pingweave_{middlename}_{host}.log"
+        f"Logger initialization is successful - pingweave_{middlename}_{host}.log (pid: {mypid})"
     )
     return logger
