@@ -112,8 +112,8 @@ int find_active_port(struct rdma_context *ctx,
     return -1;
 }
 
-// Get GID table size
-int get_gid_table_size(struct rdma_context *ctx,
+// Get GID table index
+int get_gid_table_index(struct rdma_context *ctx,
                        std::shared_ptr<spdlog::logger> logger) {
     struct ibv_port_attr port_attr;
 
@@ -129,7 +129,7 @@ int get_gid_table_size(struct rdma_context *ctx,
     }
 
     union ibv_gid last_gid;
-    int gid_count = -1;            // last valid  GID index
+    int gid_index = -1;            // last valid  GID index
     int preferred_gid_index = -1;  // GID index starting with "::ffff:"
 
     for (int i = gid_table_size - 1; i >= 0; --i) {
@@ -151,8 +151,8 @@ int get_gid_table_size(struct rdma_context *ctx,
                 }
 
                 // Last valid GID index 
-                if (gid_count == -1) {
-                    gid_count = i;
+                if (gid_index == -1) {
+                    gid_index = i;
                 }
             }
         }
@@ -161,14 +161,14 @@ int get_gid_table_size(struct rdma_context *ctx,
     // Finally selected GID index 
     if (preferred_gid_index != -1) {
         logger->info("Using preferred GID index: {}", preferred_gid_index);
-        gid_count = preferred_gid_index;  // choose a high-priority GID index
-    } else if (gid_count != -1) {
-        logger->info("Using fallback GID index: {}", gid_count);
+        gid_index = preferred_gid_index;  // choose a high-priority GID index
+    } else if (gid_index != -1) {
+        logger->info("Using fallback GID index: {}", gid_index);
     } else {
         logger->error("No valid GID found!");
     }
 
-    return gid_count;
+    return gid_index;
 }
 
 struct ibv_cq *pingweave_cq(struct rdma_context *ctx) {
@@ -232,18 +232,19 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
     }
 
     {
-        int gid_table_size = get_gid_table_size(ctx, logger);
+        int gid_index = get_gid_table_index(ctx, logger);
         logger->debug("GID table size is {}, where we use the last GID index",
-                      gid_table_size);
-        if (gid_table_size <= 0) {
-            logger->error("GID is not available or something is wrong.");
-            goto clean_device;
-        } else if (gid_table_size == 1) {
+                      gid_index);
+        if (gid_index == 0) {
             logger->info("-> probably, Infiniband device.");
-        } else {
+        } else if (gid_index > 0) {
             logger->info("-> probably, RoCEv2 device.");
-        }
-        ctx->gid_index = gid_table_size;  // use last GID
+        } else {
+            logger->info("GID {} is not available or something is wrong.", gid_index);
+            goto clean_device;
+        } 
+
+        ctx->gid_index = gid_index;  // use last GID
     }
 
     {  // create a complete channel for event-driven polling

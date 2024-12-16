@@ -16,7 +16,7 @@ int get_context_by_ifname(const char *ifname, struct rdma_context *ctx);
 int get_context_by_ip(struct rdma_context *ctx);
 int find_active_port(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger);
-int get_gid_table_size(struct rdma_context *ctx,
+int get_gid_table_index(struct rdma_context *ctx,
                        std::shared_ptr<spdlog::logger> logger);
 
 // Allocate RDMA resources
