@@ -9,7 +9,7 @@ import psutil
 from logger import initialize_pingweave_logger
 from macro import *
 
-logger = initialize_pingweave_logger(socket.gethostname(), "collector")
+logger = initialize_pingweave_logger(socket.gethostname(), "collector", 5, False)
 
 # Global variables
 control_host = None

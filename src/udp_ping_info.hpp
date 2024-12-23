@@ -150,10 +150,9 @@ class UdpPinginfoMap {
                 timestamp_ns_to_string(ping_info.time_ping_send));
 
             // failure (packets might be lost)
-            if (!client_queue->try_enqueue({ping_info.pingid,
-                                            ip2uint(ping_info.dstip),
-                                            ping_info.time_ping_send,
-                                            ping_info.network_delay, false})) {
+            if (!client_queue->try_enqueue(
+                    {ping_info.pingid, ip2uint(ping_info.dstip),
+                     ping_info.time_ping_send, 0, false})) {
                 logger->error(
                     "Failed to enqueue (pingid {}, failed) to result thread",
                     ping_info.pingid);

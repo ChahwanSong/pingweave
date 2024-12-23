@@ -75,7 +75,36 @@ if [[ "$(ps -p 1 -o comm=)" != "systemd" ]]; then
 fi
 cecho "GREEN" "Systemd is running."
 
-# (2) Check Python version (>= 3.6)
+# (2) chronyd (NTP) systemd
+CHRONYD_SERVICE="chronyd.service"
+
+# 상태 확인
+cecho "YELLOW" "Checking if $CHRONYD_SERVICE (NTP) is running..."
+if systemctl is-active --quiet "$CHRONYD_SERVICE"; then
+    cecho "GREEN" "$CHRONYD_SERVICE is already running."
+else
+    cecho "YELLOW" "$CHRONYD_SERVICE is not running. Starting and enabling it..."
+    # 서비스 시작
+    systemctl start "$CHRONYD_SERVICE"
+    if [ $? -eq 0 ]; then
+        cecho "GREEN" "$CHRONYD_SERVICE started successfully."
+    else
+        cecho "RED" "Failed to start $CHRONYD_SERVICE." >&2
+        exit 1
+    fi
+
+    # 서비스 활성화
+    systemctl enable "$CHRONYD_SERVICE"
+    if [ $? -eq 0 ]; then
+        cecho "GREEN" "$CHRONYD_SERVICE is now enabled."
+    else
+        cecho "RED" "Failed to enable $CHRONYD_SERVICE." >&2
+        exit 1
+    fi
+fi
+
+
+# (3) Check Python version (>= 3.6)
 cecho "YELLOW" "Checking Python version..."
 PYTHON_VERSION=$(python3 --version 2>/dev/null)
 

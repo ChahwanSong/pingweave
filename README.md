@@ -2,11 +2,15 @@
 PingWeave
 
 ## Prerequisites
+
+### Common
+* ibverbs library (e.g., libibverbs) - "rdma-core" or "rdma-core-devel"
+* chronyd.service (NTP time synchronization) - to evict stale information 
+
 ### Nodes
 * python >= 3.6 (for asyncio)
-* ibverbs library (e.g., libibverbs) - rdma-core-dev for RHEL.
 
-### Control plane
+### Controller
 * redis: in-memory key-value store
 ```
 dnf install redis -y
@@ -37,3 +41,12 @@ port 0  # TCP/IP inactivate (optional)
 
 ### pingweavectl
 `sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin`
+
+
+
+## Reconfiguration
+
+- Client 
+    - just change `config/pingweave.ini` file.
+- Server
+    - Restart (for now)

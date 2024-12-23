@@ -319,7 +319,7 @@ uint64_t get_current_timestamp_steady() {
 /**
  * req_api: /result_rdma, /alarm, etc
  */
-void send_message_to_http_server(const std::string &server_ip, int server_port,
+int send_message_to_http_server(const std::string &server_ip, int server_port,
                                  const std::string &message,
                                  const std::string &req_api,
                                  std::shared_ptr<spdlog::logger> logger) {
@@ -328,7 +328,7 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
     if (sock < 0) {
         logger->error("HTTP Socket creation failed! errno: {} - {}", errno,
                       strerror(errno));
-        return;
+        return true; // fail
     }
 
     // set timeout (3 seconds, by default)
@@ -341,7 +341,7 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to set timeout! errno: {} - {}", errno,
                       strerror(errno));
         close(sock);
-        return;
+        return true; // fail
     }
 
     // set http server address
@@ -352,7 +352,7 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Invalid server IP address: {}! errno: {} - {}",
                       server_ip, errno, strerror(errno));
         close(sock);
-        return;
+        return true; // fail
     }
 
     // connect to server
@@ -361,7 +361,7 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Connection to server {}:{} failed! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return;
+        return true; // fail
     }
 
     // construct HTTP request
@@ -380,7 +380,7 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to send request to {}:{}! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return;
+        return true; // fail
     } else if (bytes_sent < static_cast<ssize_t>(request.size())) {
         logger->warn("HTTP Partial send: Only {}/{} bytes sent to {}:{}!",
                      bytes_sent, request.size(), server_ip, server_port);
@@ -391,6 +391,11 @@ void send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Socket close failed! errno: {} - {}", errno,
                       strerror(errno));
     }
+
+    logger->debug("Send HTTP message to {}:{} was successful.", server_ip, server_port);
+
+    // success
+    return false;
 }
 
 int message_to_http_server(const std::string &message, const std::string &api,

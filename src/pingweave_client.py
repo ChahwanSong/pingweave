@@ -11,7 +11,7 @@ import urllib.error
 from logger import initialize_pingweave_logger
 from macro import *
 
-logger = initialize_pingweave_logger(socket.gethostname(), "client")
+logger = initialize_pingweave_logger(socket.gethostname(), "client", 30, False)
 
 # ConfigParser object
 config = configparser.ConfigParser()

@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 from macro import *
 
 # Create the logs directory if it doesn't exist
-logging_level = logging.INFO  # INFO
+logging_level = logging.DEBUG  # INFO
 console_level = logging.ERROR  # ERROR
 
 if not os.path.exists(LOG_DIR):
@@ -12,8 +12,7 @@ if not os.path.exists(LOG_DIR):
 
 
 def initialize_pingweave_logger(
-    host: str, middlename: str = "server", enable_console=True
-):
+    host: str, middlename: str = "server", max_MB=30, enable_console=True):
     logger = logging.getLogger(f"pingweave_{middlename}_{host}")
     logger.setLevel(logging_level)  # Set the log level
 
@@ -24,7 +23,7 @@ def initialize_pingweave_logger(
     log_file = os.path.join(LOG_DIR, f"pingweave_{middlename}_{host}.log")
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=30 * 1024 * 1024,
+        maxBytes=int(max_MB) * 1024 * 1024,
         backupCount=0,
     )
     file_handler.setLevel(logging_level)  # >=INFO to file
@@ -35,11 +34,11 @@ def initialize_pingweave_logger(
     )
 
     file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
     if enable_console:
         console_handler.setFormatter(formatter)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
     
     mypid = os.getpid()
     logger.info(

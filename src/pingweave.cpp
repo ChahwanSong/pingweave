@@ -61,7 +61,7 @@ int main() {
             if (pinglist_load_retry_cnt >= 0 &&
                 ++pinglist_load_retry_cnt < 10) {
                 spdlog::warn(
-                    "Reload pinglist (retry count: {}). Retry after 3 seconds.",
+                    "Reload pinglist is failed (retry count: {}). Retry after 3 seconds.",
                     pinglist_load_retry_cnt);
                 std::this_thread::sleep_for(std::chrono::seconds(3));
                 continue;
@@ -73,10 +73,10 @@ int main() {
             spdlog::debug("myaddr_rdma size: {}, myaddr_udp size: {}",
                         myaddr_rdma.size(), myaddr_udp.size());
             if (myaddr_rdma.empty()) {
-                spdlog::warn("Empty RDMA info in pinglist.yaml.");
+                spdlog::debug("Empty RDMA info in pinglist.yaml.");
             }
             if (myaddr_udp.empty()) {
-                spdlog::warn("Empty UDP info in pinglist.yaml.");
+                spdlog::debug("Empty UDP info in pinglist.yaml.");
             }
 
         }

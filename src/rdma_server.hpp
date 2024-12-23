@@ -6,7 +6,7 @@
 
 void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
-    uint64_t cqe_time = 0, current_steady_clock = 0;
+    uint64_t cqe_time = 0;
     struct ibv_wc wc = {};
     int ret = 0;
     union rdma_pingmsg_t ping_msg = {};
@@ -47,26 +47,19 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
                     cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-                    current_steady_clock = get_current_timestamp_steady();
-
+                    
                     /** HW TIMESTAMP JUMP CORRECTION LOGIC */
                     if (ctx_rx->archive_cqe_hw_clock < cqe_time) {
                         ctx_rx->archive_cqe_hw_clock = cqe_time;
-                        ctx_rx->archive_cqe_steady_clock = current_steady_clock;
                     } else {
-                        // adjust the timestamp jump using a steady clock
-                        auto adjusted_cqe_time =
-                            ctx_rx->archive_cqe_hw_clock +
-                            (current_steady_clock -
-                             ctx_rx->archive_cqe_steady_clock);
-                        logger->critical(
-                            "[CQE] Adjusted CQE time : {}, original cqe time: "
-                            "{}, "
-                            "adj-ori: {}",
-                            adjusted_cqe_time, cqe_time,
-                            adjusted_cqe_time - cqe_time);
+                        /**
+                         * In case of Infiniband, HW timestamp sometimes fluctuates
+                         * like 8589934592 (2**33). We try to adjust it.  
+                         */
+                        logger->debug("Original cqe_time: {}", cqe_time);
+                        auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
                         ctx_rx->archive_cqe_hw_clock = adjusted_cqe_time;
-                        ctx_rx->archive_cqe_steady_clock = current_steady_clock;
+                        cqe_time = adjusted_cqe_time;
                     }
                     /*--------------------------------------*/
 
@@ -236,7 +229,7 @@ int server_process_pong_cqe(struct rdma_context* ctx_tx,
 void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     std::shared_ptr<spdlog::logger> logger) {
     struct ibv_wc wc = {};
-    uint64_t cqe_time = 0, current_steady_clock=0;
+    uint64_t cqe_time = 0;
     int ret = 0;
 
     /**
@@ -257,29 +250,22 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
             wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
-            current_steady_clock = get_current_timestamp_steady();
-
+            
             /** HW TIMESTAMP JUMP CORRECTION LOGIC */
             if (ctx_tx->archive_cqe_hw_clock < cqe_time) {
                 ctx_tx->archive_cqe_hw_clock = cqe_time;
-                ctx_tx->archive_cqe_steady_clock = current_steady_clock;
             } else {
-                // adjust the timestamp jump using a steady clock
-                auto adjusted_cqe_time =
-                    ctx_tx->archive_cqe_hw_clock +
-                    (current_steady_clock -
-                        ctx_tx->archive_cqe_steady_clock);
-                logger->critical(
-                    "[CQE] Adjusted CQE time : {}, original cqe time: "
-                    "{}, "
-                    "adj-ori: {}",
-                    adjusted_cqe_time, cqe_time,
-                    adjusted_cqe_time - cqe_time);
+                /**
+                 * In case of Infiniband, HW timestamp sometimes fluctuates
+                 * like 8589934592 (2**33). We try to adjust it.  
+                 */
+                logger->debug("Original cqe_time: {}", cqe_time);
+                auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
                 ctx_tx->archive_cqe_hw_clock = adjusted_cqe_time;
-                ctx_tx->archive_cqe_steady_clock = current_steady_clock;
+                cqe_time = adjusted_cqe_time;
             }
             /*--------------------------------------*/
-
+            
             // if failure
             if (wc.status != IBV_WC_SUCCESS) {
                 logger->error("CQE TX error: {}", ibv_wc_status_str(wc.status));

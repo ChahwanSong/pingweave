@@ -1,7 +1,8 @@
 [Unit]
 Description=PingWeave - High-resolutional end-to-end RoCE/Infiniband/TCP network monitoring tool 
-After=network.target network-online.target
-Wants=network-online.target
+Requires=chronyd.service network-online.target
+After=network.target network-online.target chronyd.service
+
 
 [Service]
 Type=simple

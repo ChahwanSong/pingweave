@@ -40,6 +40,9 @@ const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 10;    // seconds
 const static int PINGWEAVE_UDP_PORT_CLIENT = 33335;
 const static int PINGWEAVE_UDP_PORT_SERVER = 33336; // both TX & RX
 
+// HW Timestamp correction factor
+const static uint64_t PINGWEAVE_IB_HW_ADJUST_TIME = 1ULL << 33;
+
 inline std::string get_source_directory() {
 #ifndef SOURCE_DIR
     // If missed, give a current directory

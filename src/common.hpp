@@ -59,7 +59,7 @@ uint64_t get_current_timestamp_ns();
 std::string timestamp_ns_to_string(uint64_t timestamp_ns);
 std::string get_current_timestamp_string();
 uint64_t get_current_timestamp_steady();
-void send_message_to_http_server(const std::string &server_ip, int server_port,
+int send_message_to_http_server(const std::string &server_ip, int server_port,
                                  const std::string &message,
                                  const std::string &api,
                                  std::shared_ptr<spdlog::logger> logger);

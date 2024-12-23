@@ -12,11 +12,11 @@ import yaml  # python3 -m pip install pyyaml
 from aiohttp import web  # requires python >= 3.7
 from macro import *
 
-logger = initialize_pingweave_logger(socket.gethostname(), "server")
+logger = initialize_pingweave_logger(socket.gethostname(), "server", 30, False)
 
 # Variables to save pinglist
 pinglist_in_memory = {}
-address_store = {}  # (forr RDMA) ip -> (ip, gid, lid, qpn, dtime)
+address_store = {}  # (for RDMA) ip -> (ip, gid, lid, qpn, dtime)
 address_store_checkpoint = 0
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()

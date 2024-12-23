@@ -107,7 +107,7 @@ class RdmaPinginfoMap {
             /**
              * NOTE: For self-ping, from time to time, At client, CQE of PONG's
              * arrival can be earlier than PING's CQE. This is because self-ping
-             * delay can be only 10s of nanoseconds but PING's CQE delay is
+             * delay can be only 10s of nanoseconds but PING's CQE delay can be
              * longer than that. In this case, we handle the timestamp
              * accordingly.
              */
@@ -192,6 +192,12 @@ class RdmaPinginfoMap {
                 return true;
             }
 
+            // logging
+            logger->debug("Pingid:{},DstIP:{},Server:{},Network:{},Client:{}",
+                          ping_info.pingid, ping_info.dstip,
+                          ping_info.client_delay, ping_info.network_delay,
+                          ping_info.server_delay);
+
             // ping delay of purely client's processing part
             uint64_t client_process_time =
                 ping_info.client_delay - ping_info.network_delay;
@@ -223,11 +229,6 @@ class RdmaPinginfoMap {
 
             // ping delay of purely server's processing part
             uint64_t server_process_time = ping_info.server_delay;
-
-            // logging
-            logger->debug("{},{},{},{},{}", ping_info.pingid, ping_info.dstip,
-                          client_process_time, network_rtt,
-                          server_process_time);
 
             // send out for analysis
             // ping_time, dstip, ping_time, {each entity's process delays}

@@ -14,13 +14,13 @@ import time
 import configparser
 from macro import *
 
-logger = initialize_pingweave_logger(socket.gethostname(), "plotter")
+logger = initialize_pingweave_logger(socket.gethostname(), "plotter", 5, False)
 
 # Global variables
 control_host = None
 collect_port = None
 interval_report_ping_result_millisec = None
-
+colorscale = ["black", "purple", "green", "yellow", "orange", "red"]
 
 # Variables to save pinglist
 pinglist_in_memory = {}
@@ -28,6 +28,44 @@ pinglist_in_memory = {}
 # ConfigParser object
 config = configparser.ConfigParser()
 
+
+# value to color index mapping for ping results
+def map_value_to_color_index_ping_delay(value, steps):
+    if value <= -1:
+        return 0  # black
+    elif -1 < value <= 0:
+        return 1  # purple
+    elif 0 < value <= int(steps[0]):
+        return 2  # green
+    elif int(steps[0]) < value <= int(steps[1]):
+        return 3  # yellow
+    elif int(steps[1]) < value <= int(steps[2]):
+        return 4  # orange
+    elif value > int(steps[2]):
+        return 5  # red
+    else:
+        logger.error(f"map_value error: {steps}")
+        exit(1)
+
+# value to color index mapping for ping results
+def map_value_to_color_index_success_ratio(value, steps):
+    if value < -1:
+        return 0  # black
+    elif -1 <= value < 0:
+        return 1  # purple
+    elif float(steps[0]) <= value <= 1:
+        return 2  # green
+    elif float(steps[1]) <= value < float(steps[0]):
+        return 3  # yellow
+    elif float(steps[2]) <= value < float(steps[1]):
+        return 4  # orange
+    elif 0 <= value < float(steps[2]):
+        return 5  # red
+    else:
+        logger.error(f"map_value error: {steps}")
+        exit(1)
+        
+# global logics
 try:
     # Redis
     socket_path = "/var/run/redis/redis-server.sock"
@@ -62,8 +100,8 @@ def load_config_ini():
         logger.debug("Configuration loaded successfully from config file.")
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
-        control_host = "0.0.0.0"
-        collect_port = 8080
+        control_host = None
+        collect_port = None
 
 
 def check_ip_active(target_ip):
@@ -125,18 +163,14 @@ def clear_directory(directory_path):
         logger.error(f"An error occurred: {e}")
 
 
-def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outname):
-    if len(steps) != 3 or len(tick_steps) != 6:
-        logger.error(f"Step size must be 3, and tick_steps size must be 6")
-        return
+def plot_heatmap_value(records: list, value_name: str, time_name: str, steps: list, tick_steps: list, map_func, outname: str):
+    # sanity check
+    if len(tick_steps) != len(colorscale):
+        logger.error(f"Length of tick_steps must be same with that of colorscale: {tick_steps} vs {colorscale}")
+    
 
     # dataframe
     df = pd.DataFrame(records)
-
-    # sanity check
-    if len(steps) != 3:
-        logger.error(f"Heatmap step list size must be 3, but given {steps}")
-        return
 
     # index mapping to ip address
     source_ips = df["source"].unique()
@@ -171,27 +205,10 @@ def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outnam
             row.append(text)
         text_matrix.append(row)
 
-    # value to color index mapping
-    def map_value_to_color_index(value):
-        if value == -1:
-            return 0  # black
-        elif 0 <= value < int(steps[0]):
-            return 1  # green
-        elif int(steps[0]) <= value < int(steps[1]):
-            return 2  # yellow
-        elif int(steps[1]) <= value < int(steps[2]):
-            return 3  # orange
-        elif value >= int(steps[2]):
-            return 4  # red
-        else:
-            return 5  # purple
-
     # function vectorize
-    map_func = np.vectorize(map_value_to_color_index)
-    z_colors = map_func(z_values)
+    vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
+    z_colors = vectorized_map_func(z_values)
 
-    # color scale
-    colorscale = ["black", "green", "yellow", "orange", "red", "purple"]
 
     # cell number calc
     num_x = len(pivot_table.columns)
@@ -209,7 +226,7 @@ def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outnam
             x=pivot_table.columns.values,
             y=pivot_table.index.values,
             zmin=0,  # setting min
-            zmax=5,  # setting max
+            zmax=len(tick_steps),  # setting max
             xgap=xgap,  # dynamic horizontal space
             ygap=ygap,  # dynamic vertical space
             customdata=text_matrix,  # customdata <- text matrix
@@ -218,7 +235,7 @@ def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outnam
             name="",  # empty trace name
             colorbar=dict(
                 tickmode="array",
-                tickvals=[0, 1, 2, 3, 4, 5],
+                tickvals=list(range(len(tick_steps))),
                 ticktext=tick_steps,
                 title=value_name,
             ),
@@ -245,8 +262,10 @@ def plot_heatmap_value(records, value_name, time_name, steps, tick_steps, outnam
 
 
 def plot_heatmap_udp(data, outname="result"):
-    steps = [500000, 2000000, 10000000]
-    tick_steps = ["No Data", "~500µs", "~2ms", "~10ms", ">10ms", "Unknown"]
+    delay_steps = [500000, 2000000, 10000000]
+    ratio_steps = [1, 0.9, 0.5]
+    delay_tick_steps = ["No Data", "Failure", "~500µs", "~2ms", "~10ms", ">10ms"]
+    ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -256,7 +275,7 @@ def plot_heatmap_udp(data, outname="result"):
             n_failure = int(n_failure)
             total_attempts = n_success + n_failure
             if total_attempts == 0:
-                success_ratio = 0.0
+                success_ratio = -1
             else:
                 success_ratio = 1.0 * n_success / total_attempts
 
@@ -269,6 +288,7 @@ def plot_heatmap_udp(data, outname="result"):
                     "destination": dst,
                     "success_ratio": success_ratio,
                     "network_mean": float(network_mean),
+                    "network_p50": float(network_p50),
                     "network_p99": float(network_p99),
                     "ping_start_time": ts_ping_start,
                     "ping_end_time": ts_ping_end,
@@ -281,25 +301,60 @@ def plot_heatmap_udp(data, outname="result"):
                     "destination": dst,
                     "success_ratio": 0.0,
                     "network_mean": -1,
+                    "network_p50": -1,
                     "network_p99": -1,
                     "ping_start_time": "N/A",
                     "ping_end_time": "N/A",
                 }
             )
-
+    # network mean
     plot_heatmap_value(
         records,
         "network_mean",
         "ping_end_time",
-        steps,
-        tick_steps,
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
         outname + "_network_mean",
+    )
+    # network p50
+    plot_heatmap_value(
+        records,
+        "network_p50",
+        "ping_end_time",
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
+        outname + "_network_p50",
+    )
+    # network p99
+    plot_heatmap_value(
+        records,
+        "network_p99",
+        "ping_end_time",
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
+        outname + "_network_p99",
+    )
+    # success ratio
+    plot_heatmap_value(
+        records,
+        "success_ratio",
+        "ping_end_time",
+        ratio_steps,
+        ratio_tick_steps,
+        map_value_to_color_index_success_ratio,
+        outname + "_success_ratio",
     )
 
 
 def plot_heatmap_rdma(data, outname="result"):
-    steps = [100000, 500000, 5000000]
-    tick_steps = ["No Data", "~100µs", "~500µs", "~5ms", ">5ms", "Unknown"]
+    delay_steps = [100000, 500000, 5000000]
+    ratio_steps = [1, 0.9, 0.5]
+    delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
+    ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
+    
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -326,6 +381,9 @@ def plot_heatmap_rdma(data, outname="result"):
                     "network_mean": float(network_mean),
                     "client_mean": float(client_mean),
                     "server_mean": float(server_mean),
+                    "network_p50": float(network_p50),
+                    "client_p50": float(client_p50),
+                    "server_p50": float(server_p50),
                     "network_p99": float(network_p99),
                     "client_p99": float(client_p99),
                     "server_p99": float(server_p99),
@@ -342,6 +400,9 @@ def plot_heatmap_rdma(data, outname="result"):
                     "network_mean": -1,
                     "client_mean": -1,
                     "server_mean": -1,
+                    "network_p50": -1,
+                    "client_p50": -1,
+                    "server_p50": -1,
                     "network_p99": -1,
                     "client_p99": -1,
                     "server_p99": -1,
@@ -349,14 +410,45 @@ def plot_heatmap_rdma(data, outname="result"):
                     "ping_end_time": "N/A",
                 }
             )
-
+    # network mean
     plot_heatmap_value(
         records,
         "network_mean",
         "ping_end_time",
-        steps,
-        tick_steps,
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
         outname + "_network_mean",
+    )
+    # network p50
+    plot_heatmap_value(
+        records,
+        "network_p50",
+        "ping_end_time",
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
+        outname + "_network_p50",
+    )
+    # network p99
+    plot_heatmap_value(
+        records,
+        "network_p99",
+        "ping_end_time",
+        delay_steps,
+        delay_tick_steps,
+        map_value_to_color_index_ping_delay,
+        outname + "_network_p99",
+    )
+    # success ratio
+    plot_heatmap_value(
+        records,
+        "success_ratio",
+        "ping_end_time",
+        ratio_steps,
+        ratio_tick_steps,
+        map_value_to_color_index_success_ratio,
+        outname + "_success_ratio",
     )
 
 
@@ -368,12 +460,10 @@ async def pingweave_plotter():
     try:
         while True:
             if not check_ip_active(control_host):
-                logger.info(
-                    f"No active interface with Control IP {control_host}. Sleep 1 minute..."
+                logger.warn(
+                    f"No active interface for controller host {control_host}. Exit..."
                 )
-                await asyncio.sleep(INTERVAL_INTERFACE_ACTIVE_SEC)
-                load_config_ini()
-                continue
+                exit(1)
 
             try:
                 # plot the graph for every X seconds
@@ -391,9 +481,10 @@ async def pingweave_plotter():
                     )
 
                     # read pinglist (synchronous) -> pinglist_in_memory
-                    # then, create template records
                     # pinglist = {'udp': {'group1': ['192.168.1.1', '192.168.1.2', '192.168.1.3']}}
                     read_pinglist()
+
+                    # then, create template records
                     records = copy.deepcopy(pinglist_in_memory)
                     map_ip_to_groups = {}  # dict of set
                     for proto, cat_data in pinglist_in_memory.items():
@@ -411,7 +502,7 @@ async def pingweave_plotter():
                                     map_ip_to_groups[ip] = set()
                                 map_ip_to_groups[ip].add(group)
 
-                    # insert process
+                    # Read data from redis in-memory storage.
                     cursor = "0"
                     while cursor != 0:
                         current_time = datetime.now()
@@ -426,17 +517,20 @@ async def pingweave_plotter():
 
                             value = value.split(",")
 
-                            # filtering old information
+                            # filter old information
                             measure_time = datetime.strptime(
                                 value[1][:26], "%Y-%m-%d %H:%M:%S.%f"
                             )
-                            # calculate a time difference
+                            # caclulate a time difference
                             time_difference = abs(
                                 (current_time - measure_time).total_seconds()
                             )
 
                             # skip if the info is stale
                             if time_difference > INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC:
+                                logger.debug(
+                                    f"Ignore old data: {key} | Time: {measure_time} | T_Diff: {time_difference}"
+                                )
                                 continue
 
                             proto, src, dst = key.split(",")
@@ -458,9 +552,10 @@ async def pingweave_plotter():
                                         )
                                     records[proto][group][record_key] = value
 
-                    # category/group 별로 plot 그리기
-                    # TODO: delete all .html files in /html
-                    clear_directory(HTML_DIR)
+                    # clear all HTML
+                    clear_directory(HTML_DIR) 
+
+                    # plot for each category/group
                     for category, data in records.items():
                         for group, group_data in data.items():
                             if category == "udp":

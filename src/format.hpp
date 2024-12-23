@@ -179,7 +179,6 @@ struct rdma_context {
 
     /* timestamp jump correction */
     uint64_t archive_cqe_hw_clock = 0;
-    uint64_t archive_cqe_steady_clock = 0;
 };
 
 union rdma_addr {
