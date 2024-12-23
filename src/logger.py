@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 from macro import *
 
 # Create the logs directory if it doesn't exist
-logging_level = logging.DEBUG  # INFO
+logging_level = logging.INFO  # INFO
 console_level = logging.ERROR  # ERROR
 
 if not os.path.exists(LOG_DIR):
