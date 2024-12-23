@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 import configparser
 import asyncio
 import time
@@ -268,6 +269,16 @@ def run_pingweave_server():
         logger.info("pingweave_server process received KeyboardInterrupt. Exiting.")
 
 
+def terminate_all(processes):
+    """
+    Terminates all running processes gracefully.
+    """
+    for process in processes:
+        if process.is_alive():
+            process.terminate()
+            logger.warning(f"Terminated process: {process.name}")
+
+
 if __name__ == "__main__":
     try:
         from collector import run_pingweave_collector  # Import the collector function
@@ -281,7 +292,11 @@ if __name__ == "__main__":
         logger.error(f"Could not import run_pingweave_plotter from plotter.py: {e}")
         sys.exit(1)
 
+    # List to hold all processes
+    processes = []
+
     try:
+        # Define processes
         process_server = multiprocessing.Process(
             target=run_pingweave_server, name="pingweave_server", daemon=True
         )
@@ -292,33 +307,33 @@ if __name__ == "__main__":
             target=run_pingweave_plotter, name="pingweave_plotter", daemon=True
         )
 
-        process_server.start()
-        process_collector.start()
-        process_plotter.start()
+        processes = [process_server, process_collector, process_plotter]
+
+        # Start processes
+        for process in processes:
+            process.start()
+
+        def signal_handler(sig, frame):
+            """
+            Signal handler to gracefully terminate all processes.
+            """
+            logger.info(f"Received signal {sig}. Terminating all processes...")
+            terminate_all(processes)
+            sys.exit(0)
+
+        # Register signal handlers
+        signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # Handle termination signals
 
         while True:
-            if not process_server.is_alive():
-                logger.warning("pingweave_server has stopped unexpectedly.")
-                break
-            if not process_collector.is_alive():
-                logger.warning("pingweave_collector has stopped unexpectedly.")
-                break
-            if not process_plotter.is_alive():
-                logger.warning("pingweave_plotter has stopped unexpectedly.")
-                break
+            for process in processes:
+                if not process.is_alive():
+                    logger.warning(f"{process.name} has stopped unexpectedly.")
+                    terminate_all(processes)
+                    sys.exit(1)
             time.sleep(1)
 
-    except KeyboardInterrupt:
-        logger.info("Main process received KeyboardInterrupt. Exiting.")
     except Exception as e:
         logger.error(f"Main loop exception: {e}. Exiting cleanly...")
     finally:
-        if process_server.is_alive():
-            process_server.terminate()
-            logger.warning("Terminated pingweave_server process.")
-        if process_collector.is_alive():
-            process_collector.terminate()
-            logger.warning("Terminated pingweave_collector process.")
-        if process_plotter.is_alive():
-            process_plotter.terminate()
-            logger.warning("Terminated pingweave_plotter process.")
+        terminate_all(processes)
