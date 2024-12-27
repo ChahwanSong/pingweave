@@ -47,6 +47,7 @@ def map_value_to_color_index_ping_delay(value, steps):
         logger.error(f"map_value error: {steps}")
         exit(1)
 
+
 # value to color index mapping for ping results
 def map_value_to_color_index_success_ratio(value, steps):
     if value < -1:
@@ -64,7 +65,8 @@ def map_value_to_color_index_success_ratio(value, steps):
     else:
         logger.error(f"map_value error: {steps}")
         exit(1)
-        
+
+
 # global logics
 try:
     # Redis
@@ -163,11 +165,20 @@ def clear_directory(directory_path):
         logger.error(f"An error occurred: {e}")
 
 
-def plot_heatmap_value(records: list, value_name: str, time_name: str, steps: list, tick_steps: list, map_func, outname: str):
+def plot_heatmap_value(
+    records: list,
+    value_name: str,
+    time_name: str,
+    steps: list,
+    tick_steps: list,
+    map_func,
+    outname: str,
+):
     # sanity check
     if len(tick_steps) != len(colorscale):
-        logger.error(f"Length of tick_steps must be same with that of colorscale: {tick_steps} vs {colorscale}")
-    
+        logger.error(
+            f"Length of tick_steps must be same with that of colorscale: {tick_steps} vs {colorscale}"
+        )
 
     # dataframe
     df = pd.DataFrame(records)
@@ -208,7 +219,6 @@ def plot_heatmap_value(records: list, value_name: str, time_name: str, steps: li
     # function vectorize
     vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
     z_colors = vectorized_map_func(z_values)
-
 
     # cell number calc
     num_x = len(pivot_table.columns)
@@ -354,7 +364,7 @@ def plot_heatmap_rdma(data, outname="result"):
     ratio_steps = [1, 0.9, 0.5]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
     ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
-    
+
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -460,7 +470,7 @@ async def pingweave_plotter():
     try:
         while True:
             if not check_ip_active(control_host):
-                logger.warn(
+                logger.warning(
                     f"No active interface for controller host {control_host}. Exit..."
                 )
                 exit(1)
@@ -553,7 +563,7 @@ async def pingweave_plotter():
                                     records[proto][group][record_key] = value
 
                     # clear all HTML
-                    clear_directory(HTML_DIR) 
+                    clear_directory(HTML_DIR)
 
                     # plot for each category/group
                     for category, data in records.items():

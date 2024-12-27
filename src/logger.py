@@ -10,7 +10,6 @@ console_level = logging.ERROR  # ERROR
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
-
 def initialize_pingweave_logger(
     host: str, middlename: str = "server", max_MB=30, enable_console=True):
     logger = logging.getLogger(f"pingweave_{middlename}_{host}")
@@ -24,7 +23,7 @@ def initialize_pingweave_logger(
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=int(max_MB) * 1024 * 1024,
-        backupCount=0,
+        backupCount=1,
     )
     file_handler.setLevel(logging_level)  # >=INFO to file
 
@@ -34,6 +33,7 @@ def initialize_pingweave_logger(
     )
 
     file_handler.setFormatter(formatter)
+    # if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
     logger.addHandler(file_handler)
     
     if enable_console:

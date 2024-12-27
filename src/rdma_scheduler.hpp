@@ -14,10 +14,12 @@ class RdmaMsgScheduler : public MsgScheduler {
         : MsgScheduler(ip, logger) {}
     ~RdmaMsgScheduler() {}
 
-    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result, uint64_t& time_sleep_us) {
+    int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result,
+             uint64_t& time_sleep_us) {
         auto load_now = std::chrono::steady_clock::now();
-        auto load_elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(
-            load_now - last_load_time);
+        auto load_elapsed_time =
+            std::chrono::duration_cast<std::chrono::seconds>(load_now -
+                                                             last_load_time);
 
         // Check the time to load the address_store
         if (load_elapsed_time.count() > LOAD_CONFIG_INTERVAL_SEC) {
@@ -38,24 +40,25 @@ class RdmaMsgScheduler : public MsgScheduler {
                 time_sleep_us = 0;
                 return 1;  // Success
             } else {
-                time_sleep_us = 1000000; // if no addr to send, sleep 1 second
+                time_sleep_us = 1000000;  // if no addr to send, sleep 1 second
                 return 0;  // Failure: No address information available
             }
         } else {
-            time_sleep_us = inter_ping_interval_us - ping_elapsed_time.count(); //
+            time_sleep_us =
+                inter_ping_interval_us - ping_elapsed_time.count();  //
             return 0;  // Failure: Called too soon
         }
     }
 
    private:
     rdmaAddressInfo_t addressInfo;
-    
+
     void load_address_info() {
         // start with clean-slate
         rdmaAddressInfo_t addressInfoNew;
         addr_idx = 0;
 
-        try {            
+        try {
             // Load pinglist.yaml
             std::ifstream ifs_pinglist(get_source_directory() +
                                        DIR_DOWNLOAD_PATH + "/pinglist.yaml");
@@ -97,9 +100,8 @@ class RdmaMsgScheduler : public MsgScheduler {
                 }
             }
 
-            logger->debug(
-                "Loaded #{} relevant addresses from pinglist YAML.",
-                addressInfoNew.size());
+            logger->debug("Loaded #{} relevant addresses from pinglist YAML.",
+                          addressInfoNew.size());
 
             // save the new address info
             addressInfo.clear();
@@ -117,12 +119,14 @@ class RdmaMsgScheduler : public MsgScheduler {
             logger->debug("Interval btw ping: {} microseconds",
                           inter_ping_interval_us);
         } catch (const std::exception& e) {
-            logger->error(
-                "(Retry {}/{}) Failed to load and parse YAML file: {}",
-                load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
             ++load_yaml_retry_cnt;
+            logger->warn("Failed to load YAML (retry {}/{}). ERROR Msg: {}",
+                         load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
             if (load_yaml_retry_cnt >= MAX_RETRY_LOAD_YAML) {
                 // clear if successively failed >= MAX_RETRY_LOAD_YAML times
+                logger->info(
+                    "Clear address information since YAML loading is failed "
+                    "more than 3 times.");
                 addressInfo.clear();
                 load_yaml_retry_cnt = 0;
             }

@@ -93,12 +93,15 @@ class UdpMsgScheduler : public MsgScheduler {
             logger->debug("Interval btw ping: {} microseconds",
                           inter_ping_interval_us);
         } catch (const std::exception& e) {
-            logger->error(
+            ++load_yaml_retry_cnt;
+            logger->warn(
                 "(Retry {}/{}) Failed to load and parse YAML file: {}",
                 load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
-            ++load_yaml_retry_cnt;
             if (load_yaml_retry_cnt >= MAX_RETRY_LOAD_YAML) {
                 // clear if successively failed >= MAX_RETRY_LOAD_YAML times
+                logger->info(
+                    "Clear address information since YAML loading is failed "
+                    "more than 3 times.");
                 addressInfo.clear();
                 load_yaml_retry_cnt = 0;
             }

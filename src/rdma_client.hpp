@@ -5,6 +5,9 @@
 #include "rdma_ping_msg.hpp"
 #include "rdma_scheduler.hpp"
 
+// BUG FIX: IB CQE timestamp fluctuates ~ 2**33
+std::atomic<uint64_t> client_archive_cqe_hw_clock = 0;
+
 // Function to handle received messages
 void handle_received_message(rdma_context* ctx_rx,
                              const union rdma_pongmsg_t& pong_msg,
@@ -19,8 +22,8 @@ void handle_received_message(rdma_context* ctx_rx,
         if (!ping_table->update_pong_info(pong_msg.x.pingid, recv_time,
                                           UINT64_MAX, cqe_time,
                                           ctx_rx->completion_timestamp_mask)) {
-            logger->warn("PONG ({}): No entry in ping_table.",
-                         pong_msg.x.pingid);
+            logger->debug("PONG ({}): No entry in ping_table.",
+                          pong_msg.x.pingid);
         }
     } else if (pong_msg.x.opcode == PINGWEAVE_OPCODE_ACK) {
         // Handle ACK message
@@ -28,8 +31,8 @@ void handle_received_message(rdma_context* ctx_rx,
                       pong_msg.x.pingid, pong_msg.x.server_delay);
         if (!ping_table->update_ack_info(pong_msg.x.pingid,
                                          pong_msg.x.server_delay)) {
-            logger->warn("PONG_ACK ({}): No entry in ping_table.",
-                         pong_msg.x.pingid);
+            logger->debug("PONG_ACK ({}, {}): No entry in ping_table.",
+                          pong_msg.x.pingid);
         }
     } else {
         logger->error("Unknown opcode received: {}", pong_msg.x.opcode);
@@ -71,18 +74,20 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-                
+
                 /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                if (ctx_rx->archive_cqe_hw_clock < cqe_time) {
-                    ctx_rx->archive_cqe_hw_clock = cqe_time;
+                if (client_archive_cqe_hw_clock.load() < cqe_time) {
+                    client_archive_cqe_hw_clock.store(cqe_time);
                 } else {
                     /**
                      * In case of Infiniband, HW timestamp sometimes fluctuates
-                     * like 8589934592 (2**33). We try to adjust it.  
+                     * like 8589934592 (2**33). We try to adjust it.
                      */
-                    logger->debug("Original cqe_time: {}", cqe_time);
-                    auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                    ctx_rx->archive_cqe_hw_clock = adjusted_cqe_time;
+                    auto adjusted_cqe_time =
+                        cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
+                    logger->debug("Original cqe_time: {}, adjusted: {}",
+                                  cqe_time, adjusted_cqe_time);
+                    client_archive_cqe_hw_clock.store(adjusted_cqe_time);
                     cqe_time = adjusted_cqe_time;
                 }
                 /*--------------------------------------*/
@@ -225,18 +230,20 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
-                
+
                 /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                if (ctx_tx->archive_cqe_hw_clock < cqe_time) {
-                    ctx_tx->archive_cqe_hw_clock = cqe_time;
+                if (client_archive_cqe_hw_clock.load() < cqe_time) {
+                    client_archive_cqe_hw_clock.store(cqe_time);
                 } else {
                     /**
                      * In case of Infiniband, HW timestamp sometimes fluctuates
-                     * like 8589934592 (2**33). We try to adjust it.  
+                     * like 8589934592 (2**33). We try to adjust it.
                      */
-                    logger->debug("Original cqe_time: {}", cqe_time);
-                    auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                    ctx_tx->archive_cqe_hw_clock = adjusted_cqe_time;
+                    auto adjusted_cqe_time =
+                        cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
+                    logger->debug("Original cqe_time: {}, adjusted: {}",
+                                  cqe_time, adjusted_cqe_time);
+                    client_archive_cqe_hw_clock.store(adjusted_cqe_time);
                     cqe_time = adjusted_cqe_time;
                 }
                 /*--------------------------------------*/
@@ -592,7 +599,8 @@ void rdma_client(const std::string& ipv4) {
     std::shared_ptr<spdlog::logger> ping_table_logger = initialize_logger(
         ping_table_logname, DIR_LOG_PATH, LOG_LEVEL_PING_TABLE, LOG_FILE_SIZE,
         LOG_FILE_EXTRA_NUM);
-    RdmaPinginfoMap ping_table(ping_table_logger, &client_queue, 1000);
+    RdmaPinginfoMap ping_table(ping_table_logger, &client_queue,
+                               PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS);
 
     // Initialize RDMA contexts
     rdma_context ctx_tx, ctx_rx;

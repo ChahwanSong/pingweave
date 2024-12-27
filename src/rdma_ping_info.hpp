@@ -214,10 +214,6 @@ class RdmaPinginfoMap {
              * In this case, we just report the network delay but make logging
              * with a warning message.
              */
-            uint64_t network_rtt =
-                ping_info.network_delay > ping_info.server_delay
-                    ? ping_info.network_delay - ping_info.server_delay
-                    : ping_info.network_delay;
             // sanity check
             if (ping_info.network_delay <= ping_info.server_delay) {
                 logger->warn(
@@ -226,7 +222,12 @@ class RdmaPinginfoMap {
                     ping_info.pingid, ping_info.network_delay,
                     ping_info.server_delay);
             }
-
+            
+            uint64_t network_rtt =
+                ping_info.network_delay > ping_info.server_delay
+                    ? ping_info.network_delay - ping_info.server_delay
+                    : ping_info.network_delay;
+            
             // ping delay of purely server's processing part
             uint64_t server_process_time = ping_info.server_delay;
 

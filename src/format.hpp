@@ -176,9 +176,6 @@ struct rdma_context {
     union ibv_gid gid;
     char wired_gid[33];
     char parsed_gid[33];
-
-    /* timestamp jump correction */
-    uint64_t archive_cqe_hw_clock = 0;
 };
 
 union rdma_addr {

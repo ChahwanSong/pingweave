@@ -4,6 +4,9 @@
 #include "rdma_ping_info.hpp"
 #include "rdma_ping_msg.hpp"
 
+// BUG FIX: IB CQE timestamp fluctuates ~ 2**33
+std::atomic<uint64_t> server_archive_cqe_hw_clock = 0;
+
 void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
@@ -49,16 +52,16 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
                     
                     /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                    if (ctx_rx->archive_cqe_hw_clock < cqe_time) {
-                        ctx_rx->archive_cqe_hw_clock = cqe_time;
+                    if (server_archive_cqe_hw_clock.load() < cqe_time) {
+                        server_archive_cqe_hw_clock.store(cqe_time);
                     } else {
                         /**
                          * In case of Infiniband, HW timestamp sometimes fluctuates
                          * like 8589934592 (2**33). We try to adjust it.  
                          */
-                        logger->debug("Original cqe_time: {}", cqe_time);
                         auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                        ctx_rx->archive_cqe_hw_clock = adjusted_cqe_time;
+                        logger->debug("Original cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
+                        server_archive_cqe_hw_clock.store(adjusted_cqe_time);
                         cqe_time = adjusted_cqe_time;
                     }
                     /*--------------------------------------*/
@@ -252,16 +255,16 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
             
             /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-            if (ctx_tx->archive_cqe_hw_clock < cqe_time) {
-                ctx_tx->archive_cqe_hw_clock = cqe_time;
+            if (server_archive_cqe_hw_clock.load() < cqe_time) {
+                server_archive_cqe_hw_clock.store(cqe_time);
             } else {
                 /**
                  * In case of Infiniband, HW timestamp sometimes fluctuates
                  * like 8589934592 (2**33). We try to adjust it.  
                  */
-                logger->debug("Original cqe_time: {}", cqe_time);
                 auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                ctx_tx->archive_cqe_hw_clock = adjusted_cqe_time;
+                logger->debug("Original cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
+                server_archive_cqe_hw_clock.store(adjusted_cqe_time);
                 cqe_time = adjusted_cqe_time;
             }
             /*--------------------------------------*/

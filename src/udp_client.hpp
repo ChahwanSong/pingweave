@@ -42,7 +42,8 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                 }
             } else {
                 // sleep until next ping schedule
-                std::this_thread::sleep_for(std::chrono::microseconds(time_sleep_us));
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(time_sleep_us));
             }
         }
     } catch (const std::exception& e) {
@@ -68,7 +69,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 
             uint64_t recv_time_steady = get_current_timestamp_steady();
             if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
-                logger->warn("PONG ({}) error occurs.");
+                logger->warn("PONG (pingid: {}) error occurs.", pingid);
                 continue;
             }
         }
@@ -184,7 +185,8 @@ void udp_client(const std::string& ipv4) {
     std::shared_ptr<spdlog::logger> ping_table_logger = initialize_logger(
         ping_table_logname, DIR_LOG_PATH, LOG_LEVEL_PING_TABLE, LOG_FILE_SIZE,
         LOG_FILE_EXTRA_NUM);
-    UdpPinginfoMap ping_table(ping_table_logger, &client_queue, 1000);
+    UdpPinginfoMap ping_table(ping_table_logger, &client_queue,
+                              PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS);
 
     // Initialize UDP contexts
     udp_context ctx_tx, ctx_rx;

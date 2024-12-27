@@ -61,7 +61,7 @@ int main() {
             if (pinglist_load_retry_cnt >= 0 &&
                 ++pinglist_load_retry_cnt < 10) {
                 spdlog::warn(
-                    "Reload pinglist is failed (retry count: {}). Retry after 3 seconds.",
+                    "Reload pinglist is failed. Retry after 3 seconds (retry {}/10).",
                     pinglist_load_retry_cnt);
                 std::this_thread::sleep_for(std::chrono::seconds(3));
                 continue;

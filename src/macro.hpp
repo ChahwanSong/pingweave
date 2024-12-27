@@ -31,16 +31,19 @@ const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 const static int QUEUE_SIZE = (1 << 16);     // large enough
 const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
 
-// Ping interval / Report interval
-// PING_INTERVAL_US is the ping interval between each src-dst pair.
+// Ping interval (for each src-dst pair) / Report interval
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds
 const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 10;    // seconds
+
+// Table expiry timeout
+const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS = 1000;
+const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS = 1000;
 
 // port that UDP server will listen
 const static int PINGWEAVE_UDP_PORT_CLIENT = 33335;
 const static int PINGWEAVE_UDP_PORT_SERVER = 33336; // both TX & RX
 
-// HW Timestamp correction factor
+// IB HW Timestamp correction factor
 const static uint64_t PINGWEAVE_IB_HW_ADJUST_TIME = 1ULL << 33;
 
 inline std::string get_source_directory() {
