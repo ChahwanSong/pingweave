@@ -54,14 +54,14 @@ def map_value_to_color_index_success_ratio(value, steps):
         return 0  # black
     elif -1 <= value < 0:
         return 1  # purple
-    elif float(steps[0]) <= value <= 1:
-        return 2  # green
-    elif float(steps[1]) <= value < float(steps[0]):
-        return 3  # yellow
-    elif float(steps[2]) <= value < float(steps[1]):
-        return 4  # orange
-    elif 0 <= value < float(steps[2]):
-        return 5  # red
+    elif 0 <= value < float(steps[0]):
+        return 2 # red
+    elif float(steps[0]) <= value < float(steps[1]):
+        return 3 # orange
+    elif float(steps[1]) <= value < float(steps[2]):
+        return 4 # yellow
+    elif float(steps[2]) <= value <= 1:
+        return 5 # green
     else:
         logger.error(f"map_value error: {steps}")
         exit(1)
@@ -273,9 +273,9 @@ def plot_heatmap_value(
 
 def plot_heatmap_udp(data, outname="result"):
     delay_steps = [500000, 2000000, 10000000]
-    ratio_steps = [1, 0.9, 0.5]
+    ratio_steps = [0.0, 0.3, 0.6]
     delay_tick_steps = ["No Data", "Failure", "~500µs", "~2ms", "~10ms", ">10ms"]
-    ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
+    ratio_tick_steps = ["No Data", "Failure", "0%", "30%", "60%", "100%"]
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
