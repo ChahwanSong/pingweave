@@ -124,7 +124,7 @@ class RdmaMsgScheduler : public MsgScheduler {
                          load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
             if (load_yaml_retry_cnt >= MAX_RETRY_LOAD_YAML) {
                 // clear if successively failed >= MAX_RETRY_LOAD_YAML times
-                logger->info(
+                logger->warn(
                     "Clear address information since YAML loading is failed "
                     "more than 3 times.");
                 addressInfo.clear();

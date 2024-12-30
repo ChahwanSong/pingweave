@@ -74,9 +74,8 @@ class UdpPinginfoMap {
         auto ping_info = it->second.value;
 
         // client delay
-        ping_info.network_delay =
-            calc_time_delta_with_modulo(ping_info.network_delay, recv_time,
-                                        PINGWEAVE_TIME_CALC_MODULO, logger);
+        ping_info.network_delay = calc_time_delta_with_bitwrap(
+            ping_info.network_delay, recv_time, UINT64_MAX);
 
         // logging
         logger->debug("{},{},{},{}", ping_info.pingid, ping_info.dstip,

@@ -130,6 +130,7 @@ class RdmaPinginfoMap {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
+            // failure
             return false;
         }
 
@@ -158,6 +159,8 @@ class RdmaPinginfoMap {
 
         // condition to record
         logging(it->second.value);
+
+        // success
         return true;
     }
 

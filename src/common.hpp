@@ -59,6 +59,8 @@ uint64_t get_current_timestamp_ns();
 std::string timestamp_ns_to_string(uint64_t timestamp_ns);
 std::string get_current_timestamp_string();
 uint64_t get_current_timestamp_steady();
+uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
+                                     const uint64_t &mask)
 uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
                                      const uint64_t &modulo,
                                      std::shared_ptr<spdlog::logger> logger);

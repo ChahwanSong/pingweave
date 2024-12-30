@@ -24,7 +24,7 @@ const static int RX_DEPTH = 1;       // enough?
 const static int GID_INDEX = 3;      // by default 0 (infiniband & RoCE)
 const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
 const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
-const static int RDMA_TRAFFIC_CLASS = (26 << 2 | 2);       // DSCP value = 106
+const static int RDMA_TRAFFIC_CLASS = 0; // (26 << 2 | 2); // DSCP value = 106
 const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 
 // Params for internal message queue btw threads
@@ -33,7 +33,7 @@ const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
 
 // Ping interval (for each src-dst pair) / Report interval
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds
-const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 10;    // seconds
+const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 11;    // seconds
 
 // Table expiry timeout
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS = 1000;

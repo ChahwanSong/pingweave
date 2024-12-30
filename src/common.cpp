@@ -49,7 +49,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         config = fkyaml::node::deserialize(ifs);
         spdlog::debug("Pinglist.yaml loaded successfully.");
     } catch (const std::exception &e) {
-        spdlog::error("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
+        spdlog::warn("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
                       e.what());
         return true;
     }
@@ -61,7 +61,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
             return true;
         }
     } catch (const std::exception &e) {
-        spdlog::error("Failed to load a pinglist.yaml - fkyaml:empty: {}",
+        spdlog::warn("Failed to load a pinglist.yaml - fkyaml:empty: {}",
                       e.what());
         return true;
     }
@@ -316,7 +316,20 @@ uint64_t get_current_timestamp_steady() {
     return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000LL + ts.tv_nsec;
 }
 
-// calculate time difference with considering bit wrap-around
+// calculate time difference with considering bit wrap-around (UDP)
+uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1,
+                                             const uint64_t &t2,
+                                             const uint64_t &mask) {
+    uint64_t delta;
+    if (t2 >= t1) {  // no wrap around
+        delta = t2 - t1;
+    } else {  // wrap around
+        delta = (mask - t1 + 1) + t2;
+    }
+    return delta;
+}
+
+// calculate time difference with considering bit wrap-around (RDMA)
 uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
                                      const uint64_t &modulo,
                                      std::shared_ptr<spdlog::logger> logger) {
