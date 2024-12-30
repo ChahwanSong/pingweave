@@ -116,7 +116,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 } else {
                     logger->error("Unexpected opcode: {}",
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("Unexpected opcode");
+                    throw std::runtime_error("rx cqe - Unexpected opcode");
                 }
 
                 ret = ibv_next_poll(ctx_rx->cq_s.cq_ex);
@@ -127,16 +127,16 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 ibv_end_poll(ctx_rx->cq_s.cq_ex);
             } else {  // nothing to poll
                 logger->error("RX: CQE poll receives nothing");
-                throw std::runtime_error("Failed during CQ polling");
+                throw std::runtime_error("rx cqe - Failed during CQ polling");
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
             num_cqes = ibv_poll_cq(pingweave_cq(ctx_rx), BATCH_CQE, wc_array);
 
             if (num_cqes < 0) {
-                throw std::runtime_error("Failed to poll CQ");
+                throw std::runtime_error("rx cqe - Failed to poll CQ");
             } else if (num_cqes == 0) {  // no completion
-                throw std::runtime_error("Failed during CQ polling");
+                throw std::runtime_error("rx cqe - Failed during CQ polling");
             }
 
             for (int i = 0; i < num_cqes; ++i) {
@@ -173,7 +173,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                     logger->error("[CQE] RX WR - status: {}, opcode: {}",
                                   ibv_wc_status_str(wc.status),
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("RX WR failure");
+                    throw std::runtime_error("rx cqe - RX WR failure");
                 }
             }
         }
@@ -185,7 +185,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
         if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             logger->error("Couldn't register CQE notification");
             throw std::runtime_error(
-                "Failed to post cqe request notification.");
+                "rx cqe - Failed to post cqe request notification.");
         }
 
     } catch (const std::exception& e) {
@@ -266,7 +266,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                     logger->error("[CQE] TX WR - status: {}, opcode: {}",
                                   ibv_wc_status_str(wc.status),
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("TX WR failure");
+                    throw std::runtime_error("tx cqe - TX WR failure");
                 }
 
                 // poll next event
@@ -285,7 +285,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
             num_cqes = ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
             if (num_cqes < 0) {
                 logger->error("Failed to poll CQ");
-                throw std::runtime_error("Failed to poll CQ");
+                throw std::runtime_error("tx cqe - Failed to poll CQ");
             } else if (num_cqes == 0) {  // no completion
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
                 return;
@@ -309,7 +309,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                     logger->error("[CQE] TX WR - status: {}, opcode: {}",
                                   ibv_wc_status_str(wc.status),
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("TX WR failure");
+                    throw std::runtime_error("tx cqe - TX WR failure");
                 }
             }
         }
@@ -321,7 +321,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
         if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
             logger->error("Couldn't register CQE notification");
             throw std::runtime_error(
-                "Failed to post cqe request notification.");
+                "tx cqe - Failed to post cqe request notification.");
         }
 
     } catch (const std::exception& e) {
@@ -358,7 +358,7 @@ void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
             // Wait for the next CQE
             if (wait_for_cq_event(ctx_rx, logger)) {
                 logger->error("Failed during CQ event waiting");
-                throw std::runtime_error("Failed during CQ event waiting");
+                throw std::runtime_error("rx thread - Failed during CQ event waiting");
             }
 
             // Process RX CQEs
@@ -418,7 +418,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), cqe_time: {}, dst_GID:{}",
+                    "{}), Timestamp: {}, dst_GID:{}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
                     timestamp_ns_to_string(send_time_system),
                     parsed_gid(&dst_addr.x.gid));
@@ -477,7 +477,7 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
             // Wait for the next CQE
             if (wait_for_cq_event(ctx_tx, logger)) {
                 logger->error("Failed during CQ event waiting");
-                throw std::runtime_error("Failed during CQ event waiting");
+                throw std::runtime_error("tx cqe - Failed during CQ event waiting");
             }
 
             // Process TX CQEs
@@ -609,7 +609,7 @@ void rdma_client(const std::string& ipv4) {
     // Initialize RDMA contexts
     rdma_context ctx_tx, ctx_rx;
     if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logger)) {
-        throw std::runtime_error("Failed to initialize RDMA contexts.");
+        throw std::runtime_error("Client main - Failed to initialize RDMA contexts.");
     }
 
     // Start the Result thread

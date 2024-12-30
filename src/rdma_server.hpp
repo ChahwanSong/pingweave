@@ -188,7 +188,7 @@ int server_process_pong_cqe(struct rdma_context* ctx_tx,
                             const struct ibv_wc& wc, const uint64_t& cqe_time,
                             PingMsgMap* ping_table,
                             std::shared_ptr<spdlog::logger> logger) {
-    logger->debug("[CQE] PONG's pingID: {}", wc.wr_id);
+    logger->debug("[CQE] PONG's pingID: {}, cqe_time: {}", wc.wr_id, cqe_time);
     union rdma_pingmsg_t ping_msg = {0};
 
     if (ping_table->get(wc.wr_id, ping_msg)) {
@@ -278,7 +278,7 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             if (wc.opcode == IBV_WC_SEND) {
                 // PONG ACK's CQE -> ignore
                 if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
-                    logger->debug("[CQE] CQE of ACK. Do nothing.");
+                    logger->debug("[CQE] CQE of ACK. cqe_time: {}. Do nothing.", cqe_time);
                     ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                     continue;
                 }
