@@ -145,26 +145,40 @@ def read_pinglist():
     except Exception as e:
         logger.error(f"Error loading pinglist: {e}")
 
-
-def clear_directory(directory_path):
+def clear_directory_conditional(directory_path: str, except_files: list):
     try:
-        # 디렉터리 내 항목들 가져오기
+        # get entries in directory
         for entry in os.listdir(directory_path):
             entry_path = os.path.join(directory_path, entry)
-            # 파일이면 삭제
+
+            # check except files
+            if entry in except_files:
+                logger.info(f"Skipping file or directory: {entry}")
+                continue
+
+            # delete if file 
             if os.path.isfile(entry_path) or os.path.islink(entry_path):
                 os.remove(entry_path)
-            # 서브 디렉토리면 통째로 삭제
+                logger.info(f"Deleted file: {entry_path}")
+
+            # delete if sub-directory
             elif os.path.isdir(entry_path):
-                # 재귀적으로 삭제
                 for root, dirs, files in os.walk(entry_path, topdown=False):
                     for file in files:
-                        os.remove(os.path.join(root, file))
+                        file_path = os.path.join(root, file)
+                        if os.path.basename(file_path) not in except_files:
+                            os.remove(file_path)
+                            logger.info(f"Deleted file: {file_path}")
                     for dir_name in dirs:
-                        os.rmdir(os.path.join(root, dir_name))
+                        dir_path = os.path.join(root, dir_name)
+                        os.rmdir(dir_path)
+                        logger.info(f"Deleted directory: {dir_path}")
                 os.rmdir(entry_path)
+                logger.info(f"Deleted directory: {entry_path}")
+
     except Exception as e:
         logger.error(f"An error occurred: {e}")
+
 
 
 def plot_heatmap_value(
@@ -176,108 +190,118 @@ def plot_heatmap_value(
     map_func,
     outname: str,
 ):
-    # sanity check
-    if len(tick_steps) != len(colorscale):
-        logger.error(
-            f"Length of tick_steps must be same with that of colorscale: {tick_steps} vs {colorscale}"
+    try:
+        # sanity check
+        if len(tick_steps) != len(colorscale):
+            logger.error(
+                f"Length of tick_steps must be same with that of colorscale: {tick_steps} vs {colorscale}"
+            )
+            raise RuntimeError("plotter tick_steps and colorscale mismatch")
+
+        # dataframe
+        df = pd.DataFrame(records)
+
+        # index mapping to ip address
+        source_ips = df["source"].unique()
+        destination_ips = df["destination"].unique()
+        source_ip_to_index = {ip: idx for idx, ip in enumerate(source_ips)}
+        destination_ip_to_index = {ip: idx for idx, ip in enumerate(destination_ips)}
+        df["source_idx"] = df["source"].map(source_ip_to_index)
+        df["destination_idx"] = df["destination"].map(destination_ip_to_index)
+
+        # create pivot table
+        pivot_table = df.pivot(
+            index="destination_idx", columns="source_idx", values=value_name
+        ).fillna(-1)
+        z_values = pivot_table.values
+
+        # time-series pivot table
+        time_pivot = df.pivot(
+            index="destination_idx", columns="source_idx", values=time_name
+        ).fillna("N/A")
+        time_values = time_pivot.values
+
+        # create text matrix
+        text_matrix = []
+        for i in range(z_values.shape[0]):
+            row = []
+            for j in range(z_values.shape[1]):
+                src = source_ips[j]
+                dst = destination_ips[i]
+                val = z_values[i][j]
+                time = time_values[i][j]
+                text = f"Src: {src}<br>Dst: {dst}<br>Value: {val}<br>Time: {time}"
+                row.append(text)
+            text_matrix.append(row)
+
+        # function vectorize
+        vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
+        z_colors = vectorized_map_func(z_values)
+
+        # cell number calc
+        num_x = len(pivot_table.columns)
+        num_y = len(pivot_table.index)
+
+        # dynamic xgap and ygap
+        xgap = max(1, int(20 / num_x))
+        ygap = max(1, int(20 / num_y))
+
+        # create a heatmap
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=z_colors,
+                colorscale=colorscale,
+                x=pivot_table.columns.values,
+                y=pivot_table.index.values,
+                zmin=0,  # setting min
+                zmax=len(tick_steps) - 1,  # setting max
+                xgap=xgap,  # dynamic horizontal space
+                ygap=ygap,  # dynamic vertical space
+                customdata=text_matrix,  # customdata <- text matrix
+                hovertemplate="%{customdata}",  # mouse cursor
+                hoverinfo="text",  # hover info
+                name="",  # empty trace name
+                colorbar=dict(
+                    tickmode="array",
+                    tickvals=list(range(len(tick_steps))),
+                    ticktext=tick_steps,
+                    title=value_name,
+                ),
+            )
         )
 
-    # dataframe
-    df = pd.DataFrame(records)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # index mapping to ip address
-    source_ips = df["source"].unique()
-    destination_ips = df["destination"].unique()
-    source_ip_to_index = {ip: idx for idx, ip in enumerate(source_ips)}
-    destination_ip_to_index = {ip: idx for idx, ip in enumerate(destination_ips)}
-    df["source_idx"] = df["source"].map(source_ip_to_index)
-    df["destination_idx"] = df["destination"].map(destination_ip_to_index)
-
-    # create pivot table
-    pivot_table = df.pivot(
-        index="destination_idx", columns="source_idx", values=value_name
-    ).fillna(-1)
-    z_values = pivot_table.values
-
-    # time-series pivot table
-    time_pivot = df.pivot(
-        index="destination_idx", columns="source_idx", values=time_name
-    ).fillna("N/A")
-    time_values = time_pivot.values
-
-    # create text matrix
-    text_matrix = []
-    for i in range(z_values.shape[0]):
-        row = []
-        for j in range(z_values.shape[1]):
-            src = source_ips[j]
-            dst = destination_ips[i]
-            val = z_values[i][j]
-            time = time_values[i][j]
-            text = f"Src: {src}<br>Dst: {dst}<br>Value: {val}<br>Time: {time}"
-            row.append(text)
-        text_matrix.append(row)
-
-    # function vectorize
-    vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
-    z_colors = vectorized_map_func(z_values)
-
-    # cell number calc
-    num_x = len(pivot_table.columns)
-    num_y = len(pivot_table.index)
-
-    # dynamic xgap and ygap
-    xgap = max(1, int(20 / num_x))
-    ygap = max(1, int(20 / num_y))
-
-    # create a heatmap
-    fig = go.Figure(
-        data=go.Heatmap(
-            z=z_colors,
-            colorscale=colorscale,
-            x=pivot_table.columns.values,
-            y=pivot_table.index.values,
-            zmin=0,  # setting min
-            zmax=len(tick_steps) - 1,  # setting max
-            xgap=xgap,  # dynamic horizontal space
-            ygap=ygap,  # dynamic vertical space
-            customdata=text_matrix,  # customdata <- text matrix
-            hovertemplate="%{customdata}",  # mouse cursor
-            hoverinfo="text",  # hover info
-            name="",  # empty trace name
-            colorbar=dict(
-                tickmode="array",
-                tickvals=list(range(len(tick_steps))),
-                ticktext=tick_steps,
-                title=value_name,
-            ),
+        # update layout
+        fig.update_layout(
+            xaxis_title="Source IP",
+            yaxis_title="Destination IP",
+            title=f"{outname} ({current_time})",
+            plot_bgcolor="white",
+            paper_bgcolor="white",
         )
-    )
 
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # hide an axis label
+        fig.update_xaxes(visible=True)
+        fig.update_yaxes(visible=True)
 
-    # update layout
-    fig.update_layout(
-        xaxis_title="Source IP",
-        yaxis_title="Destination IP",
-        title=f"{outname} ({current_time})",
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-    )
+        # save to HTML file
+        fig.write_html(f"{HTML_DIR}/{outname}.html")
 
-    # hide an axis label
-    fig.update_xaxes(visible=True)
-    fig.update_yaxes(visible=True)
-
-    # save to HTML file
-    fig.write_html(f"{HTML_DIR}/{outname}.html")
-
+        # return the path of HTML
+        return f"{HTML_DIR}/{outname}.html"
+    
+    except Exception as e:
+        logger.error(f"Exception: {e}")
+        return "" # return nothing if failure
 
 def plot_heatmap_udp(data, outname="result"):
     delay_steps = [500000, 2000000, 10000000]
     ratio_steps = [0.0, 0.3, 0.6]
     delay_tick_steps = ["No Data", "Failure", "~500µs", "~2ms", "~10ms", ">10ms"]
     ratio_tick_steps = ["No Data", "Failure", "0%", "30%", "60%", "100%"]
+    
+    output_files = []
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -320,7 +344,7 @@ def plot_heatmap_udp(data, outname="result"):
                 }
             )
     # network mean
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_mean",
         "ping_end_time",
@@ -328,9 +352,10 @@ def plot_heatmap_udp(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_mean",
-    )
+    ):
+        output_files.append(outname + "_network_mean")
     # network p50
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_p50",
         "ping_end_time",
@@ -338,9 +363,10 @@ def plot_heatmap_udp(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_p50",
-    )
+    ):
+        output_files.append(outname + "_network_p50")
     # network p99
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_p99",
         "ping_end_time",
@@ -348,9 +374,10 @@ def plot_heatmap_udp(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_p99",
-    )
+    ):
+        output_files.append(outname + "_network_p99")
     # success ratio
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "success_ratio",
         "ping_end_time",
@@ -358,15 +385,17 @@ def plot_heatmap_udp(data, outname="result"):
         ratio_tick_steps,
         map_value_to_color_index_success_ratio,
         outname + "_success_ratio",
-    )
-
+    ):
+        output_files.append(outname + "_success_ratio")
+    return output_files
 
 def plot_heatmap_rdma(data, outname="result"):
     delay_steps = [100000, 500000, 5000000]
-    ratio_steps = [1, 0.9, 0.5]
+    ratio_steps = [0, 0.3, 0.6]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
     ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
 
+    output_files = []
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
@@ -423,7 +452,7 @@ def plot_heatmap_rdma(data, outname="result"):
                 }
             )
     # network mean
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_mean",
         "ping_end_time",
@@ -431,9 +460,10 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_mean",
-    )
+    ):
+        output_files.append(outname + "_network_mean")
     # network p50
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_p50",
         "ping_end_time",
@@ -441,9 +471,10 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_p50",
-    )
+    ):
+        output_files.append(outname + "_network_p50")
     # network p99
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "network_p99",
         "ping_end_time",
@@ -451,9 +482,10 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
         outname + "_network_p99",
-    )
+    ):
+        output_files.append(outname + "_network_p99")
     # success ratio
-    plot_heatmap_value(
+    if plot_heatmap_value(
         records,
         "success_ratio",
         "ping_end_time",
@@ -461,7 +493,9 @@ def plot_heatmap_rdma(data, outname="result"):
         ratio_tick_steps,
         map_value_to_color_index_success_ratio,
         outname + "_success_ratio",
-    )
+    ):
+        output_files.append(outname + "_success_ratio")    
+    return output_files 
 
 
 async def pingweave_plotter():
@@ -564,16 +598,18 @@ async def pingweave_plotter():
                                         )
                                     records[proto][group][record_key] = value
 
-                    # clear all HTML
-                    clear_directory(HTML_DIR)
-
                     # plot for each category/group
+                    new_file_list = []
                     for category, data in records.items():
                         for group, group_data in data.items():
                             if category == "udp":
-                                plot_heatmap_udp(group_data, f"{category}_{group}")
+                                new_file_list += plot_heatmap_udp(group_data, f"{category}_{group}")
                             elif category == "rdma":
-                                plot_heatmap_rdma(group_data, f"{category}_{group}")
+                                new_file_list += plot_heatmap_rdma(group_data, f"{category}_{group}")
+                    
+                    # clear all HTML
+                    clear_directory_conditional(HTML_DIR, new_file_list)
+
 
             except KeyError as e:
                 logger.error(f"Plotter - Missing key error: {e}")
