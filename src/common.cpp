@@ -323,7 +323,7 @@ uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
     // enforce the wrap bit-around with modulo
     uint64_t t1_modulo = t1 % modulo;
     uint64_t t2_modulo = t2 % modulo;
-    uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1) % modulo; 
+    uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1_modulo) % modulo; 
 
     // // for debugging
     // logger->debug("Calculate time diff - original: {}, modulo: {}", t2 - t1, t_diff_modulo);
