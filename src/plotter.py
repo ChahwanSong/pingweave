@@ -610,7 +610,6 @@ async def pingweave_plotter():
                     # clear all HTML
                     clear_directory_conditional(HTML_DIR, new_file_list)
 
-
             except KeyError as e:
                 logger.error(f"Plotter - Missing key error: {e}")
             except TypeError as e:

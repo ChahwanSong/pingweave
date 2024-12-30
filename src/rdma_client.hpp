@@ -57,7 +57,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
 
             while (!ret) {
                 ++num_cqes;
-                logger->debug("CQ Event loop {}", num_cqes);
+                logger->trace("CQ Event loop {}", num_cqes);
                 has_events = true;
 
                 // Extract WC information
@@ -75,30 +75,32 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
 
-                /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                if (client_archive_cqe_hw_clock.load() < cqe_time) {
-                    client_archive_cqe_hw_clock.store(cqe_time);
-                } else {
-                    /**
-                     * In case of Infiniband, HW timestamp sometimes fluctuates
-                     * like 8589934592 (2**33). We try to adjust it.
-                     */
-                    auto adjusted_cqe_time =
-                        cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                    logger->debug("Original cqe_time: {}, adjusted: {}",
-                                  cqe_time, adjusted_cqe_time);
-                    client_archive_cqe_hw_clock.store(adjusted_cqe_time);
-                    cqe_time = adjusted_cqe_time;
-                }
-                /*--------------------------------------*/
+                // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+                // if (client_archive_cqe_hw_clock.load() < cqe_time) {
+                //     client_archive_cqe_hw_clock.store(cqe_time);
+                // } else {
+                //     /**
+                //      * In case of Infiniband, HW timestamp sometimes fluctuates
+                //      * like 8589934592 (2**33). We try to adjust it.
+                //      */
+                //     auto adjusted_cqe_time =
+                //         cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
+                //     logger->debug(
+                //         "rx cqe - original cqe_time: {}, adjusted: {}",
+                //         cqe_time, adjusted_cqe_time);
+                //     client_archive_cqe_hw_clock.store(adjusted_cqe_time);
+                //     cqe_time = adjusted_cqe_time;
+                // }
+                // /*--------------------------------------*/
 
                 if (wc.opcode == IBV_WC_RECV) {
-                    logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
-
                     // Parse the received message
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&pong_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pongmsg_t));
+
+                    logger->debug("[CQE] RECV (ping ID: {}, wr_id: {})",
+                                  pong_msg.x.pingid, wc.wr_id);
 
                     // Post the next RECV WR
                     if (post_recv(ctx_rx, wc.wr_id, 1) == 0) {
@@ -213,7 +215,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
 
             while (!ret) {
                 ++num_cqes;
-                logger->debug("CQ Event loop {}", num_cqes);
+                logger->trace("CQ Event loop {}", num_cqes);
                 has_events = true;
 
                 // Process the current CQE
@@ -231,22 +233,24 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
 
-                /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                if (client_archive_cqe_hw_clock.load() < cqe_time) {
-                    client_archive_cqe_hw_clock.store(cqe_time);
-                } else {
-                    /**
-                     * In case of Infiniband, HW timestamp sometimes fluctuates
-                     * like 8589934592 (2**33). We try to adjust it.
-                     */
-                    auto adjusted_cqe_time =
-                        cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                    logger->debug("Original cqe_time: {}, adjusted: {}",
-                                  cqe_time, adjusted_cqe_time);
-                    client_archive_cqe_hw_clock.store(adjusted_cqe_time);
-                    cqe_time = adjusted_cqe_time;
-                }
-                /*--------------------------------------*/
+                // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
+                // if (client_archive_cqe_hw_clock.load() < cqe_time) {
+                //     client_archive_cqe_hw_clock.store(cqe_time);
+                // } else {
+                //     /**
+                //      * In case of Infiniband, HW timestamp sometimes fluctuates
+                //      * like 8589934592 (2**33). We try to adjust it.
+                //      */
+                //     auto adjusted_cqe_time =
+                //         cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
+                //     logger->debug(
+                //         "tx cqe - pingid: {}, original cqe_time: {}, adjusted: "
+                //         "{}",
+                //         wc.wr_id, cqe_time, adjusted_cqe_time);
+                //     client_archive_cqe_hw_clock.store(adjusted_cqe_time);
+                //     cqe_time = adjusted_cqe_time;
+                // }
+                // /*--------------------------------------*/
 
                 if (wc.opcode == IBV_WC_SEND) {
                     logger->debug(

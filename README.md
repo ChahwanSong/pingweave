@@ -4,6 +4,7 @@ PingWeave
 ## Prerequisites
 
 ### Common
+* c++17
 * ibverbs library (e.g., libibverbs) - "rdma-core" or "rdma-core-devel"
 * chronyd.service (NTP time synchronization) - to evict stale information 
 
@@ -50,3 +51,4 @@ port 0  # TCP/IP inactivate (optional)
     - just change `config/pingweave.ini` file.
 - Server
     - Restart (for now)
+
