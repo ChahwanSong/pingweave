@@ -30,7 +30,8 @@ config = configparser.ConfigParser()
 
 
 # value to color index mapping for ping results
-def map_value_to_color_index_ping_delay(value, steps):
+def map_value_to_color_index_ping_delay(value, steps: list):
+    assert(len(steps == 3))
     if value <= -1:
         return 0  # black
     elif -1 < value <= 0:
@@ -49,7 +50,8 @@ def map_value_to_color_index_ping_delay(value, steps):
 
 
 # value to color index mapping for ping results
-def map_value_to_color_index_success_ratio(value, steps):
+def map_value_to_color_index_success_ratio(value, steps: list):
+    assert(len(steps == 3))
     if value < -1:
         return 0  # black
     elif -1 <= value < 0:
@@ -236,7 +238,7 @@ def plot_heatmap_value(
             x=pivot_table.columns.values,
             y=pivot_table.index.values,
             zmin=0,  # setting min
-            zmax=len(tick_steps),  # setting max
+            zmax=len(tick_steps) - 1,  # setting max
             xgap=xgap,  # dynamic horizontal space
             ygap=ygap,  # dynamic vertical space
             customdata=text_matrix,  # customdata <- text matrix
@@ -264,8 +266,8 @@ def plot_heatmap_value(
     )
 
     # hide an axis label
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
+    fig.update_xaxes(visible=True)
+    fig.update_yaxes(visible=True)
 
     # save to HTML file
     fig.write_html(f"{HTML_DIR}/{outname}.html")
