@@ -52,18 +52,18 @@ def map_value_to_color_index_ping_delay(value, steps: list):
 # value to color index mapping for ping results
 def map_value_to_color_index_success_ratio(value, steps: list):
     assert(len(steps) == 3)
-    if value < -1:
+    if value <= -1:
         return 0  # black
-    elif -1 <= value < 0:
+    elif -1 < value < 0:
         return 1  # purple
     elif 0 <= value < float(steps[0]):
-        return 2 # red
+        return 5 # red
     elif float(steps[0]) <= value < float(steps[1]):
-        return 3 # orange
+        return 4 # orange
     elif float(steps[1]) <= value < float(steps[2]):
-        return 4 # yellow
+        return 3 # yellow
     elif float(steps[2]) <= value <= 1:
-        return 5 # green
+        return 2 # green
     else:
         logger.error(f"map_value error: {steps}")
         exit(1)
@@ -282,8 +282,8 @@ def plot_heatmap_value(
         )
 
         # hide an axis label
-        fig.update_xaxes(visible=True)
-        fig.update_yaxes(visible=True)
+        fig.update_xaxes(visible=True, showticklabels=False)
+        fig.update_yaxes(visible=True, showticklabels=False)
 
         # save to HTML file
         fig.write_html(f"{HTML_DIR}/{outname}.html")
