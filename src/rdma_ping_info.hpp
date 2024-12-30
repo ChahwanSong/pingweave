@@ -310,9 +310,10 @@ class RdmaPinginfoMap {
                     ping_info.recv_bitmap);
             } else {
                 logger->debug(
-                    "[Failed] Pingid {} (-> {}), recv cnt {} and bitmap {}.",
+                    "[Failed] Pingid {} (-> {}), recv cnt {}, ping_time {}, "
+                    "and bitmap {}.",
                     ping_info.pingid, ping_info.dstip, ping_info.recv_cnt,
-                    ping_info.recv_bitmap);
+                    ping_info.time_ping_send, ping_info.recv_bitmap);
 
                 // failure (packets might be lost)
                 if (!client_queue->try_enqueue(
