@@ -31,7 +31,7 @@ config = configparser.ConfigParser()
 
 # value to color index mapping for ping results
 def map_value_to_color_index_ping_delay(value, steps: list):
-    assert(len(steps == 3))
+    assert(len(steps) == 3)
     if value <= -1:
         return 0  # black
     elif -1 < value <= 0:
@@ -51,7 +51,7 @@ def map_value_to_color_index_ping_delay(value, steps: list):
 
 # value to color index mapping for ping results
 def map_value_to_color_index_success_ratio(value, steps: list):
-    assert(len(steps == 3))
+    assert(len(steps) == 3)
     if value < -1:
         return 0  # black
     elif -1 <= value < 0:
