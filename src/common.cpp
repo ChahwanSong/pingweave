@@ -325,12 +325,12 @@ uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
     uint64_t t2_modulo = t2 % modulo;
     uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1) % modulo; 
 
-    // for debugging
-    logger->info("Calculate time diff - original: {}, modulo: {}", t2 - t1, t_diff_modulo);
-    uint64_t t_diff = t2 - t1;
-    if (t_diff > (1ULL << 30) && t_diff < (1ULL << 33)) {
-        logger->error("Invalid time difference: {}, modulo: {}", t_diff, t_diff_modulo);
-    } 
+    // // for debugging
+    // logger->debug("Calculate time diff - original: {}, modulo: {}", t2 - t1, t_diff_modulo);
+    // uint64_t t_diff = t2 - t1;
+    // if (t_diff > (1ULL << 30) && t_diff < (1ULL << 33)) {
+    //     logger->debug("Invalid time difference: {}, modulo: {}", t_diff, t_diff_modulo);
+    // } 
 
     return t_diff_modulo;
 }
