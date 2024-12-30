@@ -111,10 +111,9 @@ class RdmaPinginfoMap {
              * longer than that. In this case, we handle the timestamp
              * accordingly.
              */
-            it->second.value.network_delay = calc_time_delta_with_bitwrap(
-                x, it->second.value.network_delay,
-                9223372036854775807LL  // CX-6 time mask = 2**63 - 1
-            );
+            it->second.value.network_delay =
+                calc_time_delta_with_modulo(x, it->second.value.network_delay,
+                                            PINGWEAVE_TIME_CALC_MODULO, logger);
         }
 
         // update recv bimap and cnt
@@ -127,8 +126,7 @@ class RdmaPinginfoMap {
     }
 
     bool update_pong_info(const Key& key, const uint64_t& recv_time,
-                          const uint64_t mask_recv, const uint64_t& cqe_time,
-                          const uint64_t& mask_cqe) {
+                          const uint64_t& cqe_time) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
@@ -136,12 +134,14 @@ class RdmaPinginfoMap {
         }
 
         // client delay
-        it->second.value.client_delay = calc_time_delta_with_bitwrap(
-            it->second.value.client_delay, recv_time, mask_recv);
+        it->second.value.client_delay = calc_time_delta_with_modulo(
+            it->second.value.client_delay, recv_time,
+            PINGWEAVE_TIME_CALC_MODULO, logger);
         // network delay
         if (it->second.value.network_delay != 0) {
-            it->second.value.network_delay = calc_time_delta_with_bitwrap(
-                it->second.value.network_delay, cqe_time, mask_cqe);
+            it->second.value.network_delay = calc_time_delta_with_modulo(
+                it->second.value.network_delay, cqe_time,
+                PINGWEAVE_TIME_CALC_MODULO, logger);
         } else {
             /**
              * NOTE: As the above case, if CQE of PONG's arrival is earlier
@@ -222,12 +222,12 @@ class RdmaPinginfoMap {
                     ping_info.pingid, ping_info.network_delay,
                     ping_info.server_delay);
             }
-            
+
             uint64_t network_rtt =
                 ping_info.network_delay > ping_info.server_delay
                     ? ping_info.network_delay - ping_info.server_delay
                     : ping_info.network_delay;
-            
+
             // ping delay of purely server's processing part
             uint64_t server_process_time = ping_info.server_delay;
 

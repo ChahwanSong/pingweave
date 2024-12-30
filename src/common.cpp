@@ -316,19 +316,38 @@ uint64_t get_current_timestamp_steady() {
     return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000LL + ts.tv_nsec;
 }
 
+// calculate time difference with considering bit wrap-around
+uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
+                                     const uint64_t &modulo,
+                                     std::shared_ptr<spdlog::logger> logger) {
+    // enforce the wrap bit-around with modulo
+    uint64_t t1_modulo = t1 % modulo;
+    uint64_t t2_modulo = t2 % modulo;
+    uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1) % modulo; 
+
+    // for debugging
+    logger->info("Calculate time diff - original: {}, modulo: {}", t2 - t1, t_diff_modulo);
+    uint64_t t_diff = t2 - t1;
+    if (t_diff > (1ULL << 30) && t_diff < (1ULL << 33)) {
+        logger->error("Invalid time difference: {}, modulo: {}", t_diff, t_diff_modulo);
+    } 
+
+    return t_diff_modulo;
+}
+
 /**
  * req_api: /result_rdma, /alarm, etc
  */
 int send_message_to_http_server(const std::string &server_ip, int server_port,
-                                 const std::string &message,
-                                 const std::string &req_api,
-                                 std::shared_ptr<spdlog::logger> logger) {
+                                const std::string &message,
+                                const std::string &req_api,
+                                std::shared_ptr<spdlog::logger> logger) {
     // create socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         logger->error("HTTP Socket creation failed! errno: {} - {}", errno,
                       strerror(errno));
-        return true; // fail
+        return true;  // fail
     }
 
     // set timeout (3 seconds, by default)
@@ -341,7 +360,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to set timeout! errno: {} - {}", errno,
                       strerror(errno));
         close(sock);
-        return true; // fail
+        return true;  // fail
     }
 
     // set http server address
@@ -352,7 +371,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Invalid server IP address: {}! errno: {} - {}",
                       server_ip, errno, strerror(errno));
         close(sock);
-        return true; // fail
+        return true;  // fail
     }
 
     // connect to server
@@ -361,7 +380,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Connection to server {}:{} failed! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return true; // fail
+        return true;  // fail
     }
 
     // construct HTTP request
@@ -380,7 +399,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to send request to {}:{}! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return true; // fail
+        return true;  // fail
     } else if (bytes_sent < static_cast<ssize_t>(request.size())) {
         logger->warn("HTTP Partial send: Only {}/{} bytes sent to {}:{}!",
                      bytes_sent, request.size(), server_ip, server_port);
@@ -392,7 +411,8 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
                       strerror(errno));
     }
 
-    logger->debug("Send HTTP message to {}:{} was successful.", server_ip, server_port);
+    logger->debug("Send HTTP message to {}:{} was successful.", server_ip,
+                  server_port);
 
     // success
     return false;

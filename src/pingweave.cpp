@@ -39,6 +39,12 @@ int main() {
     process_py_client.host = "null";
     process_py_server.host = "null";
 
+    // sanity check - table expiry timer
+    if (PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS > 2000) {
+        spdlog::error("PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS must be shorter than 2 seconds");
+        exit(EXIT_FAILURE);
+    }
+
     // Register signal handlers in the parent process only
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);

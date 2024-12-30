@@ -17,17 +17,16 @@ void handle_received_message(rdma_context* ctx_rx,
                              std::shared_ptr<spdlog::logger> logger) {
     if (pong_msg.x.opcode == PINGWEAVE_OPCODE_PONG) {
         // Handle PONG message
-        logger->debug("[CQE] -> Recv PONG ({}): recv_time {}, cqe_time:{}",
+        logger->debug("[CQE] -> Recv PONG ({}): recv_time: {}, cqe_time:{}",
                       pong_msg.x.pingid, recv_time, cqe_time);
         if (!ping_table->update_pong_info(pong_msg.x.pingid, recv_time,
-                                          UINT64_MAX, cqe_time,
-                                          ctx_rx->completion_timestamp_mask)) {
+                                          cqe_time)) {
             logger->debug("PONG ({}): No entry in ping_table.",
                           pong_msg.x.pingid);
         }
     } else if (pong_msg.x.opcode == PINGWEAVE_OPCODE_ACK) {
         // Handle ACK message
-        logger->debug("[CQE] -> Recv PONG_ACK ({}): server_delay {}",
+        logger->debug("[CQE] -> Recv PONG_ACK ({}): server_delay: {}",
                       pong_msg.x.pingid, pong_msg.x.server_delay);
         if (!ping_table->update_ack_info(pong_msg.x.pingid,
                                          pong_msg.x.server_delay)) {
@@ -80,7 +79,8 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 //     client_archive_cqe_hw_clock.store(cqe_time);
                 // } else {
                 //     /**
-                //      * In case of Infiniband, HW timestamp sometimes fluctuates
+                //      * In case of Infiniband, HW timestamp sometimes
+                //      fluctuates
                 //      * like 8589934592 (2**33). We try to adjust it.
                 //      */
                 //     auto adjusted_cqe_time =
@@ -238,13 +238,15 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 //     client_archive_cqe_hw_clock.store(cqe_time);
                 // } else {
                 //     /**
-                //      * In case of Infiniband, HW timestamp sometimes fluctuates
+                //      * In case of Infiniband, HW timestamp sometimes
+                //      fluctuates
                 //      * like 8589934592 (2**33). We try to adjust it.
                 //      */
                 //     auto adjusted_cqe_time =
                 //         cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
                 //     logger->debug(
-                //         "tx cqe - pingid: {}, original cqe_time: {}, adjusted: "
+                //         "tx cqe - pingid: {}, original cqe_time: {},
+                //         adjusted: "
                 //         "{}",
                 //         wc.wr_id, cqe_time, adjusted_cqe_time);
                 //     client_archive_cqe_hw_clock.store(adjusted_cqe_time);
@@ -358,7 +360,8 @@ void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
             // Wait for the next CQE
             if (wait_for_cq_event(ctx_rx, logger)) {
                 logger->error("Failed during CQ event waiting");
-                throw std::runtime_error("rx thread - Failed during CQ event waiting");
+                throw std::runtime_error(
+                    "rx thread - Failed during CQ event waiting");
             }
 
             // Process RX CQEs
@@ -418,9 +421,9 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), Timestamp: {}, dst_GID:{}",
+                    "{}), Timestamp: {}, send_time: {}, dst_GID:{}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
-                    timestamp_ns_to_string(send_time_system),
+                    timestamp_ns_to_string(send_time_system), send_time_steady,
                     parsed_gid(&dst_addr.x.gid));
 
                 // sanity check
@@ -477,7 +480,8 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
             // Wait for the next CQE
             if (wait_for_cq_event(ctx_tx, logger)) {
                 logger->error("Failed during CQ event waiting");
-                throw std::runtime_error("tx cqe - Failed during CQ event waiting");
+                throw std::runtime_error(
+                    "tx cqe - Failed during CQ event waiting");
             }
 
             // Process TX CQEs
@@ -609,7 +613,8 @@ void rdma_client(const std::string& ipv4) {
     // Initialize RDMA contexts
     rdma_context ctx_tx, ctx_rx;
     if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logger)) {
-        throw std::runtime_error("Client main - Failed to initialize RDMA contexts.");
+        throw std::runtime_error(
+            "Client main - Failed to initialize RDMA contexts.");
     }
 
     // Start the Result thread

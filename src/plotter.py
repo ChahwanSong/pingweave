@@ -152,29 +152,29 @@ def clear_directory_conditional(directory_path: str, except_files: list):
             entry_path = os.path.join(directory_path, entry)
 
             # check except files
-            if entry in except_files:
-                logger.info(f"Skipping file or directory: {entry}")
-                continue
+            entry_prefix = entry.split(".html")[0]
+            if entry_prefix not in except_files:
+                logger.info(f"Deleting a file or directory: {entry}")
+                
+                # delete if file 
+                if os.path.isfile(entry_path) or os.path.islink(entry_path):
+                    os.remove(entry_path)
+                    logger.info(f"Deleted file: {entry_path}")
 
-            # delete if file 
-            if os.path.isfile(entry_path) or os.path.islink(entry_path):
-                os.remove(entry_path)
-                logger.info(f"Deleted file: {entry_path}")
-
-            # delete if sub-directory
-            elif os.path.isdir(entry_path):
-                for root, dirs, files in os.walk(entry_path, topdown=False):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        if os.path.basename(file_path) not in except_files:
-                            os.remove(file_path)
-                            logger.info(f"Deleted file: {file_path}")
-                    for dir_name in dirs:
-                        dir_path = os.path.join(root, dir_name)
-                        os.rmdir(dir_path)
-                        logger.info(f"Deleted directory: {dir_path}")
-                os.rmdir(entry_path)
-                logger.info(f"Deleted directory: {entry_path}")
+                # delete if sub-directory
+                elif os.path.isdir(entry_path):
+                    for root, dirs, files in os.walk(entry_path, topdown=False):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            if os.path.basename(file_path) not in except_files:
+                                os.remove(file_path)
+                                logger.info(f"Deleted file: {file_path}")
+                        for dir_name in dirs:
+                            dir_path = os.path.join(root, dir_name)
+                            os.rmdir(dir_path)
+                            logger.info(f"Deleted directory: {dir_path}")
+                    os.rmdir(entry_path)
+                    logger.info(f"Deleted directory: {entry_path}")
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")

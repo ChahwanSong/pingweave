@@ -49,17 +49,20 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
                     cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-                    
+
                     // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
                     // if (server_archive_cqe_hw_clock.load() < cqe_time) {
                     //     server_archive_cqe_hw_clock.store(cqe_time);
                     // } else {
                     //     /**
-                    //      * In case of Infiniband, HW timestamp sometimes fluctuates
-                    //      * like 8589934592 (2**33). We try to adjust it.  
+                    //      * In case of Infiniband, HW timestamp sometimes
+                    //      fluctuates
+                    //      * like 8589934592 (2**33). We try to adjust it.
                     //      */
-                    //     auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                    //     logger->debug("rx cqe - original cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
+                    //     auto adjusted_cqe_time = cqe_time +
+                    //     PINGWEAVE_IB_HW_ADJUST_TIME; logger->debug("rx cqe -
+                    //     original cqe_time: {}, adjusted: {}", cqe_time,
+                    //     adjusted_cqe_time);
                     //     server_archive_cqe_hw_clock.store(adjusted_cqe_time);
                     //     cqe_time = adjusted_cqe_time;
                     // }
@@ -92,7 +95,8 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                 } else {
                     logger->error("Unexpected opcode: {}",
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("server_rx_cqe: Unexpected opcode in RX thread");
+                    throw std::runtime_error(
+                        "rx cqe - Unexpected opcode in RX thread");
                 }
                 ret = ibv_next_poll(ctx_rx->cq_s.cq_ex);
             }
@@ -102,7 +106,7 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                 ibv_end_poll(ctx_rx->cq_s.cq_ex);
             } else {  // nothing to poll
                 logger->error("RX: CQE poll receives nothing");
-                throw std::runtime_error("server_rx_cqe: Failed during CQ polling");
+                throw std::runtime_error("rx cqe - Failed during CQ polling");
             }
         } else {
             struct ibv_wc wc_array[BATCH_CQE];
@@ -110,10 +114,10 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
 
             if (num_cqes < 0) {
                 logger->error("Failed to poll CQ");
-                throw std::runtime_error("server_rx_cqe: Failed to poll CQ");
+                throw std::runtime_error("rx cqe - Failed to poll CQ");
             } else if (num_cqes == 0) {  // no completion
                 logger->error("CQE poll receives nothing");
-                throw std::runtime_error("server_rx_cqe: Failed during CQ polling");
+                throw std::runtime_error("rx cqe - Failed during CQ polling");
             }
 
             for (int i = 0; i < num_cqes; ++i) {
@@ -162,7 +166,8 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                 } else {
                     logger->error("Unexpected opcode: {}",
                                   static_cast<int>(wc.opcode));
-                    throw std::runtime_error("server_rx_cqe: Unexpected opcode in RX thread");
+                    throw std::runtime_error(
+                        "rx cqe - Unexpected opcode in RX thread");
                 }
             }
         }
@@ -174,7 +179,7 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
         if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
             logger->error("Couldn't register CQE notification");
             throw std::runtime_error(
-                "server_rx_cqe: Failed to post cqe request notification.");
+                "rx cqe - Failed to post cqe request notification.");
         }
 
     } catch (const std::exception& e) {
@@ -196,8 +201,10 @@ int server_process_pong_cqe(struct rdma_context* ctx_tx,
         union rdma_pongmsg_t pong_msg = {};
         pong_msg.x.opcode = PINGWEAVE_OPCODE_ACK;
         pong_msg.x.pingid = wc.wr_id;
-        pong_msg.x.server_delay = calc_time_delta_with_bitwrap(
-            ping_msg.x.time, cqe_time, ctx_tx->completion_timestamp_mask);
+        /** NOTE: that infiniband CQE timestamp fluctuates around 2**33.
+        So, we use bit wrap-around with 2**32 to ignore the effect. */
+        pong_msg.x.server_delay = calc_time_delta_with_modulo(
+            ping_msg.x.time, cqe_time, PINGWEAVE_TIME_CALC_MODULO, logger);
         logger->debug(
             "-> SEND post with ACK message pingid: {} to qpn: {}, gid: {}, "
             "lid: {}, delay: {}",
@@ -252,22 +259,23 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
             wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
-            
+
             // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
             // if (server_archive_cqe_hw_clock.load() < cqe_time) {
             //     server_archive_cqe_hw_clock.store(cqe_time);
             // } else {
             //     /**
             //      * In case of Infiniband, HW timestamp sometimes fluctuates
-            //      * like 8589934592 (2**33). We try to adjust it.  
+            //      * like 8589934592 (2**33). We try to adjust it.
             //      */
-            //     auto adjusted_cqe_time = cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-            //     logger->debug("tx qce - original cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
+            //     auto adjusted_cqe_time = cqe_time +
+            //     PINGWEAVE_IB_HW_ADJUST_TIME; logger->debug("tx qce - original
+            //     cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
             //     server_archive_cqe_hw_clock.store(adjusted_cqe_time);
             //     cqe_time = adjusted_cqe_time;
             // }
             // /*--------------------------------------*/
-            
+
             // if failure
             if (wc.status != IBV_WC_SUCCESS) {
                 logger->error("CQE TX error: {}", ibv_wc_status_str(wc.status));
@@ -278,7 +286,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             if (wc.opcode == IBV_WC_SEND) {
                 // PONG ACK's CQE -> ignore
                 if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
-                    logger->debug("[CQE] CQE of ACK. cqe_time: {}. Do nothing.", cqe_time);
+                    logger->debug("[CQE] CQE of ACK. cqe_time: {}. Do nothing.",
+                                  cqe_time);
                     ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                     continue;
                 }
@@ -286,13 +295,14 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                 // PONG's CQE ('wr_id' is 'pingid')
                 if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
                                             logger)) {
-                    throw std::runtime_error("server_tx_cqe: Failed to process PONG CQE");
+                    throw std::runtime_error(
+                        "tx cqe - Failed to process PONG CQE");
                 }
 
             } else {
                 logger->error("Unexpected opcode: {}",
                               static_cast<int>(wc.opcode));
-                throw std::runtime_error("server_tx_cqe: Unexpected opcode");
+                throw std::runtime_error("tx cqe - Unexpected opcode");
             }
 
             // Poll next event
@@ -311,7 +321,7 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
 
         if (num_cqes < 0) {
             logger->error("Failed to poll CQ");
-            throw std::runtime_error("server_tx_cqe: Failed to poll CQ");
+            throw std::runtime_error("tx cqe - Failed to poll CQ");
         } else if (num_cqes == 0) {  // no completion
             std::this_thread::sleep_for(std::chrono::microseconds(10));
             return;
@@ -339,13 +349,14 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                 // PONG's CQE ('wr_id' is 'pingid')
                 if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
                                             logger)) {
-                    throw std::runtime_error("server_tx_cqe: Failed to process PONG CQE");
+                    throw std::runtime_error(
+                        "tx cqe - Failed to process PONG CQE");
                 }
 
             } else {
                 logger->error("Unexpected opcode: {}",
                               static_cast<int>(wc.opcode));
-                throw std::runtime_error("server_tx_cqe: Unexpected opcode");
+                throw std::runtime_error("tx cqe - Unexpected opcode");
             }
         }
     }
@@ -362,7 +373,7 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         if (post_recv(ctx_rx, i, RX_DEPTH) != RX_DEPTH) {
             logger->error("Failed to post RECV WRs.");
             throw std::runtime_error(
-                "Failed to post RECV WR when initialization.");
+                "rx thread - Failed to post RECV WR when initialization.");
         }
     }
 
@@ -370,7 +381,8 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
         logger->error("Couldn't register CQE notification");
-        throw std::runtime_error("server_rx_thread: Couldn't register CQE notification");
+        throw std::runtime_error(
+            "rx thread -  Couldn't register CQE notification");
     }
 
     try {
@@ -378,7 +390,8 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         while (true) {
             // Wait for the next CQE
             if (wait_for_cq_event(ctx_rx, logger)) {
-                throw std::runtime_error("server_rx_thread: Failed during CQ event waiting");
+                throw std::runtime_error(
+                    "rx thread -  Failed during CQ event waiting");
             }
 
             // Process RX CQEs
@@ -392,12 +405,10 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
 
 void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                            RdmaServerQueue* server_queue,
+                           PingMsgMap* ping_table,
                            std::shared_ptr<spdlog::logger> logger) {
     // TX thread loop - handle messages
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
-
-    // Create the table (entry timeout = 1 second)
-    PingMsgMap ping_table(1);
 
     // Variables
     union rdma_pingmsg_t ping_msg;
@@ -419,7 +430,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                     ping_msg.x.time);
 
                 // (1) Store in table
-                if (!ping_table.insert(ping_msg.x.pingid, ping_msg)) {
+                if (!ping_table->insert(ping_msg.x.pingid, ping_msg)) {
                     logger->warn("Failed to insert pingid {} into ping_table.",
                                  ping_msg.x.pingid);
                 }
@@ -445,13 +456,14 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                               sizeof(rdma_pongmsg_t),
                               pong_msg.x.pingid % ctx_tx->buf.size(),
                               pong_msg.x.pingid, logger)) {
-                    throw std::runtime_error("server_tx_thread: SEND PONG post failed");
+                    throw std::runtime_error(
+                        "tx thread - SEND PONG post failed");
                 }
             }
 
             /** NOTE: Server's TX loop must be non-blocking. */
             // Process TX CQEs
-            process_tx_cqe(ctx_tx, &ping_table, logger);
+            process_tx_cqe(ctx_tx, ping_table, logger);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
@@ -471,16 +483,20 @@ void rdma_server(const std::string& ipv4) {
     // Create internal queue
     RdmaServerQueue server_queue(QUEUE_SIZE);
 
+    // Create the table
+    PingMsgMap ping_table(PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS);
+
     // Initialize RDMA context
     rdma_context ctx_tx, ctx_rx;
     if (initialize_contexts(ctx_tx, ctx_rx, ipv4, server_logger)) {
-        throw std::runtime_error("server_main: Failed to initialize RDMA contexts.");
+        throw std::runtime_error(
+            "server main - Failed to initialize RDMA contexts.");
     }
 
     // Save file info for Server RX QP
     if (save_device_info(&ctx_rx, server_logger)) {
         server_logger->error("Failed to save device info: {}", ipv4);
-        throw std::runtime_error("server_main: save_device_info failed.");
+        throw std::runtime_error("server main - save_device_info failed.");
     }
 
     // Start RX thread
@@ -489,7 +505,7 @@ void rdma_server(const std::string& ipv4) {
 
     // Start TX thread
     std::thread tx_thread(rdma_server_tx_thread, &ctx_tx, ipv4, &server_queue,
-                          server_logger);
+                          &ping_table, server_logger);
 
     // termination
     if (rx_thread.joinable()) {

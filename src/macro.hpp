@@ -44,7 +44,7 @@ const static int PINGWEAVE_UDP_PORT_CLIENT = 33335;
 const static int PINGWEAVE_UDP_PORT_SERVER = 33336; // both TX & RX
 
 // IB HW Timestamp correction factor
-const static uint64_t PINGWEAVE_IB_HW_ADJUST_TIME = 1ULL << 33;
+const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 
 inline std::string get_source_directory() {
 #ifndef SOURCE_DIR

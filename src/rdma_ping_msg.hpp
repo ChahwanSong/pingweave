@@ -16,8 +16,8 @@ class PingMsgMap {
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    explicit PingMsgMap(int thresholdSeconds = 1)
-        : threshold(thresholdSeconds) {}
+    explicit PingMsgMap(int threshold_ms = 1000)
+        : threshold_ms(threshold_ms) {}
 
     // if already exists, return false
     bool insert(const Key& key, const rdma_pingmsg_t& value) {
@@ -93,12 +93,12 @@ class PingMsgMap {
             }
 
             auto& entry = it->second;
-            auto elapsedSeconds =
-                std::chrono::duration_cast<std::chrono::seconds>(
+            auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - entry.timestamp)
                     .count();
 
-            if (elapsedSeconds < threshold) {
+            if (elapsed_ms < threshold_ms) {
                 return n_remove;
             }
 
@@ -112,6 +112,6 @@ class PingMsgMap {
 
     std::unordered_map<Key, MapEntry> map;
     std::list<Key> keyList;
-    const int threshold;
+    const int threshold_ms; // milliseconds
     mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
 };
