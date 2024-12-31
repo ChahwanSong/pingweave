@@ -296,9 +296,9 @@ def plot_heatmap_value(
         return "" # return nothing if failure
 
 def plot_heatmap_udp(data, outname="result"):
-    delay_steps = [500000, 2000000, 10000000]
+    delay_steps = [2000000, 5000000, 20000000]
     ratio_steps = [0.0, 0.3, 0.6]
-    delay_tick_steps = ["No Data", "Failure", "~500µs", "~2ms", "~10ms", ">10ms"]
+    delay_tick_steps = ["No Data", "Failure", "~2ms", "~5ms", "~20ms", ">20ms"]
     ratio_tick_steps = ["No Data", "Failure", "0%", "30%", "60%", "100%"]
     
     output_files = []
