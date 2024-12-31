@@ -249,6 +249,8 @@ class RdmaPinginfoMap {
                         "Entry for pingid {} does not exist, so cannot remove.",
                         ping_info.pingid);
                 }
+
+                return false; 
             }
 
             // send out for analysis
@@ -267,7 +269,7 @@ class RdmaPinginfoMap {
                     "Entry for pingid {} does not exist, so cannot remove.",
                     ping_info.pingid);
             }
-            return false;  // success
+            return false;  
         }
 
         return true;  // not complete
