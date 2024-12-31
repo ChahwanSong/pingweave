@@ -50,20 +50,20 @@ def map_value_to_color_index_ping_delay(value, steps: list):
 
 
 # value to color index mapping for ping results
-def map_value_to_color_index_success_ratio(value, steps: list):
+def map_value_to_color_index_ratio(value, steps: list):
     assert(len(steps) == 3)
     if value <= -1:
         return 0  # black
     elif -1 < value < 0:
         return 1  # purple
     elif 0 <= value < float(steps[0]):
-        return 5 # red
-    elif float(steps[0]) <= value < float(steps[1]):
-        return 4 # orange
-    elif float(steps[1]) <= value < float(steps[2]):
-        return 3 # yellow
-    elif float(steps[2]) <= value <= 1:
         return 2 # green
+    elif float(steps[0]) <= value < float(steps[1]):
+        return 3 # yellow
+    elif float(steps[1]) <= value < float(steps[2]):
+        return 4 # orange
+    elif float(steps[2]) <= value <= 1:
+        return 5 # red
     else:
         logger.error(f"map_value error: {steps}")
         exit(1)
@@ -297,32 +297,39 @@ def plot_heatmap_value(
 
 def plot_heatmap_udp(data, outname="result"):
     delay_steps = [2000000, 5000000, 20000000]
-    ratio_steps = [0.0, 0.3, 0.6]
     delay_tick_steps = ["No Data", "Failure", "~2ms", "~5ms", "~20ms", ">20ms"]
-    ratio_tick_steps = ["No Data", "Failure", "0%", "30%", "60%", "100%"]
+    
+    ratio_steps = [0.1, 0.5, 0.9]
+    ratio_tick_steps = ["No Data", "Failure", "~10%", "~50%", "~90%", "All failed"]
     
     output_files = []
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
         if v:
-            ts_ping_start, ts_ping_end, n_success, n_failure = v[0:4]
+            ts_ping_start, ts_ping_end, n_success, n_failure, n_weird = v[0:5]
             n_success = int(n_success)
             n_failure = int(n_failure)
-            total_attempts = n_success + n_failure
-            if total_attempts == 0:
-                success_ratio = -1
+            n_weird = int(n_weird)
+            if n_success + n_failure == 0:
+                failure_ratio = -1
             else:
-                success_ratio = 1.0 * n_success / total_attempts
+                failure_ratio = 1.0 * n_failure / (n_success + n_failure)
+                
+            if n_success + n_failure + n_weird == 0:
+                weird_ratio = -1
+            else:
+                weird_ratio = 1.0 * n_weird / (n_success + n_failure + n_weird)
 
             _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
-                4:10
+                5:11
             ]
             records.append(
                 {
                     "source": src,
                     "destination": dst,
-                    "success_ratio": success_ratio,
+                    "failure_ratio": failure_ratio,
+                    "weird_ratio": weird_ratio,
                     "network_mean": float(network_mean),
                     "network_p50": float(network_p50),
                     "network_p99": float(network_p99),
@@ -335,7 +342,8 @@ def plot_heatmap_udp(data, outname="result"):
                 {
                     "source": src,
                     "destination": dst,
-                    "success_ratio": 0.0,
+                    "failure_ratio": -1,
+                    "weird_ratio": -1,
                     "network_mean": -1,
                     "network_p50": -1,
                     "network_p99": -1,
@@ -379,46 +387,66 @@ def plot_heatmap_udp(data, outname="result"):
     # success ratio
     if plot_heatmap_value(
         records,
-        "success_ratio",
+        "failure_ratio",
         "ping_end_time",
         ratio_steps,
         ratio_tick_steps,
-        map_value_to_color_index_success_ratio,
-        outname + "_success_ratio",
+        map_value_to_color_index_ratio,
+        outname + "_failure_ratio",
     ):
-        output_files.append(outname + "_success_ratio")
+        output_files.append(outname + "_failure_ratio")
+    # weird ratio
+    if plot_heatmap_value(
+        records,
+        "weird_ratio",
+        "ping_end_time",
+        ratio_steps,
+        ratio_tick_steps,
+        map_value_to_color_index_ratio,
+        outname + "_weird_ratio",
+    ):
+        output_files.append(outname + "_weird_ratio")
+    
+        
     return output_files
 
 def plot_heatmap_rdma(data, outname="result"):
     delay_steps = [100000, 500000, 5000000]
-    ratio_steps = [0, 0.3, 0.6]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
-    ratio_tick_steps = ["No Data", "Failure", "100%", "90%", "50%", "0%"]
+    
+    ratio_steps = [0.1, 0.5, 0.9]
+    ratio_tick_steps = ["No Data", "Failure", "~10%", "~50%", "~90%", "All failed"]
 
     output_files = []
     records = []
     for k, v in data.items():
         src, dst = k.split(",")
         if v:
-            ts_ping_start, ts_ping_end, n_success, n_failure = v[0:4]
+            ts_ping_start, ts_ping_end, n_success, n_failure, n_weird = v[0:5]
             n_success = int(n_success)
             n_failure = int(n_failure)
-            total_attempts = n_success + n_failure
-            if total_attempts == 0:
-                success_ratio = 0.0
+            n_weird = int(n_weird)
+            if n_success + n_failure == 0:
+                failure_ratio = -1
             else:
-                success_ratio = 1.0 * n_success / total_attempts
+                failure_ratio = 1.0 * n_failure / (n_success + n_failure)
 
-            _, client_mean, client_max, client_p50, client_p95, client_p99 = v[4:10]
+            if (n_success + n_failure + n_weird == 0):
+                weird_ratio = -1
+            else:
+                weird_ratio = 1.0 * n_weird / (n_success + n_failure + n_weird)
+
+            _, client_mean, client_max, client_p50, client_p95, client_p99 = v[5:11]
             _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
-                10:16
+                11:17
             ]
-            _, server_mean, server_max, server_p50, server_p95, server_p99 = v[16:22]
+            _, server_mean, server_max, server_p50, server_p95, server_p99 = v[17:23]
             records.append(
                 {
                     "source": src,
                     "destination": dst,
-                    "success_ratio": success_ratio,
+                    "failure_ratio": failure_ratio,
+                    "weird_ratio": weird_ratio,
                     "network_mean": float(network_mean),
                     "client_mean": float(client_mean),
                     "server_mean": float(server_mean),
@@ -437,7 +465,8 @@ def plot_heatmap_rdma(data, outname="result"):
                 {
                     "source": src,
                     "destination": dst,
-                    "success_ratio": 0.0,
+                    "failure_ratio": -1,
+                    "weird_ratio": -1,
                     "network_mean": -1,
                     "client_mean": -1,
                     "server_mean": -1,
@@ -451,6 +480,7 @@ def plot_heatmap_rdma(data, outname="result"):
                     "ping_end_time": "N/A",
                 }
             )
+            
     # network mean
     if plot_heatmap_value(
         records,
@@ -487,14 +517,25 @@ def plot_heatmap_rdma(data, outname="result"):
     # success ratio
     if plot_heatmap_value(
         records,
-        "success_ratio",
+        "failure_ratio",
         "ping_end_time",
         ratio_steps,
         ratio_tick_steps,
-        map_value_to_color_index_success_ratio,
-        outname + "_success_ratio",
+        map_value_to_color_index_ratio,
+        outname + "_failure_ratio",
     ):
-        output_files.append(outname + "_success_ratio")    
+        output_files.append(outname + "_failure_ratio")    
+    # weird ratio
+    if plot_heatmap_value(
+        records,
+        "weird_ratio",
+        "ping_end_time",
+        ratio_steps,
+        ratio_tick_steps,
+        map_value_to_color_index_ratio,
+        outname + "_weird_ratio",
+    ):
+        output_files.append(outname + "_weird_ratio")    
     return output_files 
 
 

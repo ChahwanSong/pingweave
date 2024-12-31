@@ -1,7 +1,7 @@
 #include "udp_common.hpp"
 
-int make_ctx(struct udp_context *ctx, const std::string &ipv4, const uint16_t& port,
-             std::shared_ptr<spdlog::logger> logger) {
+int make_ctx(struct udp_context *ctx, const std::string &ipv4,
+             const uint16_t &port, std::shared_ptr<spdlog::logger> logger) {
     ctx->ipv4 = ipv4;
 
     // create socket
@@ -30,8 +30,7 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4, const uint16_t& p
         return true;
     }
 
-    logger->info("IP: {}:{} is ready for UDP communication",
-                 ipv4, port);
+    logger->info("IP: {}:{} is ready for UDP communication", ipv4, port);
 
     // success
     return false;
@@ -39,7 +38,7 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4, const uint16_t& p
 
 // Initialize TX/RX context for UDP
 int initialize_contexts(struct udp_context &ctx_tx, struct udp_context &ctx_rx,
-                        const std::string &ipv4, 
+                        const std::string &ipv4,
                         std::shared_ptr<spdlog::logger> logger) {
     uint16_t tx_port = 0;
     uint16_t rx_port = PINGWEAVE_UDP_PORT_CLIENT;
@@ -148,7 +147,7 @@ int receive_message(struct udp_context *ctx_rx, uint64_t &pingid,
         logger->error("PingID must not be zero.");
         return true;
     }
-    // memorize for PONG to sender 
+    // memorize for PONG to sender
     pingid = ping_msg.x.pingid;
 
     // sender information
@@ -177,6 +176,7 @@ std::string convert_udp_result_to_str(const std::string &srcip,
        << timestamp_ns_to_string(result_info.ts_start) << ","
        << timestamp_ns_to_string(result_info.ts_end) << ","
        << result_info.n_success << "," << result_info.n_failure << ","
+       << result_info.n_weird << ","
        << "network," << network_stat.mean << "," << network_stat.max << ","
        << network_stat.percentile_50 << "," << network_stat.percentile_95 << ","
        << network_stat.percentile_99;

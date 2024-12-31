@@ -102,7 +102,7 @@ void udp_client_result_thread(const std::string& ipv4,
     // timer for report
     auto last_report_time = std::chrono::steady_clock::now();
 
-    /** RESULT: (dstip, #success, #failure, mean, max, p50, p95, p99) */
+    /** RESULT: (dstip, #success, #failure, #weird, mean, max, p50, p95, p99) */
     try {
         while (true) {
             // fully-blocking with timeout (1 sec)
@@ -111,7 +111,7 @@ void udp_client_result_thread(const std::string& ipv4,
                 logger->debug("{}, {}, {}, {}, {}",
                               timestamp_ns_to_string(result_msg.time_ping_send),
                               uint2ip(result_msg.dstip), result_msg.pingid,
-                              result_msg.network_delay, result_msg.success);
+                              result_msg.network_delay, result_msg.result);
                 // load a result
                 info = &dstip2result[result_msg.dstip];
                 if (info->ts_start == 0) {
@@ -119,11 +119,13 @@ void udp_client_result_thread(const std::string& ipv4,
                 }
                 info->ts_end = result_msg.time_ping_send;
 
-                if (result_msg.success) {  // success
+                if (result_msg.result == PINGWEAVE_RESULT_SUCCESS) {  // success
                     ++info->n_success;
                     info->network_delays.push_back(result_msg.network_delay);
-                } else {  // failure
+                } else if (result_msg.result == PINGWEAVE_RESULT_FAILURE) {  // failure
                     ++info->n_failure;
+                } else { // weird
+                    ++info->n_weird;
                 }
             }
 

@@ -81,7 +81,8 @@ CHRONYD_SERVICE="chronyd.service"
 # 상태 확인
 cecho "YELLOW" "Checking if $CHRONYD_SERVICE (NTP) is running..."
 if systemctl is-active --quiet "$CHRONYD_SERVICE"; then
-    cecho "GREEN" "$CHRONYD_SERVICE is already running."
+    cecho "GREEN" "$CHRONYD_SERVICE is already running. Just restart it."
+    systemctl restart "$CHRONYD_SERVICE"
 else
     cecho "YELLOW" "$CHRONYD_SERVICE is not running. Starting and enabling it..."
     # 서비스 시작

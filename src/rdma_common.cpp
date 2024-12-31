@@ -114,7 +114,7 @@ int find_active_port(struct rdma_context *ctx,
 
 // Get GID table index
 int get_gid_table_index(struct rdma_context *ctx,
-                       std::shared_ptr<spdlog::logger> logger) {
+                        std::shared_ptr<spdlog::logger> logger) {
     struct ibv_port_attr port_attr;
 
     if (ibv_query_port(ctx->context, ctx->active_port, &port_attr)) {
@@ -150,7 +150,7 @@ int get_gid_table_index(struct rdma_context *ctx,
                     continue;
                 }
 
-                // Last valid GID index 
+                // Last valid GID index
                 if (gid_index == -1) {
                     gid_index = i;
                 }
@@ -158,7 +158,7 @@ int get_gid_table_index(struct rdma_context *ctx,
         }
     }
 
-    // Finally selected GID index 
+    // Finally selected GID index
     if (preferred_gid_index != -1) {
         logger->info("Using preferred GID index: {}", preferred_gid_index);
         gid_index = preferred_gid_index;  // choose a high-priority GID index
@@ -215,7 +215,7 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
         logger->info("Couldn't query device for extension features.");
     } else if (!attrx.completion_timestamp_mask) {
         logger->info("The device isn't completion timestamp capable.");
-        ctx->completion_timestamp_mask = UINT64_MAX; // for bit wrap-around
+        ctx->completion_timestamp_mask = UINT64_MAX;  // for bit wrap-around
     } else {
         logger->info("RNIC HW timestamping is available.");
         ctx->rnic_hw_ts = true;
@@ -241,9 +241,10 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
         } else if (gid_index > 0) {
             logger->info("-> probably, RoCEv2 device.");
         } else {
-            logger->info("GID {} is not available or something is wrong.", gid_index);
+            logger->info("GID {} is not available or something is wrong.",
+                         gid_index);
             goto clean_device;
-        } 
+        }
 
         ctx->gid_index = gid_index;  // use last GID
     }
@@ -652,6 +653,7 @@ std::string convert_rdma_result_to_str(const std::string &srcip,
        << timestamp_ns_to_string(result_info.ts_start) << ","
        << timestamp_ns_to_string(result_info.ts_end) << ","
        << result_info.n_success << "," << result_info.n_failure << ","
+       << result_info.n_weird << ","
        << "client," << client_stat.mean << "," << client_stat.max << ","
        << client_stat.percentile_50 << "," << client_stat.percentile_95 << ","
        << client_stat.percentile_99 << ","

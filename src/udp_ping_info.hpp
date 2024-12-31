@@ -84,7 +84,7 @@ class UdpPinginfoMap {
         // send out for analysis
         if (!client_queue->try_enqueue(
                 {ping_info.pingid, ip2uint(ping_info.dstip),
-                 ping_info.time_ping_send, ping_info.network_delay, true})) {
+                 ping_info.time_ping_send, ping_info.network_delay, PINGWEAVE_RESULT_SUCCESS})) {
             logger->warn("pingid {} (-> {}): Failed to enqueue to result queue",
                          ping_info.pingid, ping_info.dstip);
         }
@@ -152,7 +152,7 @@ class UdpPinginfoMap {
             // failure (packets might be lost)
             if (!client_queue->try_enqueue(
                     {ping_info.pingid, ip2uint(ping_info.dstip),
-                     ping_info.time_ping_send, 0, false})) {
+                     ping_info.time_ping_send, 0, PINGWEAVE_RESULT_FAILURE})) {
                 logger->error(
                     "Failed to enqueue (pingid {}, failed) to result thread",
                     ping_info.pingid);

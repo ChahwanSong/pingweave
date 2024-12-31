@@ -526,7 +526,7 @@ void rdma_client_result_thread(const std::string& ipv4,
                               timestamp_ns_to_string(result_msg.time_ping_send),
                               uint2ip(result_msg.dstip), result_msg.pingid,
                               result_msg.client_delay, result_msg.network_delay,
-                              result_msg.server_delay, result_msg.success);
+                              result_msg.server_delay, result_msg.result);
                 // load a result
                 info = &dstip2result[result_msg.dstip];
                 if (info->ts_start == 0) {
@@ -534,13 +534,16 @@ void rdma_client_result_thread(const std::string& ipv4,
                 }
                 info->ts_end = result_msg.time_ping_send;
 
-                if (result_msg.success) {  // success
+                if (result_msg.result == PINGWEAVE_RESULT_SUCCESS) {  // success
                     ++info->n_success;
                     info->client_delays.push_back(result_msg.client_delay);
                     info->network_delays.push_back(result_msg.network_delay);
                     info->server_delays.push_back(result_msg.server_delay);
-                } else {  // failure
+                } else if (result_msg.result ==
+                           PINGWEAVE_RESULT_FAILURE) {  // failure
                     ++info->n_failure;
+                } else {  // weird
+                    ++info->n_weird;
                 }
             }
 

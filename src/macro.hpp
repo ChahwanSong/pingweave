@@ -7,6 +7,12 @@
 #define SOURCE_DIR (".")
 #endif
 
+// function checker
+#define PINGWEAVE_SUCCESS (1)
+#define PINGWEAVE_FAILURE (0)
+#define IS_SUCCESS(retval) ((retval) == PINGWEAVE_SUCCESS)
+#define IS_FAILURE(retval) ((retval) == PINGWEAVE_FAILURE)
+
 // directory
 const std::string DIR_UPLOAD_PATH = "/../upload";
 const std::string DIR_DOWNLOAD_PATH = "/../download";

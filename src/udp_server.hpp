@@ -45,8 +45,8 @@ void udp_server(const std::string& ipv4) {
             // wait 1 second if 5 consecutive failures
             if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
                 server_logger->error(
-                    "Too many ({}) consecutive receive failures. Waiting "
-                    "before retry...",
+                    "Too many ({}) consecutive receive failures. Waiting 1 "
+                    "second before retry...",
                     THRESHOLD_CONSECUTIVE_FAILURE);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 consecutive_failures = 0;

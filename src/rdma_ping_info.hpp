@@ -205,6 +205,14 @@ class RdmaPinginfoMap {
             uint64_t client_process_time =
                 ping_info.client_delay - ping_info.network_delay;
 
+            uint64_t network_rtt =
+                ping_info.network_delay > ping_info.server_delay
+                    ? ping_info.network_delay - ping_info.server_delay
+                    : ping_info.network_delay;
+
+            // ping delay of purely server's processing part
+            uint64_t server_process_time = ping_info.server_delay;
+
             // ping delay of purely network inflight part
             /**
              * NOTE: If HW timestamp for CQE is not supported,
@@ -224,22 +232,31 @@ class RdmaPinginfoMap {
                     "{}",
                     ping_info.pingid, ping_info.network_delay,
                     ping_info.server_delay);
+
+                // send out for analysis
+                // ping_time, dstip, ping_time, {each entity's process delays}
+                if (!client_queue->try_enqueue(
+                        {ping_info.pingid, ip2uint(ping_info.dstip),
+                        ping_info.time_ping_send, client_process_time, network_rtt,
+                        server_process_time, PINGWEAVE_RESULT_WEIRD})) {
+                    logger->warn(
+                        "pingid {} (-> {}): Failed to enqueue to result queue",
+                        ping_info.pingid, ping_info.dstip);
+                }
+
+                if (remove(ping_info.pingid)) {  // if failed to remove
+                    logger->warn(
+                        "Entry for pingid {} does not exist, so cannot remove.",
+                        ping_info.pingid);
+                }
             }
-
-            uint64_t network_rtt =
-                ping_info.network_delay > ping_info.server_delay
-                    ? ping_info.network_delay - ping_info.server_delay
-                    : ping_info.network_delay;
-
-            // ping delay of purely server's processing part
-            uint64_t server_process_time = ping_info.server_delay;
 
             // send out for analysis
             // ping_time, dstip, ping_time, {each entity's process delays}
             if (!client_queue->try_enqueue(
                     {ping_info.pingid, ip2uint(ping_info.dstip),
                      ping_info.time_ping_send, client_process_time, network_rtt,
-                     server_process_time, true})) {
+                     server_process_time, PINGWEAVE_RESULT_SUCCESS})) {
                 logger->warn(
                     "pingid {} (-> {}): Failed to enqueue to result queue",
                     ping_info.pingid, ping_info.dstip);
@@ -321,7 +338,7 @@ class RdmaPinginfoMap {
                 // failure (packets might be lost)
                 if (!client_queue->try_enqueue(
                         {ping_info.pingid, ip2uint(ping_info.dstip),
-                         ping_info.time_ping_send, 0, 0, 0, false})) {
+                         ping_info.time_ping_send, 0, 0, 0, PINGWEAVE_RESULT_FAILURE})) {
                     logger->error(
                         "Failed to enqueue (pingid {}, failed) to result "
                         "thread",

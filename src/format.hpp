@@ -10,10 +10,19 @@
 
 // pingweave enumerate
 enum {
+    // WEIRD: when ping-pong (network) delay at client-side is 
+    // lower than server-side process delay.
+    PINGWEAVE_RESULT_WEIRD = -2, 
+    PINGWEAVE_RESULT_FAILURE = -1,
+    PINGWEAVE_RESULT_SUCCESS = 0,
+    
+    // OPCODE, WR_ID for RDMA
     PINGWEAVE_OPCODE_PONG = 1,
     PINGWEAVE_OPCODE_ACK = 2,
     PINGWEAVE_WRID_PONG_ACK = (NUM_BUFFER * 4),  // to ignore
 };
+
+
 
 // result stat
 struct result_stat_t {
@@ -68,13 +77,14 @@ struct alignas(32) udp_result_msg_t {
     uint64_t time_ping_send;
     uint64_t network_delay;
 
-    uint32_t success;  // 1: success, 0: failure
+    int result;  // SUCCESS, FAILURE, WEIRD
 };
 
 // udp result info of ping
 struct udp_result_info_t {
     uint32_t n_success = 0;
     uint32_t n_failure = 0;
+    uint32_t n_weird = 0;
 
     uint64_t ts_start = 0;
     uint64_t ts_end = 0;
@@ -122,13 +132,14 @@ struct alignas(64) rdma_result_msg_t {
     uint64_t network_delay;
     uint64_t server_delay;
 
-    uint32_t success;  // 1: success, 0: failure
+    int result;  // SUCCESS, FAILURE, WEIRD
 };
 
 // rdma result info of ping
 struct rdma_result_info_t {
     uint32_t n_success = 0;
     uint32_t n_failure = 0;
+    uint32_t n_weird = 0;
 
     uint64_t ts_start = 0;
     uint64_t ts_end = 0;
