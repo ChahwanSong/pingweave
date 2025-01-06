@@ -12,12 +12,11 @@ class MsgScheduler {
           last_ping_time(std::chrono::steady_clock::now()),
           last_load_time(std::chrono::steady_clock::now()),
           addr_idx(0) {
-        int dummy1, dummy2, dummy3;
-        if (!get_params_info_from_ini(dummy1, dummy2, dummy3,
-                                      interval_send_ping_microsec)) {
+        if (!get_int_param_from_ini(interval_send_ping_microsec,
+                                         "interval_send_ping_microsec")) {
             logger->error(
-                "Failed to load 'report_interval' parameter from "
-                "'pingwewave.ini'. Using default: {} microseconds.",
+                "Failed to load 'report_interval' from pingwewave.ini. Use {} "
+                "microseconds.",
                 DEFAULT_INTERVAL_MICROSEC);
             interval_send_ping_microsec = DEFAULT_INTERVAL_MICROSEC;
         }
@@ -43,7 +42,8 @@ class MsgScheduler {
     }
     // schedule for RDMA (dstip, gid, lid, qpn)
     virtual int next(
-        std::tuple<std::string, std::string, uint32_t, uint32_t>& result, uint64_t& time_sleep_us) {
+        std::tuple<std::string, std::string, uint32_t, uint32_t>& result,
+        uint64_t& time_sleep_us) {
         logger->error("Virtual function 'next' must not be called");
         throw std::runtime_error("virtual function must not be called");
     }

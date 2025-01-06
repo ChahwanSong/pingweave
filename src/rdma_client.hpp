@@ -30,7 +30,7 @@ void handle_received_message(rdma_context* ctx_rx,
                       pong_msg.x.pingid, pong_msg.x.server_delay);
         if (!ping_table->update_ack_info(pong_msg.x.pingid,
                                          pong_msg.x.server_delay)) {
-            logger->debug("PONG_ACK ({}, {}): No entry in ping_table.",
+            logger->debug("PONG_ACK ({}): No entry in ping_table.",
                           pong_msg.x.pingid);
         }
     } else {
@@ -496,11 +496,12 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
 void rdma_client_result_thread(const std::string& ipv4,
                                RdmaClientQueue* client_queue,
                                std::shared_ptr<spdlog::logger> logger) {
-    int dummy1, dummy2, dummy3, report_interval_ms = 10000;
-    if (!get_params_info_from_ini(dummy1, dummy2, report_interval_ms, dummy3)) {
+    int report_interval_ms = 10000;
+    if (!get_int_param_from_ini(report_interval_ms,
+                                "interval_report_ping_result_millisec")) {
         logger->error(
-            "Failed to load report_interval parameter from pingwewave.ini. Use "
-            "default - 10 seconds");
+            "Failed to load 'report_interval' from pingwewave.ini. Use default "
+            "- 10 sec.");
         report_interval_ms = 10000;
     }
 
@@ -593,23 +594,53 @@ void rdma_client_result_thread(const std::string& ipv4,
 void rdma_client(const std::string& ipv4) {
     // Start the RX thread
     const std::string client_logname = "rdma_client_" + ipv4;
-    std::shared_ptr<spdlog::logger> client_logger =
-        initialize_logger(client_logname, DIR_LOG_PATH, LOG_LEVEL_CLIENT,
-                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    client_logger->info("RDMA Client is running on pid {}", getpid());
+    enum spdlog::level::level_enum log_level_client;
+    std::shared_ptr<spdlog::logger> client_logger;
+    if (get_log_config_from_ini(log_level_client,
+                                "logger_cpp_process_rdma_client")) {
+        client_logger =
+            initialize_logger(client_logname, DIR_LOG_PATH, log_level_client,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        client_logger->info("RDMA Client is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_client'");
+    }
 
     // Inter-thread queue
     const std::string result_logname = "rdma_" + ipv4;
-    std::shared_ptr<spdlog::logger> result_logger =
-        initialize_logger(result_logname, DIR_RESULT_PATH, LOG_LEVEL_RESULT,
-                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    enum spdlog::level::level_enum log_level_result;
+    std::shared_ptr<spdlog::logger> result_logger;
+    if (get_log_config_from_ini(log_level_result,
+                                "logger_cpp_process_rdma_result")) {
+        result_logger =
+            initialize_logger(result_logname, DIR_RESULT_PATH, log_level_result,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        result_logger->info("RDMA Result is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_result'");
+    }
+
+    // Internal message-queue
     RdmaClientQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = "rdma_table_" + ipv4;
-    std::shared_ptr<spdlog::logger> ping_table_logger = initialize_logger(
-        ping_table_logname, DIR_LOG_PATH, LOG_LEVEL_PING_TABLE, LOG_FILE_SIZE,
-        LOG_FILE_EXTRA_NUM);
+    enum spdlog::level::level_enum log_level_ping_table;
+    std::shared_ptr<spdlog::logger> ping_table_logger;
+    if (get_log_config_from_ini(log_level_ping_table,
+                                "logger_cpp_process_rdma_ping_table")) {
+        ping_table_logger = initialize_logger(
+            ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
+            LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        ping_table_logger->info("RDMA ping_table is running on pid {}",
+                                getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_ping_table'");
+    }
+
     RdmaPinginfoMap ping_table(ping_table_logger, &client_queue,
                                PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS);
 

@@ -82,8 +82,9 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 void udp_client_result_thread(const std::string& ipv4,
                               UdpClientQueue* client_queue,
                               std::shared_ptr<spdlog::logger> logger) {
-    int dummy1, dummy2, dummy3, report_interval_ms = 10000;
-    if (!get_params_info_from_ini(dummy1, dummy2, report_interval_ms, dummy3)) {
+    int report_interval_ms = 10000;
+    if (!get_int_param_from_ini(report_interval_ms,
+                                "interval_report_ping_result_millisec")) {
         logger->error(
             "Failed to load report_interval parameter from pingwewave.ini. Use "
             "default - 10 seconds");
@@ -122,9 +123,10 @@ void udp_client_result_thread(const std::string& ipv4,
                 if (result_msg.result == PINGWEAVE_RESULT_SUCCESS) {  // success
                     ++info->n_success;
                     info->network_delays.push_back(result_msg.network_delay);
-                } else if (result_msg.result == PINGWEAVE_RESULT_FAILURE) {  // failure
+                } else if (result_msg.result ==
+                           PINGWEAVE_RESULT_FAILURE) {  // failure
                     ++info->n_failure;
-                } else { // weird
+                } else {  // weird
                     ++info->n_weird;
                 }
             }
@@ -170,23 +172,52 @@ void udp_client_result_thread(const std::string& ipv4,
 void udp_client(const std::string& ipv4) {
     // Start the RX thread
     const std::string client_logname = "udp_client_" + ipv4;
-    std::shared_ptr<spdlog::logger> client_logger =
-        initialize_logger(client_logname, DIR_LOG_PATH, LOG_LEVEL_CLIENT,
-                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    client_logger->info("UDP Client is running on pid {}", getpid());
+    enum spdlog::level::level_enum log_level_client;
+    std::shared_ptr<spdlog::logger> client_logger;
+    if (get_log_config_from_ini(log_level_client,
+                                "logger_cpp_process_udp_client")) {
+        client_logger =
+            initialize_logger(client_logname, DIR_LOG_PATH, log_level_client,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        client_logger->info("UDP Client is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_udp_client'");
+    }
 
     // Inter-thread queue
     const std::string result_logname = "udp_" + ipv4;
-    std::shared_ptr<spdlog::logger> result_logger =
-        initialize_logger(result_logname, DIR_RESULT_PATH, LOG_LEVEL_RESULT,
-                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+    enum spdlog::level::level_enum log_level_result;
+    std::shared_ptr<spdlog::logger> result_logger;
+    if (get_log_config_from_ini(log_level_result,
+                                "logger_cpp_process_udp_result")) {
+        result_logger =
+            initialize_logger(result_logname, DIR_RESULT_PATH, log_level_result,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        result_logger->info("UDP Result is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_udp_result'");
+    }
+
+    // Internal message-queue
     UdpClientQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = "udp_table_" + ipv4;
-    std::shared_ptr<spdlog::logger> ping_table_logger = initialize_logger(
-        ping_table_logname, DIR_LOG_PATH, LOG_LEVEL_PING_TABLE, LOG_FILE_SIZE,
-        LOG_FILE_EXTRA_NUM);
+    enum spdlog::level::level_enum log_level_ping_table;
+    std::shared_ptr<spdlog::logger> ping_table_logger;
+    if (get_log_config_from_ini(log_level_ping_table,
+                                "logger_cpp_process_udp_ping_table")) {
+        ping_table_logger =
+            initialize_logger(ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        ping_table_logger->info("UDP ping_table is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_udp_ping_table'");
+    }
+
     UdpPinginfoMap ping_table(ping_table_logger, &client_queue,
                               PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS);
 

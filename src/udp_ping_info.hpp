@@ -85,13 +85,13 @@ class UdpPinginfoMap {
         if (!client_queue->try_enqueue(
                 {ping_info.pingid, ip2uint(ping_info.dstip),
                  ping_info.time_ping_send, ping_info.network_delay, PINGWEAVE_RESULT_SUCCESS})) {
-            logger->warn("pingid {} (-> {}): Failed to enqueue to result queue",
+            logger->warn("[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
                          ping_info.pingid, ping_info.dstip);
         }
 
         if (remove(ping_info.pingid)) {  // if failed to remove
             logger->warn(
-                "Entry for pingid {} does not exist, so cannot remove.",
+                "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
                 ping_info.pingid);
         }
 
@@ -154,7 +154,7 @@ class UdpPinginfoMap {
                     {ping_info.pingid, ip2uint(ping_info.dstip),
                      ping_info.time_ping_send, 0, PINGWEAVE_RESULT_FAILURE})) {
                 logger->error(
-                    "Failed to enqueue (pingid {}, failed) to result thread",
+                    "[Queue Full?] Failed to enqueue (pingid {}, failed) to result thread",
                     ping_info.pingid);
             }
 

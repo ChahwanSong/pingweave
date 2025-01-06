@@ -48,7 +48,12 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
                               std::set<std::string> &myaddr_rdma,
                               std::set<std::string> &myaddr_udp);
 int get_controller_info_from_ini(std::string &ip, int &port);
-int get_params_info_from_ini(int &val_1, int &val_2, int &val_3, int &val_4);
+int get_int_value_from_ini(IniParser& parser, const std::string& section, const std::string& key);
+std::string get_str_value_from_ini(IniParser& parser, const std::string& section, const std::string& key);
+int get_int_param_from_ini(int& ret, const std::string& key);
+int get_str_param_from_ini(std::string& ret, const std::string& key);
+int get_log_config_from_ini(enum spdlog::level::level_enum& log_level, const std::string& key);
+
 void delete_files_in_directory(const std::string &directoryPath);
 std::string get_thread_id();
 uint32_t ip2uint(const std::string &ip);

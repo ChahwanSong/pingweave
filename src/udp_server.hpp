@@ -12,10 +12,18 @@
 void udp_server(const std::string& ipv4) {
     // Initialize logger
     const std::string server_logname = "udp_server_" + ipv4;
-    std::shared_ptr<spdlog::logger> server_logger =
-        initialize_logger(server_logname, DIR_LOG_PATH, LOG_LEVEL_SERVER,
-                          LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-    server_logger->info("UDP Server is running on pid {}", getpid());
+    enum spdlog::level::level_enum log_level_server;
+    std::shared_ptr<spdlog::logger> server_logger;
+    if (get_log_config_from_ini(log_level_server,
+                                "logger_cpp_process_udp_server")) {
+        server_logger =
+            initialize_logger(server_logname, DIR_LOG_PATH, log_level_server,
+                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        server_logger->info("UDP Server is running on pid {}", getpid());
+    } else {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_udp_server'");
+    }
 
     // Initialize RDMA context
     udp_context ctx_server;

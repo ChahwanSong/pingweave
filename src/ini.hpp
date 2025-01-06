@@ -48,7 +48,7 @@ class IniParser {
         } catch (const std::out_of_range&) {
             std::cerr << "Error: Key not found [" << section << "][" << key
                       << "]\n";
-            return "";  // 기본값 반환
+            return "";  // by default, return an empty string
         }
     }
 
@@ -57,6 +57,8 @@ class IniParser {
         try {
             return std::stoi(ret);
         } catch (const std::exception& e) {
+            std::cerr << "Error: Conversion to integer for the key " << key
+                      << " is failed.\n";
             return -1;
         }
     }
@@ -74,6 +76,7 @@ class IniParser {
     }
 };
 
+/* example code */
 // int main() {
 //     IniParser parser;
 //     if (!parser.load("../config/pingweave.ini")) {
@@ -81,14 +84,14 @@ class IniParser {
 //         return 1;
 //     }
 
-//     // 값 읽기
+//     // read value
 //     std::string controller_host = parser.get("controller", "host");
 //     std::string controller_port = parser.get("controller", "port");
 //     int interval_download =
 //         parser.getInt("param", "interval_download_pinglist_sec");
 //     int interval_read = parser.getInt("param", "interval_read_pinglist_sec");
 
-//     // 값 출력
+//     // print value
 //     std::cout << "Controller Host: " << controller_host << '\n';
 //     std::cout << "Controller Port: " << controller_port << '\n';
 //     std::cout << "Download Interval: " << interval_download << " seconds\n";

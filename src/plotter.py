@@ -229,8 +229,9 @@ def plot_heatmap_value(
                 src = source_ips[j]
                 dst = destination_ips[i]
                 val = z_values[i][j]
+                formatted_val = f"{int(val):,}" if val >= 0 else "N/A"  # Format only non-negative values
                 time = time_values[i][j]
-                text = f"Src: {src}<br>Dst: {dst}<br>Value: {val}<br>Time: {time}"
+                text = f"Src: {src}<br>Dst: {dst}<br>Value: {formatted_val}<br>Time: {time}"
                 row.append(text)
             text_matrix.append(row)
 
@@ -296,11 +297,11 @@ def plot_heatmap_value(
         return "" # return nothing if failure
 
 def plot_heatmap_udp(data, outname="result"):
-    delay_steps = [2000000, 5000000, 20000000]
-    delay_tick_steps = ["No Data", "Failure", "~2ms", "~5ms", "~20ms", ">20ms"]
+    delay_steps = [1000000, 5000000, 20000000]
+    delay_tick_steps = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
     
-    ratio_steps = [0.1, 0.5, 0.9]
-    ratio_tick_steps = ["No Data", "Failure", "~10%", "~50%", "~90%", "All failed"]
+    ratio_steps = [0.05, 0.5, 0.9]
+    ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
     
     output_files = []
     records = []
@@ -407,15 +408,14 @@ def plot_heatmap_udp(data, outname="result"):
     ):
         output_files.append(outname + "_weird_ratio")
     
-        
     return output_files
 
 def plot_heatmap_rdma(data, outname="result"):
     delay_steps = [100000, 500000, 5000000]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
     
-    ratio_steps = [0.1, 0.5, 0.9]
-    ratio_tick_steps = ["No Data", "Failure", "~10%", "~50%", "~90%", "All failed"]
+    ratio_steps = [0.05, 0.5, 0.9]
+    ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
 
     output_files = []
     records = []

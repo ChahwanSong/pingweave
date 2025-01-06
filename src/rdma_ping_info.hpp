@@ -196,7 +196,7 @@ class RdmaPinginfoMap {
             }
 
             // logging
-            logger->debug("Pingid:{},DstIP:{},Server:{},Network:{},Client:{}",
+            logger->debug("Pingid:{},DstIP:{},Client:{},Network:{},Server:{}",
                           ping_info.pingid, ping_info.dstip,
                           ping_info.client_delay, ping_info.network_delay,
                           ping_info.server_delay);
@@ -240,13 +240,13 @@ class RdmaPinginfoMap {
                         ping_info.time_ping_send, client_process_time, network_rtt,
                         server_process_time, PINGWEAVE_RESULT_WEIRD})) {
                     logger->warn(
-                        "pingid {} (-> {}): Failed to enqueue to result queue",
+                        "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
                         ping_info.pingid, ping_info.dstip);
                 }
 
                 if (remove(ping_info.pingid)) {  // if failed to remove
                     logger->warn(
-                        "Entry for pingid {} does not exist, so cannot remove.",
+                        "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
                         ping_info.pingid);
                 }
 
@@ -260,13 +260,13 @@ class RdmaPinginfoMap {
                      ping_info.time_ping_send, client_process_time, network_rtt,
                      server_process_time, PINGWEAVE_RESULT_SUCCESS})) {
                 logger->warn(
-                    "pingid {} (-> {}): Failed to enqueue to result queue",
+                    "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
                     ping_info.pingid, ping_info.dstip);
             }
 
             if (remove(ping_info.pingid)) {  // if failed to remove
                 logger->warn(
-                    "Entry for pingid {} does not exist, so cannot remove.",
+                    "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
                     ping_info.pingid);
             }
             return false;  
@@ -341,8 +341,8 @@ class RdmaPinginfoMap {
                 if (!client_queue->try_enqueue(
                         {ping_info.pingid, ip2uint(ping_info.dstip),
                          ping_info.time_ping_send, 0, 0, 0, PINGWEAVE_RESULT_FAILURE})) {
-                    logger->error(
-                        "Failed to enqueue (pingid {}, failed) to result "
+                    logger->warn(
+                        "[Queue Full?] Failed to enqueue (pingid {}, failed) to result "
                         "thread",
                         ping_info.pingid);
                 }

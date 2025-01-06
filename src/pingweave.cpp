@@ -295,7 +295,7 @@ pid_t start_process(std::function<void()> func, const std::string& name) {
         signal(SIGINT, SIG_DFL);
         signal(SIGTERM, SIG_DFL);
         signal(SIGCHLD, SIG_DFL);  // Reset SIGCHLD if necessary
-
+        
         // Child process: execute the function
         spdlog::info("-> {} - Child Process (PID: {}) started.", name,
                      getpid());
@@ -339,13 +339,13 @@ void sigchld_handler(int sig) {
         // If accidentally killed, handle the status and make logs
         if (process_py_client.pid == pid) {
             spdlog::info("-> process name: {}", process_py_client.name);
-            alarm_msg += process_py_client.name;
+            alarm_msg += process_py_client.host + ":" + process_py_client.name;
             process_py_client = {0};  // renew
             process_py_client.host = "null";
         }
         if (process_py_server.pid == pid) {
             spdlog::info("-> process name: {}", process_py_server.name);
-            alarm_msg += process_py_server.name;
+            alarm_msg += process_py_server.host + ":" + process_py_server.name;
             process_py_server = {0};  // renew
             process_py_server.host = "null";
         }
@@ -353,7 +353,7 @@ void sigchld_handler(int sig) {
              it != processes_cpp_server.end(); ++it) {
             if (it->pid == pid) {
                 spdlog::info("-> process name: {}", it->name);
-                alarm_msg += it->name;
+                alarm_msg += it->host + ":" + it->name;
                 processes_cpp_server.erase(it);
                 break;
             }
@@ -362,7 +362,7 @@ void sigchld_handler(int sig) {
              it != processes_cpp_client.end(); ++it) {
             if (it->pid == pid) {
                 spdlog::info("-> process name: {}", it->name);
-                alarm_msg += it->name;
+                alarm_msg += it->host + ":" + it->name;
                 processes_cpp_client.erase(it);
                 break;
             }

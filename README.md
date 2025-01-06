@@ -41,9 +41,14 @@ port 0  # TCP/IP inactivate (optional)
 
 
 ### pingweavectl
-`sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin`
+```
+sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin
+```
 
 
+```
+ps -eo pid,comm,rss,vsz --sort=-rss | awk '/pingweave/ {printf "PID: %s, COMMAND: %s, RSS: %.2f MB, VSZ: %.2f MB\n", $1, $2, $3/1024, $4/1024}'
+```
 
 ## Reconfiguration
 
@@ -52,3 +57,6 @@ port 0  # TCP/IP inactivate (optional)
 - Server
     - Restart (for now)
 
+
+## TO-DO List
+* Infiniband -> DHCP 0, RoCEv2 -> DHCP 106

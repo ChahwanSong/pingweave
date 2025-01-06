@@ -33,13 +33,18 @@ OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
 # 출력 파일
 TARGET_MAIN = $(BIN_DIR)/pingweave
 
+
+SRCS_SIMPLE = pingweave_simple.cpp $(SRCS_COMMON)
+OBJS_SIMPLE = $(addprefix $(BIN_DIR)/, $(SRCS_SIMPLE:.cpp=.o))
+TARGET_SIMPLE = $(BIN_DIR)/pingweave_simple
+
 # 기본 타겟
 .PHONY: all main clean
 
 all: main
 
 # 메인 빌드
-main: $(TARGET_MAIN)
+main: $(TARGET_MAIN) $(TARGET_SIMPLE)
 
 $(TARGET_MAIN): $(OBJS_MAIN)
 	@mkdir -p $(BIN_DIR)
@@ -50,6 +55,9 @@ $(TARGET_MAIN): $(OBJS_MAIN)
 	@mkdir -p $(HTML_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
+$(TARGET_SIMPLE): $(OBJS_SIMPLE)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
 # 오브젝트 파일 생성 규칙
 $(BIN_DIR)/%.o: %.cpp
 	@mkdir -p $(BIN_DIR)
@@ -57,7 +65,7 @@ $(BIN_DIR)/%.o: %.cpp
 
 # clean 명령어로 빌드 파일들을 삭제
 clean:
-	rm -f $(OBJS_COMMON) $(OBJS_MAIN) $(TARGET_MAIN)
+	rm -f $(OBJS_COMMON) $(OBJS_MAIN) $(TARGET_MAIN) $(OBJS_SIMPLE) $(TARGET_SIMPLE)
 	
 # $@: 현재 타겟의 이름
 # $^: 모든 의존성의 리스트
