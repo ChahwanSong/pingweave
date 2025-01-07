@@ -187,6 +187,16 @@ struct rdma_context {
     union ibv_gid gid;
     char wired_gid[33];
     char parsed_gid[33];
+
+    /* ah map */
+    std::unordered_map<std::string, ibv_ah*> ah_map;
+
+    /** TODO: deconstructor
+     * 1.. channel
+     * 2. pd
+     * 3. qp
+     * 4. ah_map
+     */
 };
 
 union rdma_addr {

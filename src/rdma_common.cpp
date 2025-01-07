@@ -171,6 +171,46 @@ int get_gid_table_index(struct rdma_context *ctx,
     return gid_index;
 }
 
+static std::string make_destination_key(uint32_t lid,
+                                        const union ibv_gid &gid) {
+    // Example: convert lid to string + parse GID
+    std::stringstream ss;
+    ss << lid << "_" << parsed_gid((union ibv_gid *)&gid);
+    return ss.str();
+}
+
+ibv_ah *get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
+                         std::shared_ptr<spdlog::logger> logger) {
+    auto key = make_destination_key(rem_dest.x.lid, rem_dest.x.gid);
+    auto it = ctx->ah_map.find(key);
+    if (it != ctx->ah_map.end()) {
+        return it->second;  // reuse existing AH
+    }
+
+    // Create a new AH
+    struct ibv_ah_attr ah_attr = {};
+    ah_attr.dlid = rem_dest.x.lid;
+    ah_attr.sl = SERVICE_LEVEL;
+    ah_attr.port_num = ctx->active_port;
+    ah_attr.is_global = 0;
+    if (rem_dest.x.gid.global.interface_id) {  // For RoCEv2
+        ah_attr.is_global = 1;
+        ah_attr.grh.hop_limit = 255;
+        ah_attr.grh.dgid = rem_dest.x.gid;
+        ah_attr.grh.sgid_index = ctx->gid_index;
+        ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;
+    }
+
+    ibv_ah *ah = ibv_create_ah(ctx->pd, &ah_attr);
+    if (!ah) {
+        logger->error("Failed to create AH for key {}", key);
+        return nullptr;
+    }
+
+    ctx->ah_map[key] = ah;  // store to reuse
+    return ah;
+}
+
 struct ibv_cq *pingweave_cq(struct rdma_context *ctx) {
     return ctx->rnic_hw_ts ? ibv_cq_ex_to_cq(ctx->cq_s.cq_ex) : ctx->cq_s.cq;
 }
@@ -209,7 +249,9 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
     ctx->send_flags = IBV_SEND_SIGNALED;
     ctx->buf.resize(NUM_BUFFER);
 
-    /* check RNIC timestamping support */
+    /** check RNIC timestamping support
+        NOTE: This is a potential segmentation fault point.
+     */
     struct ibv_device_attr_ex attrx;
     if (ibv_query_device_ex(ctx->context, NULL, &attrx)) {
         logger->info("Couldn't query device for extension features.");
@@ -468,43 +510,18 @@ int post_recv(struct rdma_context *ctx, const uint64_t &wr_id, const int &n) {
 int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
               const char *msg, const size_t &msg_len, const int &buf_idx,
               const uint64_t &wr_id, std::shared_ptr<spdlog::logger> logger) {
-    struct ibv_ah_attr ah_attr = {};
-    ah_attr.is_global = 0;
-    ah_attr.dlid = rem_dest.x.lid;
-    ah_attr.sl = SERVICE_LEVEL;
-    ah_attr.src_path_bits = 0;
-    ah_attr.port_num = ctx->active_port;
-
-    if (rem_dest.x.gid.global.interface_id) {  // IP addr for RoCEv2
-        ah_attr.is_global = 1;
-        ah_attr.grh.hop_limit = 255;
-        ah_attr.grh.dgid = rem_dest.x.gid;
-        ah_attr.grh.sgid_index = ctx->gid_index;
-        ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;
-    }
-
-    // address handle
-    struct ibv_ah *ah = ibv_create_ah(ctx->pd, &ah_attr);
-
-    // sanity check
+    ibv_ah *ah = get_or_create_ah(ctx, rem_dest, logger);
     if (!ah) {
-        logger->error("Failed to create AH");
-        return true;
-    }
-    if (!msg) {
-        logger->error("Empty message");
+        logger->error("Failed to create or reuse an AH");
         return true;
     }
 
-    /* save a message to buffer */
-    assert(buf_idx < ctx->buf.size());  // sanity check
-    auto buf = ctx->buf[buf_idx];
-    std::memcpy(buf.addr + GRH_SIZE, msg, msg_len);
-
-    /* generate a unique wr_id */
+    // Prepare ibv_send_wr
     struct ibv_sge list = {};
-    list.addr = (uintptr_t)buf.addr + GRH_SIZE;
-    list.length = buf.length - GRH_SIZE;
+    auto &buf = ctx->buf[buf_idx];
+    memcpy(buf.addr + GRH_SIZE, msg, msg_len);
+    list.addr = (uintptr_t)(buf.addr + GRH_SIZE);
+    list.length = msg_len;
     list.lkey = buf.mr->lkey;
 
     struct ibv_send_wr wr = {};
@@ -513,17 +530,15 @@ int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
     wr.num_sge = 1;
     wr.opcode = IBV_WR_SEND;
     wr.send_flags = ctx->send_flags;
-    wr.wr.ud.ah = ah;
+    wr.wr.ud.ah = ah;  // REUSED handle
     wr.wr.ud.remote_qpn = rem_dest.x.qpn;
     wr.wr.ud.remote_qkey = PINGWEAVE_REMOTE_QKEY;
-    struct ibv_send_wr *bad_wr;
 
+    struct ibv_send_wr *bad_wr = nullptr;
     if (ibv_post_send(ctx->qp, &wr, &bad_wr)) {
-        logger->error("SEND post is failed");
+        logger->error("ibv_post_send(...) failed");
         return true;
     }
-
-    // success
     return false;
 }
 

@@ -18,7 +18,10 @@ int find_active_port(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger);
 int get_gid_table_index(struct rdma_context *ctx,
                        std::shared_ptr<spdlog::logger> logger);
-
+static std::string make_destination_key(uint32_t lid, const union ibv_gid& gid);
+ibv_ah* get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
+                         std::shared_ptr<spdlog::logger> logger);
+                         
 // Allocate RDMA resources
 struct ibv_cq *pingweave_cq(struct rdma_context *ctx);
 int init_ctx(struct rdma_context *ctx);

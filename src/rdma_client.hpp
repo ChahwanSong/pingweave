@@ -680,7 +680,13 @@ void rdma_client(const std::string& ipv4) {
         tx_cqe_thread.join();
     }
 
+    if (rx_thread.joinable()) {
+        rx_thread.join();
+    }
+    
     if (result_thread.joinable()) {
         result_thread.join();
     }
+
 }
+
