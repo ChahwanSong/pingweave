@@ -45,6 +45,12 @@
     - analyzer.py -> pinglist format을 기반으로 
 - Broadcom RNIC 지원 (no support for HW timestamping)
     - OK
+- Infinibnad timestamp fluctuation 이슈
+    - modulo 2^32 로 해결 
+- Memory leak issue (OOM)
+    - RDMA 의 address_header를 destroy 해야 함. FIX 완료.
+
+
 
 ## Overhead
 * CPU: Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz
