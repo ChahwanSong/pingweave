@@ -81,7 +81,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 
 void udp_client_result_thread(
     const std::string& ipv4,
-    const std::string& protocol UdpClientQueue* client_queue,
+    const std::string& protocol, UdpClientQueue* client_queue,
     std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
     if (!get_int_param_from_ini(report_interval_ms,
