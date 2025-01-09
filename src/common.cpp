@@ -522,7 +522,7 @@ int message_to_http_server(const std::string &message, const std::string &api,
     }
 
     // failed
-    logger->error("Failed to post /result_rdma.");
+    logger->error("Failed to post {}.", api);
     return true;
 }
 

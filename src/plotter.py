@@ -665,6 +665,7 @@ async def pingweave_plotter():
                                 new_file_list += plot_heatmap_rdma(
                                     group_data, f"{category}_{group}"
                                 )
+                                
 
                     # clear all HTML
                     clear_directory_conditional(HTML_DIR, new_file_list)
