@@ -450,7 +450,7 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
     }
 }
 
-void rdma_client_result_thread(const std::string& ipv4,
+void rdma_client_result_thread(const std::string& ipv4,const std::string& protocol,
                                RdmaClientQueue* client_queue,
                                std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
@@ -533,7 +533,7 @@ void rdma_client_result_thread(const std::string& ipv4,
 
                 // send to collector
                 if (agg_result.size() > 0) {
-                    message_to_http_server(agg_result, "/result_rdma", logger);
+                    message_to_http_server(agg_result, "/result_" + protocol, logger);
                 }
 
                 // clear the history
@@ -544,7 +544,7 @@ void rdma_client_result_thread(const std::string& ipv4,
             }
         }
     } catch (const std::exception& e) {
-        logger->error("Exception in result thread: {}", e.what());
+        logger->error("Exception in result_thread: {}", e.what());
     }
 }
 
@@ -611,8 +611,8 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
     // Start the Result thread
     client_logger->info("Starting RDMA result thread (Thread ID: {})...",
                         get_thread_id());
-    std::thread result_thread(rdma_client_result_thread, ipv4, &client_queue,
-                              result_logger);
+    std::thread result_thread(rdma_client_result_thread, ipv4, protocol,
+                              &client_queue, result_logger);
 
     // Start the RX thread
     std::thread rx_thread(rdma_client_rx_thread, &ctx_rx, ipv4, &ping_table,

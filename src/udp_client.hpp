@@ -165,7 +165,7 @@ void udp_client_result_thread(const std::string& ipv4,
             }
         }
     } catch (const std::exception& e) {
-        logger->error("Exception in result thread: {}", e.what());
+        logger->error("Exception in result_thread: {}", e.what());
     }
 }
 
