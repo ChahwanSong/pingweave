@@ -5,9 +5,6 @@
 #include "rdma_ping_msg.hpp"
 #include "rdma_scheduler.hpp"
 
-// BUG FIX: IB CQE timestamp fluctuates ~ 2**33
-std::atomic<uint64_t> client_archive_cqe_hw_clock = 0;
-
 // Function to handle received messages
 void handle_received_message(rdma_context* ctx_rx,
                              const union rdma_pongmsg_t& pong_msg,
@@ -73,25 +70,6 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                 wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-
-                // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                // if (client_archive_cqe_hw_clock.load() < cqe_time) {
-                //     client_archive_cqe_hw_clock.store(cqe_time);
-                // } else {
-                //     /**
-                //      * In case of Infiniband, HW timestamp sometimes
-                //      fluctuates
-                //      * like 8589934592 (2**33). We try to adjust it.
-                //      */
-                //     auto adjusted_cqe_time =
-                //         cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                //     logger->debug(
-                //         "rx cqe - original cqe_time: {}, adjusted: {}",
-                //         cqe_time, adjusted_cqe_time);
-                //     client_archive_cqe_hw_clock.store(adjusted_cqe_time);
-                //     cqe_time = adjusted_cqe_time;
-                // }
-                // /*--------------------------------------*/
 
                 if (wc.opcode == IBV_WC_RECV) {
                     // Parse the received message
@@ -233,27 +211,6 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
                 cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
 
-                // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                // if (client_archive_cqe_hw_clock.load() < cqe_time) {
-                //     client_archive_cqe_hw_clock.store(cqe_time);
-                // } else {
-                //     /**
-                //      * In case of Infiniband, HW timestamp sometimes
-                //      fluctuates
-                //      * like 8589934592 (2**33). We try to adjust it.
-                //      */
-                //     auto adjusted_cqe_time =
-                //         cqe_time + PINGWEAVE_IB_HW_ADJUST_TIME;
-                //     logger->debug(
-                //         "tx cqe - pingid: {}, original cqe_time: {},
-                //         adjusted: "
-                //         "{}",
-                //         wc.wr_id, cqe_time, adjusted_cqe_time);
-                //     client_archive_cqe_hw_clock.store(adjusted_cqe_time);
-                //     cqe_time = adjusted_cqe_time;
-                // }
-                // /*--------------------------------------*/
-
                 if (wc.opcode == IBV_WC_SEND) {
                     logger->debug(
                         "[CQE] Send complete (ping ID: {}), cqe_time: {}.",
@@ -384,7 +341,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
 
     uint32_t ping_uid = 0;
     uint64_t time_sleep_us = 0;
-    RdmaMsgScheduler scheduler(ipv4, logger);
+    RdmaMsgScheduler scheduler(ipv4, ctx_tx->protocol, logger);
     std::tuple<std::string, std::string, uint32_t, uint32_t> dst_addr;
 
     try {
@@ -591,9 +548,9 @@ void rdma_client_result_thread(const std::string& ipv4,
     }
 }
 
-void rdma_client(const std::string& ipv4) {
+void rdma_client(const std::string& ipv4, const std::string& protocol) {
     // Start the RX thread
-    const std::string client_logname = "rdma_client_" + ipv4;
+    const std::string client_logname = protocol + "_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
     if (get_log_config_from_ini(log_level_client,
@@ -608,7 +565,7 @@ void rdma_client(const std::string& ipv4) {
     }
 
     // Inter-thread queue
-    const std::string result_logname = "rdma_" + ipv4;
+    const std::string result_logname = protocol + "_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
     if (get_log_config_from_ini(log_level_result,
@@ -626,7 +583,7 @@ void rdma_client(const std::string& ipv4) {
     RdmaClientQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
-    const std::string ping_table_logname = "rdma_table_" + ipv4;
+    const std::string ping_table_logname = protocol + "_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
     if (get_log_config_from_ini(log_level_ping_table,
@@ -646,7 +603,7 @@ void rdma_client(const std::string& ipv4) {
 
     // Initialize RDMA contexts
     rdma_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logger)) {
+    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol, client_logger)) {
         throw std::runtime_error(
             "Client main - Failed to initialize RDMA contexts.");
     }
@@ -683,10 +640,8 @@ void rdma_client(const std::string& ipv4) {
     if (rx_thread.joinable()) {
         rx_thread.join();
     }
-    
+
     if (result_thread.joinable()) {
         result_thread.join();
     }
-
 }
-

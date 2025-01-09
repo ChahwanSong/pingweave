@@ -21,16 +21,15 @@ const std::string DIR_RESULT_PATH = "/../result";
 const std::string DIR_CONFIG_PATH = "/../config";
 
 // constants
-const static int MESSAGE_SIZE = 64;  // Message size of 64B
+const static int MESSAGE_SIZE = 64;                  // Message size of 64B
+const static int MAX_NUM_HOSTS_IN_PINGLIST = 10000;  // Maximum of host number
 
 // RDMA parameters
-const static int NUM_BUFFER = 256;   // enough?
-const static int TX_DEPTH = 1;       // enough?
-const static int RX_DEPTH = 1;       // enough?
-const static int GID_INDEX = 3;      // by default 0 (infiniband & RoCE)
-const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
-const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
-const static int RDMA_TRAFFIC_CLASS = 0; // (26 << 2 | 2); // DSCP value = 106
+const static int NUM_BUFFER = 256;        // to avoid buffer corruption for CQE
+const static int TX_DEPTH = 1;            // rdma
+const static int RX_DEPTH = 1;            // rdma
+const static int SERVICE_LEVEL = 0;       // by default 0 (lowest priority)
+const static int BATCH_CQE = 16;          // batch size for ibv_poll_cq()
 const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 
 // Params for internal message queue btw threads
@@ -47,12 +46,12 @@ const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS = 1000;
 
 // port that UDP server will listen
 const static int PINGWEAVE_UDP_PORT_CLIENT = 33335;
-const static int PINGWEAVE_UDP_PORT_SERVER = 33336; // both TX & RX
+const static int PINGWEAVE_UDP_PORT_SERVER = 33336;  // both TX & RX
 
 // IB HW Timestamp correction factor
 const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 
-inline std::string get_source_directory() {
+inline std::string get_src_dir() {
 #ifndef SOURCE_DIR
     // If missed, give a current directory
     return ".";
@@ -62,9 +61,7 @@ inline std::string get_source_directory() {
 #endif
 }
 
-const std::string pinglist_abs_path =
-    get_source_directory() + DIR_DOWNLOAD_PATH + "/pinglist.yaml";
-const std::string py_client_abs_path =
-    get_source_directory() + "/pingweave_client.py";
-const std::string py_server_abs_path =
-    get_source_directory() + "/pingweave_server.py";
+const std::string PINGWEAVE_INI_ABS_PATH =
+    get_src_dir() + DIR_CONFIG_PATH + "/pingweave.ini";
+const std::string PY_CLIENT_ABS_PATH = get_src_dir() + "/pingweave_client.py";
+const std::string PY_SERVER_ABS_PATH = get_src_dir() + "/pingweave_server.py";

@@ -37,10 +37,14 @@ std::set<std::string> get_all_local_ips() {
 
 // If error occurs, myaddr returned is empty set.
 int get_my_addr_from_pinglist(const std::string &pinglist_filename,
-                              std::set<std::string> &myaddr_rdma,
+                              std::set<std::string> &myaddr_roce,
+                              std::set<std::string> &myaddr_ib,
+                              std::set<std::string> &myaddr_tcp,
                               std::set<std::string> &myaddr_udp) {
     fkyaml::node config;
-    myaddr_rdma.clear();
+    myaddr_roce.clear();
+    myaddr_ib.clear();
+    myaddr_tcp.clear();
     myaddr_udp.clear();
     std::set<std::string> local_ips;
 
@@ -50,7 +54,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         spdlog::debug("Pinglist.yaml loaded successfully.");
     } catch (const std::exception &e) {
         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
-                      e.what());
+                     e.what());
         return true;
     }
 
@@ -62,7 +66,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         }
     } catch (const std::exception &e) {
         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:empty: {}",
-                      e.what());
+                     e.what());
         return true;
     }
 
@@ -76,22 +80,66 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
 
     try {
         // Get the RDMA category groups
-        if (!config.contains("rdma")) {
-            spdlog::debug("No 'rdma' category found in pinglist.yaml");
+        if (!config.contains("roce")) {
+            spdlog::debug("No 'roce' category found in pinglist.yaml");
         } else {
             // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["rdma"]) {
+            for (auto &group : config["roce"]) {
                 for (auto &ip : group) {
                     // If IP is on the current node, add it
                     std::string ip_addr = ip.get_value_ref<std::string &>();
                     if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr_rdma.insert(ip_addr);
+                        myaddr_roce.insert(ip_addr);
                     }
                 }
             }
         }
     } catch (const std::exception &e) {
-        spdlog::error("RDMA: Failure occurs while getting IP from pinglist: {}",
+        spdlog::error("RoCE: Failure occurs while getting IP from pinglist: {}",
+                      e.what());
+        return true;
+    }
+
+    try {
+        // Get the RDMA category groups
+        if (!config.contains("ib")) {
+            spdlog::debug("No 'ib' category found in pinglist.yaml");
+        } else {
+            // find all my ip addrs is in pinglist ip addrs
+            for (auto &group : config["ib"]) {
+                for (auto &ip : group) {
+                    // If IP is on the current node, add it
+                    std::string ip_addr = ip.get_value_ref<std::string &>();
+                    if (local_ips.find(ip_addr) != local_ips.end()) {
+                        myaddr_ib.insert(ip_addr);
+                    }
+                }
+            }
+        }
+    } catch (const std::exception &e) {
+        spdlog::error("IB: Failure occurs while getting IP from pinglist: {}",
+                      e.what());
+        return true;
+    }
+
+    try {
+        // Get the RDMA category groups
+        if (!config.contains("tcp")) {
+            spdlog::debug("No 'tcp' category found in pinglist.yaml");
+        } else {
+            // find all my ip addrs is in pinglist ip addrs
+            for (auto &group : config["tcp"]) {
+                for (auto &ip : group) {
+                    // If IP is on the current node, add it
+                    std::string ip_addr = ip.get_value_ref<std::string &>();
+                    if (local_ips.find(ip_addr) != local_ips.end()) {
+                        myaddr_tcp.insert(ip_addr);
+                    }
+                }
+            }
+        }
+    } catch (const std::exception &e) {
+        spdlog::error("TCP: Failure occurs while getting IP from pinglist: {}",
                       e.what());
         return true;
     }
@@ -123,12 +171,8 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
 }
 
 int get_controller_info_from_ini(std::string &ip, int &port) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-
     IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
+    if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
         return false;
     }
@@ -149,16 +193,19 @@ int get_controller_info_from_ini(std::string &ip, int &port) {
     return true;
 }
 
-int get_int_value_from_ini(IniParser& parser, const std::string& section, const std::string& key) {
+int get_int_value_from_ini(IniParser &parser, const std::string &section,
+                           const std::string &key) {
     int value = parser.getInt(section, key);
-    if (value < 1) {
+    if (value == -1) {
         spdlog::error("pingweave.ini gives an erratic value for {}", key);
         throw std::runtime_error(key);
     }
     return value;
 }
 
-std::string get_str_value_from_ini(IniParser& parser, const std::string& section, const std::string& key) {
+std::string get_str_value_from_ini(IniParser &parser,
+                                   const std::string &section,
+                                   const std::string &key) {
     std::string value = parser.get(section, key);
     if (value == "") {
         spdlog::error("pingweave.ini gives an erratic value for {}", key);
@@ -167,21 +214,16 @@ std::string get_str_value_from_ini(IniParser& parser, const std::string& section
     return value;
 }
 
-
-int get_int_param_from_ini(int& ret, const std::string& key) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-
+int get_int_param_from_ini(int &ret, const std::string &key) {
     IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
+    if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
         return false;
     }
 
     try {
         ret = get_int_value_from_ini(parser, "param", key);
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error &) {
         return false;
     }
 
@@ -189,21 +231,16 @@ int get_int_param_from_ini(int& ret, const std::string& key) {
     return true;
 }
 
-
-int get_str_param_from_ini(std::string& ret, const std::string& key) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-
+int get_str_param_from_ini(std::string &ret, const std::string &key) {
     IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
+    if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
         return false;
     }
 
     try {
         ret = get_str_value_from_ini(parser, "param", key);
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error &) {
         return false;
     }
 
@@ -211,14 +248,10 @@ int get_str_param_from_ini(std::string& ret, const std::string& key) {
     return true;
 }
 
-
-int get_log_config_from_ini(enum spdlog::level::level_enum& log_level, const std::string& key) {
-    // path of pingweave.ini
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave.ini";
-
+int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
+                            const std::string &key) {
     IniParser parser;
-    if (!parser.load(pingweave_ini_abs_path)) {
+    if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
         return false;
     }
@@ -232,14 +265,13 @@ int get_log_config_from_ini(enum spdlog::level::level_enum& log_level, const std
             spdlog::error("Unknown log level from pingweave.ini: {}", key);
             return false;
         }
-    } catch (const std::runtime_error&) {
+    } catch (const std::runtime_error &) {
         return false;
     }
 
     // success
     return true;
 }
-
 
 void delete_files_in_directory(const std::string &directoryPath) {
     DIR *dir = opendir(directoryPath.c_str());
@@ -365,9 +397,8 @@ uint64_t get_current_timestamp_steady() {
 }
 
 // calculate time difference with considering bit wrap-around (UDP)
-uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1,
-                                             const uint64_t &t2,
-                                             const uint64_t &mask) {
+uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
+                                      const uint64_t &mask) {
     uint64_t delta;
     if (t2 >= t1) {  // no wrap around
         delta = t2 - t1;
@@ -384,14 +415,15 @@ uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
     // enforce the wrap bit-around with modulo
     uint64_t t1_modulo = t1 % modulo;
     uint64_t t2_modulo = t2 % modulo;
-    uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1_modulo) % modulo; 
+    uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1_modulo) % modulo;
 
     // // for debugging
-    // logger->debug("Calculate time diff - original: {}, modulo: {}", t2 - t1, t_diff_modulo);
-    // uint64_t t_diff = t2 - t1;
-    // if (t_diff > (1ULL << 30) && t_diff < (1ULL << 33)) {
-    //     logger->debug("Invalid time difference: {}, modulo: {}", t_diff, t_diff_modulo);
-    // } 
+    // logger->debug("Calculate time diff - original: {}, modulo: {}", t2 - t1,
+    // t_diff_modulo); uint64_t t_diff = t2 - t1; if (t_diff > (1ULL << 30) &&
+    // t_diff < (1ULL << 33)) {
+    //     logger->debug("Invalid time difference: {}, modulo: {}", t_diff,
+    //     t_diff_modulo);
+    // }
 
     return t_diff_modulo;
 }
@@ -481,9 +513,6 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
 
 int message_to_http_server(const std::string &message, const std::string &api,
                            std::shared_ptr<spdlog::logger> logger) {
-    const std::string pingweave_ini_abs_path =
-        get_source_directory() + DIR_CONFIG_PATH + "/pingweave_server.py";
-
     std::string controller_host;
     int controller_port;
     if (get_controller_info_from_ini(controller_host, controller_port)) {

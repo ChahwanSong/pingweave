@@ -47,7 +47,7 @@ sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin
 
 
 ```
-ps -eo pid,comm,rss,vsz --sort=-rss | awk '/pingweave/ {printf "PID: %s, COMMAND: %s, RSS: %.2f MB, VSZ: %.2f MB\n", $1, $2, $3/1024, $4/1024}'
+ps -eo pid,args,comm,rss,vsz --sort=-rss | awk '/pingweave/ {printf "PID: %s, ARGS: %s, COMMAND: %s, RSS: %.2f MB, VSZ: %.2f MB\n", $1, $2, $3, $4/1024, $5/1024}'
 ```
 
 ## Reconfiguration

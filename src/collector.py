@@ -8,6 +8,7 @@ import yaml  # python3 -m pip install pyyaml
 import psutil
 from logger import initialize_pingweave_logger
 from macro import *
+from setproctitle import setproctitle
 
 logger = initialize_pingweave_logger(socket.gethostname(), "collector", 5, False)
 
@@ -187,6 +188,7 @@ async def pingweave_collector():
 
 
 def run_pingweave_collector():
+    setproctitle("pingweave_collector.py")
     try:
         asyncio.run(pingweave_collector())
     except KeyboardInterrupt:

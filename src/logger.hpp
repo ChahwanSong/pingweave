@@ -36,7 +36,7 @@ inline std::shared_ptr<spdlog::logger> initialize_logger(
     auto logger = spdlog::get(logname);
     if (!logger) {
         logger = spdlog::rotating_logger_mt(
-            logname, get_source_directory() + dir_path + "/" + logname + ".log",
+            logname, get_src_dir() + dir_path + "/" + logname + ".log",
             file_size, file_num);
         logger->set_pattern(LOG_FORMAT);
         logger->set_level(log_level);

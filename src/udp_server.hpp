@@ -9,9 +9,9 @@
  */
 
 // UDP server main function
-void udp_server(const std::string& ipv4) {
+void udp_server(const std::string& ipv4, const std::string& protocol) {
     // Initialize logger
-    const std::string server_logname = "udp_server_" + ipv4;
+    const std::string server_logname = protocol + "_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
     if (get_log_config_from_ini(log_level_server,
@@ -25,7 +25,7 @@ void udp_server(const std::string& ipv4) {
             "Failed to get a param 'logger_cpp_process_udp_server'");
     }
 
-    // Initialize RDMA context
+    // Initialize UDP context
     udp_context ctx_server;
     if (make_ctx(&ctx_server, ipv4, PINGWEAVE_UDP_PORT_SERVER, server_logger)) {
         server_logger->error("Failed to create TX context for IP: {}", ipv4);

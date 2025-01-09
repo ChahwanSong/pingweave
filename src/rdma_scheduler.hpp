@@ -9,9 +9,9 @@ typedef std::vector<std::tuple<std::string, std::string, uint32_t, uint32_t>>
 
 class RdmaMsgScheduler : public MsgScheduler {
    public:
-    RdmaMsgScheduler(const std::string& ip,
+    RdmaMsgScheduler(const std::string& ip, const std::string& protocol,
                      std::shared_ptr<spdlog::logger> logger)
-        : MsgScheduler(ip, logger) {}
+        : MsgScheduler(ip, protocol, logger) {}
     ~RdmaMsgScheduler() {}
 
     int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result,
@@ -22,7 +22,7 @@ class RdmaMsgScheduler : public MsgScheduler {
                                                              last_load_time);
 
         // Check the time to load the address_store
-        if (load_elapsed_time.count() > LOAD_CONFIG_INTERVAL_SEC) {
+        if (load_elapsed_time.count() > load_config_interval_sec) {
             load_address_info();
             last_load_time = load_now;
         }
@@ -60,13 +60,13 @@ class RdmaMsgScheduler : public MsgScheduler {
 
         try {
             // Load pinglist.yaml
-            std::ifstream ifs_pinglist(get_source_directory() +
-                                       DIR_DOWNLOAD_PATH + "/pinglist.yaml");
+            std::ifstream ifs_pinglist(get_src_dir() + DIR_DOWNLOAD_PATH +
+                                       "/pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
             std::vector<std::string> relevantIps;
 
-            if (pinglist.contains("rdma")) {
-                for (auto& group : pinglist["rdma"]) {
+            if (pinglist.contains(protocol)) {
+                for (auto& group : pinglist[protocol]) {
                     for (auto& ip : group) {
                         if (ip.get_value_ref<std::string&>() == ipaddr) {
                             for (auto& targetIp : group) {
@@ -80,8 +80,7 @@ class RdmaMsgScheduler : public MsgScheduler {
             }
 
             // Load address_store.yaml
-            std::ifstream ifs_addressStore(get_source_directory() +
-                                           DIR_DOWNLOAD_PATH +
+            std::ifstream ifs_addressStore(get_src_dir() + DIR_DOWNLOAD_PATH +
                                            "/address_store.yaml");
             fkyaml::node addressStore =
                 fkyaml::node::deserialize(ifs_addressStore);
@@ -102,6 +101,10 @@ class RdmaMsgScheduler : public MsgScheduler {
 
             logger->debug("Loaded #{} relevant addresses from pinglist YAML.",
                           addressInfoNew.size());
+            if (addressInfo.size() != addressInfoNew.size()) {
+                logger->info("AddressInfo changed: {} -> {}",
+                             addressInfo.size(), addressInfoNew.size());
+            }
 
             // save the new address info
             addressInfo.clear();
@@ -113,7 +116,7 @@ class RdmaMsgScheduler : public MsgScheduler {
                     interval_send_ping_microsec / addressInfo.size();
             } else {
                 // if nothing to send
-                inter_ping_interval_us = DEFAULT_INTERVAL_MICROSEC;
+                inter_ping_interval_us = 1000000;
             }
 
             logger->debug("Interval btw ping: {} microseconds",

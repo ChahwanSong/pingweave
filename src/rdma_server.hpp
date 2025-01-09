@@ -4,9 +4,6 @@
 #include "rdma_ping_info.hpp"
 #include "rdma_ping_msg.hpp"
 
-// BUG FIX: IB CQE timestamp fluctuates ~ 2**33
-std::atomic<uint64_t> server_archive_cqe_hw_clock = 0;
-
 void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                            std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
@@ -49,24 +46,6 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
                     cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-
-                    // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-                    // if (server_archive_cqe_hw_clock.load() < cqe_time) {
-                    //     server_archive_cqe_hw_clock.store(cqe_time);
-                    // } else {
-                    //     /**
-                    //      * In case of Infiniband, HW timestamp sometimes
-                    //      fluctuates
-                    //      * like 8589934592 (2**33). We try to adjust it.
-                    //      */
-                    //     auto adjusted_cqe_time = cqe_time +
-                    //     PINGWEAVE_IB_HW_ADJUST_TIME; logger->debug("rx cqe -
-                    //     original cqe_time: {}, adjusted: {}", cqe_time,
-                    //     adjusted_cqe_time);
-                    //     server_archive_cqe_hw_clock.store(adjusted_cqe_time);
-                    //     cqe_time = adjusted_cqe_time;
-                    // }
-                    // /*--------------------------------------*/
 
                     ping_msg.x.time = cqe_time;
 
@@ -259,22 +238,6 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
             wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
             cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
-
-            // /** HW TIMESTAMP JUMP CORRECTION LOGIC */
-            // if (server_archive_cqe_hw_clock.load() < cqe_time) {
-            //     server_archive_cqe_hw_clock.store(cqe_time);
-            // } else {
-            //     /**
-            //      * In case of Infiniband, HW timestamp sometimes fluctuates
-            //      * like 8589934592 (2**33). We try to adjust it.
-            //      */
-            //     auto adjusted_cqe_time = cqe_time +
-            //     PINGWEAVE_IB_HW_ADJUST_TIME; logger->debug("tx qce - original
-            //     cqe_time: {}, adjusted: {}", cqe_time, adjusted_cqe_time);
-            //     server_archive_cqe_hw_clock.store(adjusted_cqe_time);
-            //     cqe_time = adjusted_cqe_time;
-            // }
-            // /*--------------------------------------*/
 
             // if failure
             if (wc.status != IBV_WC_SUCCESS) {
@@ -472,9 +435,9 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
 }
 
 // RDMA server main function
-void rdma_server(const std::string& ipv4) {
+void rdma_server(const std::string& ipv4, const std::string& protocol) {
     // Initialize logger
-    const std::string server_logname = "rdma_server_" + ipv4;
+    const std::string server_logname = protocol + "_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
     if (get_log_config_from_ini(log_level_server,
@@ -496,7 +459,7 @@ void rdma_server(const std::string& ipv4) {
 
     // Initialize RDMA context
     rdma_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, server_logger)) {
+    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol, server_logger)) {
         throw std::runtime_error(
             "server main - Failed to initialize RDMA contexts.");
     }

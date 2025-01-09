@@ -70,6 +70,7 @@ int get_context_by_ip(struct rdma_context *ctx,
                     logger->error(
                         "No matching RDMA device found for interface: {}",
                         ifa->ifa_name);
+                    freeifaddrs(ifaddr);
                     return true;
                 } else {
                     break;
@@ -179,8 +180,46 @@ static std::string make_destination_key(uint32_t lid,
     return ss.str();
 }
 
+int get_traffic_class(struct rdma_context *ctx,
+                      std::shared_ptr<spdlog::logger> logger) {
+    // get traffic class value from pingweave.ini
+    if (ctx->protocol == "ib") {
+        if (!get_int_param_from_ini(ctx->traffic_class, "traffic_class_ib")) {
+            logger->error(
+                "Failed to get a traffic class for IB from pingweave.ini. Use a "
+                "default class: 0.");
+            ctx->traffic_class = 0;
+            return false;
+        }
+    } else if (ctx->protocol == "roce") {
+        if (!get_int_param_from_ini(ctx->traffic_class,
+                                    "traffic_class_roce")) {
+            logger->error(
+                "Failed to get a traffic class for RoCE from pingweave.ini. Use a "
+                "default class: 0.");
+            ctx->traffic_class = 0;
+            return false;
+        }
+    } else {
+        logger->error("Invalid protocol type: {}", ctx->protocol);
+        throw std::runtime_error("Invalid protocol type - must be either ib or roce");
+    }
+
+    // success
+    return true;
+}
+
 ibv_ah *get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
                          std::shared_ptr<spdlog::logger> logger) {
+    // To avoid lookup slow-down, we clear the map if its size is too big
+    if (ctx->ah_map.size() > MAX_NUM_HOSTS_IN_PINGLIST) {
+        for (auto &pair : ctx->ah_map) {
+            ibv_destroy_ah(pair.second);
+        }
+        ctx->ah_map.clear();
+    }
+
+    // Create a lookup key for AH
     auto key = make_destination_key(rem_dest.x.lid, rem_dest.x.gid);
     auto it = ctx->ah_map.find(key);
     if (it != ctx->ah_map.end()) {
@@ -198,7 +237,7 @@ ibv_ah *get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
         ah_attr.grh.hop_limit = 255;
         ah_attr.grh.dgid = rem_dest.x.gid;
         ah_attr.grh.sgid_index = ctx->gid_index;
-        ah_attr.grh.traffic_class = RDMA_TRAFFIC_CLASS;
+        ah_attr.grh.traffic_class = ctx->traffic_class;
     }
 
     ibv_ah *ah = ibv_create_ah(ctx->pd, &ah_attr);
@@ -432,10 +471,12 @@ int prepare_ctx(struct rdma_context *ctx,
     return false;
 }
 
-int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
+int make_ctx(struct rdma_context *ctx, const std::string &ipv4, const std::string& protocol,
              const int &is_rx, std::shared_ptr<spdlog::logger> logger) {
-    ctx->ipv4 = ipv4;
-    ctx->is_rx = is_rx;
+    ctx->ipv4 = ipv4; // ipv4 address
+    ctx->is_rx = is_rx; // rx or tx
+    ctx->protocol = protocol; // ib or roce
+
     if (get_context_by_ip(ctx, logger)) {
         return true;  // propagate error
     }
@@ -458,6 +499,9 @@ int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
     gid_to_wire_gid(&ctx->gid, ctx->wired_gid);
     inet_ntop(AF_INET6, &ctx->gid, ctx->parsed_gid, sizeof(ctx->parsed_gid));
 
+    // get a traffic class
+    get_traffic_class(ctx, logger);
+
     std::string ctx_send_type = is_rx ? "RX" : "TX";
     logger->info("[{}] IP: {} has Queue pair with GID: {}, QPN: {}",
                  ctx_send_type, ipv4, ctx->parsed_gid, ctx->qp->qp_num);
@@ -469,12 +513,13 @@ int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
 // Function to initialize RDMA contexts
 int initialize_contexts(struct rdma_context &ctx_tx,
                         struct rdma_context &ctx_rx, const std::string &ipv4,
+                        const std::string &protocol,
                         std::shared_ptr<spdlog::logger> logger) {
-    if (make_ctx(&ctx_tx, ipv4, false, logger)) {
+    if (make_ctx(&ctx_tx, ipv4, protocol, false, logger)) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
         return true;
     }
-    if (make_ctx(&ctx_rx, ipv4, true, logger)) {
+    if (make_ctx(&ctx_rx, ipv4, protocol, true, logger)) {
         logger->error("Failed to create RX context for IP: {}", ipv4);
         return true;
     }
@@ -565,7 +610,7 @@ int wait_for_cq_event(struct rdma_context *ctx,
 // save RDMA device's Server RX QP information
 int save_device_info(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger) {
-    const std::string directory = get_source_directory() + DIR_UPLOAD_PATH;
+    const std::string directory = get_src_dir() + DIR_UPLOAD_PATH;
     struct stat st = {0};
 
     if (stat(directory.c_str(), &st) == -1) {

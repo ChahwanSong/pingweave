@@ -56,27 +56,44 @@ def load_config_ini():
         interval_read_pinglist_sec = 60
 
 
-def fetch_data(ip, port, data_type):
+def fetch_data(ip: str, port: str, data_type: str):
     """
     Fetches data from the server and saves it as a YAML file.
     """
+    if not os.path.exists(DOWNLOAD_PATH):
+        os.makedirs(DOWNLOAD_PATH)
+    
     yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
     is_error = False
     try:
         url = f"http://{ip}:{port}/{data_type}"
         logger.debug(f"Requesting {url}")
         request = urllib.request.Request(url)
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=5) as response:
             data = response.read()
             logger.debug(f"Received {data_type} data.")
 
             # Parse JSON data
             parsed_data = json.loads(data.decode())
 
+            # Check if file exists and compare
+            if os.path.exists(yaml_file_path):
+                with open(yaml_file_path, "r") as existing_file:
+                    try:
+                        existing_data = yaml.safe_load(existing_file)
+                    except yaml.YAMLError as e:
+                        logger.error(f"Failed to load existing YAML file: {e}")
+                        existing_data = None
+
+                # Compare existing and new data
+                if existing_data == parsed_data:
+                    logger.debug(f"No changes detected in {data_type} data.")
+                    return  # Exit early if data is unchanged
+
             # Write to YAML file
             with open(yaml_file_path, "w") as yaml_file:
                 yaml.dump(parsed_data, yaml_file, default_flow_style=False)
-
+                
             logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
 
     except (yaml.YAMLError, json.JSONDecodeError) as e:

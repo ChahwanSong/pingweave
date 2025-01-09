@@ -7,9 +7,9 @@ typedef std::vector<std::string> udpAddressInfo_t;
 
 class UdpMsgScheduler : public MsgScheduler {
    public:
-    UdpMsgScheduler(const std::string& ip,
+    UdpMsgScheduler(const std::string& ip, const std::string& protocol,
                      std::shared_ptr<spdlog::logger> logger)
-        : MsgScheduler(ip, logger) {}
+        : MsgScheduler(ip, protocol, logger) {}
     ~UdpMsgScheduler() {}
 
     int next(std::string& result, uint64_t& time_sleep_us) {
@@ -18,7 +18,7 @@ class UdpMsgScheduler : public MsgScheduler {
             load_now - last_load_time);
 
         // Check the time to load the address_store
-        if (load_elapsed_time.count() > LOAD_CONFIG_INTERVAL_SEC) {
+        if (load_elapsed_time.count() > load_config_interval_sec) {
             load_address_info();
             last_load_time = load_now;
         }
@@ -55,12 +55,12 @@ class UdpMsgScheduler : public MsgScheduler {
 
         try {
             // Load pinglist.yaml
-            std::ifstream ifs_pinglist(get_source_directory() +
+            std::ifstream ifs_pinglist(get_src_dir() +
                                        DIR_DOWNLOAD_PATH + "/pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
             
-            if (pinglist.contains("udp")) {
-                for (auto& group : pinglist["udp"]) {
+            if (pinglist.contains(protocol)) {
+                for (auto& group : pinglist[protocol]) {
                     for (auto& ip : group) {
                         if (ip.get_value_ref<std::string&>() == ipaddr) {
                             for (auto& targetIp : group) {
@@ -76,7 +76,11 @@ class UdpMsgScheduler : public MsgScheduler {
             logger->debug(
                 "Loaded #{} relevant addresses from pinglist YAML.",
                 addressInfoNew.size());
-
+            if (addressInfo.size() != addressInfoNew.size()) {
+                logger->info("AddressInfo changed: {} -> {}",
+                             addressInfo.size(), addressInfoNew.size());
+            }
+            
             // save the new address info
             addressInfo.clear();
             addressInfo = addressInfoNew;
@@ -87,7 +91,7 @@ class UdpMsgScheduler : public MsgScheduler {
                     interval_send_ping_microsec / addressInfo.size();
             } else {
                 // if nothing to send
-                inter_ping_interval_us = DEFAULT_INTERVAL_MICROSEC;
+                inter_ping_interval_us = 1000000;
             }
 
             logger->debug("Interval btw ping: {} microseconds",

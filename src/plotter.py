@@ -12,6 +12,8 @@ from logger import initialize_pingweave_logger
 import os
 import time
 import configparser
+from setproctitle import setproctitle
+
 from macro import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "plotter", 5, False)
@@ -31,7 +33,7 @@ config = configparser.ConfigParser()
 
 # value to color index mapping for ping results
 def map_value_to_color_index_ping_delay(value, steps: list):
-    assert(len(steps) == 3)
+    assert len(steps) == 3
     if value <= -1:
         return 0  # black
     elif -1 < value <= 0:
@@ -51,19 +53,19 @@ def map_value_to_color_index_ping_delay(value, steps: list):
 
 # value to color index mapping for ping results
 def map_value_to_color_index_ratio(value, steps: list):
-    assert(len(steps) == 3)
+    assert len(steps) == 3
     if value <= -1:
         return 0  # black
     elif -1 < value < 0:
         return 1  # purple
     elif 0 <= value < float(steps[0]):
-        return 2 # green
+        return 2  # green
     elif float(steps[0]) <= value < float(steps[1]):
-        return 3 # yellow
+        return 3  # yellow
     elif float(steps[1]) <= value < float(steps[2]):
-        return 4 # orange
+        return 4  # orange
     elif float(steps[2]) <= value <= 1:
-        return 5 # red
+        return 5  # red
     else:
         logger.error(f"map_value error: {steps}")
         exit(1)
@@ -145,6 +147,7 @@ def read_pinglist():
     except Exception as e:
         logger.error(f"Error loading pinglist: {e}")
 
+
 def clear_directory_conditional(directory_path: str, except_files: list):
     try:
         # get entries in directory
@@ -155,8 +158,8 @@ def clear_directory_conditional(directory_path: str, except_files: list):
             entry_prefix = entry.split(".html")[0]
             if entry_prefix not in except_files:
                 logger.info(f"Deleting a file or directory: {entry}")
-                
-                # delete if file 
+
+                # delete if file
                 if os.path.isfile(entry_path) or os.path.islink(entry_path):
                     os.remove(entry_path)
                     logger.info(f"Deleted file: {entry_path}")
@@ -178,7 +181,6 @@ def clear_directory_conditional(directory_path: str, except_files: list):
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
-
 
 
 def plot_heatmap_value(
@@ -229,7 +231,9 @@ def plot_heatmap_value(
                 src = source_ips[j]
                 dst = destination_ips[i]
                 val = z_values[i][j]
-                formatted_val = f"{int(val):,}" if val >= 0 else "N/A"  # Format only non-negative values
+                formatted_val = (
+                    f"{int(val):,}" if val >= 1 else f"{val:.2f}" if val >= 0 else "N/A"
+                )
                 time = time_values[i][j]
                 text = f"Src: {src}<br>Dst: {dst}<br>Value: {formatted_val}<br>Time: {time}"
                 row.append(text)
@@ -291,18 +295,19 @@ def plot_heatmap_value(
 
         # return the path of HTML
         return f"{HTML_DIR}/{outname}.html"
-    
+
     except Exception as e:
         logger.error(f"Exception: {e}")
-        return "" # return nothing if failure
+        return ""  # return nothing if failure
+
 
 def plot_heatmap_udp(data, outname="result"):
     delay_steps = [1000000, 5000000, 20000000]
     delay_tick_steps = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
-    
+
     ratio_steps = [0.05, 0.5, 0.9]
     ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
-    
+
     output_files = []
     records = []
     for k, v in data.items():
@@ -316,7 +321,7 @@ def plot_heatmap_udp(data, outname="result"):
                 failure_ratio = -1
             else:
                 failure_ratio = 1.0 * n_failure / (n_success + n_failure)
-                
+
             if n_success + n_failure + n_weird == 0:
                 weird_ratio = -1
             else:
@@ -407,13 +412,14 @@ def plot_heatmap_udp(data, outname="result"):
         outname + "_weird_ratio",
     ):
         output_files.append(outname + "_weird_ratio")
-    
+
     return output_files
+
 
 def plot_heatmap_rdma(data, outname="result"):
     delay_steps = [100000, 500000, 5000000]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
-    
+
     ratio_steps = [0.05, 0.5, 0.9]
     ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
 
@@ -431,7 +437,7 @@ def plot_heatmap_rdma(data, outname="result"):
             else:
                 failure_ratio = 1.0 * n_failure / (n_success + n_failure)
 
-            if (n_success + n_failure + n_weird == 0):
+            if n_success + n_failure + n_weird == 0:
                 weird_ratio = -1
             else:
                 weird_ratio = 1.0 * n_weird / (n_success + n_failure + n_weird)
@@ -480,7 +486,7 @@ def plot_heatmap_rdma(data, outname="result"):
                     "ping_end_time": "N/A",
                 }
             )
-            
+
     # network mean
     if plot_heatmap_value(
         records,
@@ -524,7 +530,7 @@ def plot_heatmap_rdma(data, outname="result"):
         map_value_to_color_index_ratio,
         outname + "_failure_ratio",
     ):
-        output_files.append(outname + "_failure_ratio")    
+        output_files.append(outname + "_failure_ratio")
     # weird ratio
     if plot_heatmap_value(
         records,
@@ -535,14 +541,14 @@ def plot_heatmap_rdma(data, outname="result"):
         map_value_to_color_index_ratio,
         outname + "_weird_ratio",
     ):
-        output_files.append(outname + "_weird_ratio")    
-    return output_files 
+        output_files.append(outname + "_weird_ratio")
+    return output_files
 
 
 async def pingweave_plotter():
     load_config_ini()
     last_plot_time = int(time.time())
-    pinglist_protocol = ["udp", "rdma"]
+    pinglist_protocol = ["udp", "tcp", "roce", "ib"]
 
     try:
         while True:
@@ -644,10 +650,22 @@ async def pingweave_plotter():
                     for category, data in records.items():
                         for group, group_data in data.items():
                             if category == "udp":
-                                new_file_list += plot_heatmap_udp(group_data, f"{category}_{group}")
-                            elif category == "rdma":
-                                new_file_list += plot_heatmap_rdma(group_data, f"{category}_{group}")
-                    
+                                new_file_list += plot_heatmap_udp(
+                                    group_data, f"{category}_{group}"
+                                )
+                            # elif category == "tcp":
+                            #     new_file_list += plot_heatmap_udp(
+                            #         group_data, f"{category}_{group}"
+                            #     )
+                            elif category == "roce":
+                                new_file_list += plot_heatmap_rdma(
+                                    group_data, f"{category}_{group}"
+                                )
+                            elif category == "ib":
+                                new_file_list += plot_heatmap_rdma(
+                                    group_data, f"{category}_{group}"
+                                )
+
                     # clear all HTML
                     clear_directory_conditional(HTML_DIR, new_file_list)
 
@@ -668,6 +686,7 @@ async def pingweave_plotter():
 
 
 def run_pingweave_plotter():
+    setproctitle("pingweave_plotter.py")
     try:
         asyncio.run(pingweave_plotter())
     except KeyboardInterrupt:

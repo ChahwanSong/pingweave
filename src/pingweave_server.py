@@ -7,6 +7,8 @@ import time
 import socket
 import psutil
 import multiprocessing
+import copy
+from setproctitle import setproctitle
 
 from logger import initialize_pingweave_logger
 import yaml  # python3 -m pip install pyyaml
@@ -96,14 +98,18 @@ async def read_pinglist():
     global pinglist_in_memory
 
     try:
-        async with pinglist_lock:
-            pinglist_in_memory.clear()
-            if os.path.isfile(PINGLIST_PATH):
-                with open(PINGLIST_PATH, "r") as file:
-                    pinglist_in_memory = yaml.safe_load(file)
-                    logger.debug("Pinglist loaded successfully.")
-            else:
-                logger.error(f"Pinglist file not found at {PINGLIST_PATH}")
+        tmp_pinglist_in_memory = None
+        if os.path.isfile(PINGLIST_PATH):
+            with open(PINGLIST_PATH, "r") as file:
+                tmp_pinglist_in_memory = yaml.safe_load(file)
+                logger.debug(f"{PINGLIST_PATH} yaml was loaded successfully.")
+        
+            async with pinglist_lock:
+                pinglist_in_memory.clear()
+                pinglist_in_memory = copy.deepcopy(tmp_pinglist_in_memory)
+            
+        else:
+            logger.error(f"Pinglist file not found at {PINGLIST_PATH}")
     except Exception as e:
         logger.error(f"Error loading pinglist: {e}")
 
@@ -143,7 +149,7 @@ async def get_address_store(request):
                 if value[5] + 300 < current_time
             ]
             for key in keys_old_entries:
-                logger.error(f"(EXPIRED) Remove old address information: {key}")
+                logger.info(f"(EXPIRED) Remove old address information: {key}")
                 address_store.pop(key)
             address_store_checkpoint = current_time
         response_data = address_store
@@ -214,7 +220,7 @@ async def index(request):
     return web.Response(text=content, content_type="text/html")
 
 
-async def pingweave_server():
+async def pingweave_webserver():
     load_config_ini()
 
     try:
@@ -249,7 +255,7 @@ async def pingweave_server():
                 await asyncio.Event().wait()
 
             except asyncio.CancelledError:
-                logger.info("pingweave_server task was cancelled.")
+                logger.info("pingweave_webserver task was cancelled.")
                 break
             except Exception as e:
                 logger.error(f"Cannot start the pingweave server: {e}")
@@ -257,16 +263,17 @@ async def pingweave_server():
                 await runner.cleanup()
                 await asyncio.sleep(10)
     except KeyboardInterrupt:
-        logger.info("pingweave_server received KeyboardInterrupt. Exiting.")
+        logger.info("pingweave_webserver received KeyboardInterrupt. Exiting.")
     except Exception as e:
-        logger.error(f"Exception in pingweave_server: {e}")
+        logger.error(f"Exception in pingweave_webserver: {e}")
 
 
-def run_pingweave_server():
+def run_pingweave_webserver():
+    setproctitle("pingweave_webserver.py")
     try:
-        asyncio.run(pingweave_server())
+        asyncio.run(pingweave_webserver())
     except KeyboardInterrupt:
-        logger.info("pingweave_server process received KeyboardInterrupt. Exiting.")
+        logger.info("pingweave_webserver process received KeyboardInterrupt. Exiting.")
 
 
 def terminate_all(processes):
@@ -298,7 +305,7 @@ if __name__ == "__main__":
     try:
         # Define processes
         process_server = multiprocessing.Process(
-            target=run_pingweave_server, name="pingweave_server", daemon=True
+            target=run_pingweave_webserver, name="pingweave_webserver", daemon=True
         )
         process_collector = multiprocessing.Process(
             target=run_pingweave_collector, name="pingweave_collector", daemon=True

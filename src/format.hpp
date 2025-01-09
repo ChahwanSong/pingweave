@@ -191,6 +191,12 @@ struct rdma_context {
     /* ah map */
     std::unordered_map<std::string, ibv_ah*> ah_map;
 
+    /* protocol : ib or roce */
+    std::string protocol;
+    
+    /* traffic class */
+    int traffic_class; // 0 for IB, 106 for RoCE
+
     /** TODO: deconstructor
      * 1.. channel
      * 2. pd

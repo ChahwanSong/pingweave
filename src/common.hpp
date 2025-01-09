@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -24,6 +25,7 @@
 #include <cstdio>
 #include <cstring>  // strerror
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <list>
@@ -32,6 +34,7 @@
 #include <set>
 #include <shared_mutex>  // for shared_mutex, unique_lock, and shared_lock
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -45,14 +48,20 @@
 
 std::set<std::string> get_all_local_ips();
 int get_my_addr_from_pinglist(const std::string &pinglist_filename,
-                              std::set<std::string> &myaddr_rdma,
+                              std::set<std::string> &myaddr_roce,
+                              std::set<std::string> &myaddr_ib,
+                              std::set<std::string> &myaddr_tcp,
                               std::set<std::string> &myaddr_udp);
 int get_controller_info_from_ini(std::string &ip, int &port);
-int get_int_value_from_ini(IniParser& parser, const std::string& section, const std::string& key);
-std::string get_str_value_from_ini(IniParser& parser, const std::string& section, const std::string& key);
-int get_int_param_from_ini(int& ret, const std::string& key);
-int get_str_param_from_ini(std::string& ret, const std::string& key);
-int get_log_config_from_ini(enum spdlog::level::level_enum& log_level, const std::string& key);
+int get_int_value_from_ini(IniParser &parser, const std::string &section,
+                           const std::string &key);
+std::string get_str_value_from_ini(IniParser &parser,
+                                   const std::string &section,
+                                   const std::string &key);
+int get_int_param_from_ini(int &ret, const std::string &key);
+int get_str_param_from_ini(std::string &ret, const std::string &key);
+int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
+                            const std::string &key);
 
 void delete_files_in_directory(const std::string &directoryPath);
 std::string get_thread_id();
@@ -65,7 +74,7 @@ std::string timestamp_ns_to_string(uint64_t timestamp_ns);
 std::string get_current_timestamp_string();
 uint64_t get_current_timestamp_steady();
 uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
-                                     const uint64_t &mask);
+                                      const uint64_t &mask);
 uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
                                      const uint64_t &modulo,
                                      std::shared_ptr<spdlog::logger> logger);

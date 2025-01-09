@@ -11,7 +11,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
 
     uint32_t ping_uid = 0;
     uint64_t time_sleep_us = 0;
-    UdpMsgScheduler scheduler(ipv4, logger);
+    UdpMsgScheduler scheduler(ipv4, "udp", logger);
     std::string dst_addr;
 
     try {
@@ -169,9 +169,9 @@ void udp_client_result_thread(const std::string& ipv4,
     }
 }
 
-void udp_client(const std::string& ipv4) {
+void udp_client(const std::string& ipv4, const std::string& protocol) {
     // Start the RX thread
-    const std::string client_logname = "udp_client_" + ipv4;
+    const std::string client_logname = protocol + "_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
     if (get_log_config_from_ini(log_level_client,
@@ -186,7 +186,7 @@ void udp_client(const std::string& ipv4) {
     }
 
     // Inter-thread queue
-    const std::string result_logname = "udp_" + ipv4;
+    const std::string result_logname = protocol + "_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
     if (get_log_config_from_ini(log_level_result,
@@ -204,15 +204,16 @@ void udp_client(const std::string& ipv4) {
     UdpClientQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
-    const std::string ping_table_logname = "udp_table_" + ipv4;
+    const std::string ping_table_logname = protocol + "_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
     if (get_log_config_from_ini(log_level_ping_table,
                                 "logger_cpp_process_udp_ping_table")) {
-        ping_table_logger =
-            initialize_logger(ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
-                              LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
-        ping_table_logger->info("UDP ping_table is running on pid {}", getpid());
+        ping_table_logger = initialize_logger(
+            ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
+            LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
+        ping_table_logger->info("UDP ping_table is running on pid {}",
+                                getpid());
     } else {
         throw std::runtime_error(
             "Failed to get a param 'logger_cpp_process_udp_ping_table'");
