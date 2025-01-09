@@ -79,9 +79,10 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
     }
 }
 
-void udp_client_result_thread(const std::string& ipv4,
-                              UdpClientQueue* client_queue,
-                              std::shared_ptr<spdlog::logger> logger) {
+void udp_client_result_thread(
+    const std::string& ipv4,
+    const std::string& protocol UdpClientQueue* client_queue,
+    std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
     if (!get_int_param_from_ini(report_interval_ms,
                                 "interval_report_ping_result_millisec")) {
@@ -154,7 +155,8 @@ void udp_client_result_thread(const std::string& ipv4,
 
                 // send to collector
                 if (agg_result.size() > 0) {
-                    message_to_http_server(agg_result, "/result_udp", logger);
+                    message_to_http_server(agg_result, "/result_" + protocol,
+                                           logger);
                 }
 
                 // clear the history
@@ -231,8 +233,8 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     // Start the Result thread
     client_logger->info("Starting UDP result thread (Thread ID: {})...",
                         get_thread_id());
-    std::thread result_thread(udp_client_result_thread, ipv4, &client_queue,
-                              result_logger);
+    std::thread result_thread(udp_client_result_thread, ipv4, protocol,
+                              &client_queue, result_logger);
 
     // Start the RX thread
     std::thread rx_thread(udp_client_rx_thread, &ctx_rx, ipv4, &ping_table,
