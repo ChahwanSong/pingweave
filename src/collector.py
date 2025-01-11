@@ -46,20 +46,6 @@ except Exception as e:
     redis_server = None
 
 
-def load_config_ini():
-    global control_host, collect_port
-
-    try:
-        config.read(CONFIG_PATH)
-        control_host = config["controller"]["host"]
-        collect_port = int(config["controller"]["port_collect"])
-        logger.debug("Configuration loaded successfully from config file.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        control_host = "0.0.0.0"
-        collect_port = 8080
-
-
 def check_ip_active(target_ip):
     """
     Checks if the given IP address is active and associated with an interface that is UP.
@@ -81,6 +67,20 @@ def check_ip_active(target_ip):
     except Exception as e:
         logger.error(f"Error checking IP activity: {e}")
         return False
+
+
+def load_config_ini():
+    global control_host, collect_port
+
+    try:
+        config.read(CONFIG_PATH)
+        control_host = config["controller"]["host"]
+        collect_port = int(config["controller"]["port_collect"])
+        logger.debug("Configuration loaded successfully from config file.")
+    except Exception as e:
+        logger.error(f"Error reading configuration: {e}")
+        control_host = "0.0.0.0"
+        collect_port = 8080
 
 
 async def handle_result_roce_post(request):
@@ -106,6 +106,7 @@ async def handle_result_roce_post(request):
     except Exception as e:
         logger.error(f"Error processing POST result_roce from {client_ip}: {e}")
         return web.Response(text="Internal server error", status=500)
+
 
 async def handle_result_ib_post(request):
     client_ip = request.remote

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "udp_common.hpp"
-#include "udp_ping_info.hpp"
+#include "tcpudp_common.hpp"
+#include "tcpudp_ping_info.hpp"
 
 /**
  * NOTE: UDP Server is simple. It receives a message, and respond to it.
@@ -43,7 +43,7 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
     while (true) {
         uint64_t pingid = 0;
         std::string addr_msg_from;
-        if (receive_message(&ctx_server, pingid, addr_msg_from,
+        if (receive_udp_message(&ctx_server, pingid, addr_msg_from,
                             server_logger)) {
             // receive_message 실패 시 처리
             consecutive_failures++;
@@ -63,7 +63,7 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
             continue;
         }
 
-        if (send_message(&ctx_server, addr_msg_from, PINGWEAVE_UDP_PORT_CLIENT,
+        if (send_udp_message(&ctx_server, addr_msg_from, PINGWEAVE_UDP_PORT_CLIENT,
                          pingid, server_logger)) {
             // somethign wrong
             server_logger->warn("Failed to send response to {}", addr_msg_from);

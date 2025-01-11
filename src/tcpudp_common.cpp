@@ -1,11 +1,11 @@
-#include "udp_common.hpp"
+#include "tcpudp_common.hpp"
 
 int make_ctx(struct udp_context *ctx, const std::string &ipv4,
              const uint16_t &port, std::shared_ptr<spdlog::logger> logger) {
     ctx->ipv4 = ipv4;
 
     // create socket
-    int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         logger->error("Failed to create UDP socket");
         return true;
@@ -14,19 +14,19 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
 
     // bind socket
     sockaddr_in addr{};
-    addr.sin_family = AF_INET;                   // IPV4
-    addr.sin_addr.s_addr = ::htonl(INADDR_ANY);  // default
-    addr.sin_port = ::htons(port);
+    addr.sin_family = AF_INET;                 // IPV4
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);  // default
+    addr.sin_port = htons(port);
 
     // change string IP to network byte order
     if (inet_pton(AF_INET, ipv4.data(), &addr.sin_addr) <= 0) {
-        logger->error("Given ipv4 address is wrong: {}", ipv4);
+        logger->error("Given ipv4 address is invalild: {}", ipv4);
         return true;
     }
 
-    if (::bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr),
-               sizeof(addr)) < 0) {
-        logger->error("Failed to bind UDP port");
+    if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr),
+             sizeof(addr)) < 0) {
+        logger->error("Failed to bind UDP local addr");
         return true;
     }
 
@@ -71,32 +71,32 @@ void log_bound_address(int sock_fd, std::shared_ptr<spdlog::logger> logger) {
     }
 }
 
-int send_message(struct udp_context *ctx_tx, const std::string &dst_ip,
-                 const uint16_t &dst_port, const uint64_t &pingid,
-                 std::shared_ptr<spdlog::logger> logger) {
+int send_udp_message(struct udp_context *ctx_tx, const std::string &dst_ip,
+                     const uint16_t &dst_port, const uint64_t &pingid,
+                     std::shared_ptr<spdlog::logger> logger) {
     sockaddr_in dest{};
     dest.sin_family = AF_INET;
-    dest.sin_port = ::htons(dst_port);
+    dest.sin_port = htons(dst_port);
 
-    if (::inet_pton(AF_INET, dst_ip.data(), &dest.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, dst_ip.data(), &dest.sin_addr) <= 0) {
         logger->error("Invalid host address: {}", dst_ip);
         return true;
     }
 
-    union udp_pingmsg_t msg;
+    union tcpudp_pingmsg_t msg;
     msg.x._prefix = 0;
     msg.x.pingid = pingid;
     msg.x._pad = 0;
 
     auto sent =
-        ::sendto(*ctx_tx->sock, msg.raw, sizeof(udp_pingmsg_t), 0,
-                 reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
+        sendto(*ctx_tx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
+               reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
     if (sent < 0) {
         logger->error("Failed to send msg {} to {}", msg.x.pingid, dst_ip);
         return true;
     }
 
-    if (static_cast<size_t>(sent) != sizeof(udp_pingmsg_t)) {
+    if (static_cast<size_t>(sent) != sizeof(tcpudp_pingmsg_t)) {
         logger->error("Partial message sent");
         return true;
     }
@@ -107,19 +107,19 @@ int send_message(struct udp_context *ctx_tx, const std::string &dst_ip,
     return false;
 }
 
-int receive_message(struct udp_context *ctx_rx, uint64_t &pingid,
-                    std::string &sender,
-                    std::shared_ptr<spdlog::logger> logger) {
+int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
+                        std::string &sender,
+                        std::shared_ptr<spdlog::logger> logger) {
     // clear a buffer
-    memset(ctx_rx->buffer, 0, sizeof(udp_pingmsg_t));
-    union udp_pingmsg_t ping_msg = {};
+    memset(ctx_rx->buffer, 0, sizeof(tcpudp_pingmsg_t));
+    union tcpudp_pingmsg_t ping_msg = {};
 
     // receive message
     sockaddr_in sender_addr{};
     socklen_t addr_len = sizeof(sender_addr);
-    auto received = ::recvfrom(
-        *ctx_rx->sock, ctx_rx->buffer, sizeof(udp_pingmsg_t), 0,
-        reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
+    auto received =
+        recvfrom(*ctx_rx->sock, ctx_rx->buffer, sizeof(tcpudp_pingmsg_t), 0,
+                 reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
 
     // sanity check
     if (received < 0) {
@@ -128,14 +128,14 @@ int receive_message(struct udp_context *ctx_rx, uint64_t &pingid,
     }
 
     // check received message size
-    if (static_cast<size_t>(received) != sizeof(udp_pingmsg_t)) {
+    if (static_cast<size_t>(received) != sizeof(tcpudp_pingmsg_t)) {
         logger->error("Received unexpected message size: {} (expected: {})",
-                      received, sizeof(udp_pingmsg_t));
+                      received, sizeof(tcpudp_pingmsg_t));
         return true;  // error
     }
 
     // parse the received message
-    std::memcpy(&ping_msg, ctx_rx->buffer, sizeof(udp_pingmsg_t));
+    std::memcpy(&ping_msg, ctx_rx->buffer, sizeof(tcpudp_pingmsg_t));
 
     // sanity check
     if (ping_msg.x._prefix != 0 || ping_msg.x._pad != 0) {
@@ -167,10 +167,80 @@ int receive_message(struct udp_context *ctx_rx, uint64_t &pingid,
     return false;
 }
 
-std::string convert_udp_result_to_str(const std::string &srcip,
-                                      const std::string &dstip,
-                                      const udp_result_info_t &result_info,
-                                      const result_stat_t &network_stat) {
+int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
+             const uint16_t &port, std::shared_ptr<spdlog::logger> logger) {
+    ctx->ipv4 = ipv4;
+
+    // create socket
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        logger->error("Failed to create TCP socket");
+        return true;
+    }
+    ctx->sock = tcp_socket(new int(fd));
+
+    // set socket options
+    int enable = 1;
+    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) <
+        0) {
+        logger->error("Faile dto set SO_REUSEADDR");
+        return true;
+    }
+    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) <
+        0) {
+        logger->error("Faile dto set SO_REUSEPORT");
+        return true;
+    }
+
+    // set SO_LINGER:
+    // (1) any queued data is thrown away and the reset is send immediately, and
+    // (2) the receiver of the RST can tell that the other end did an abort
+    // instead of a normal close
+    struct linger solinger = {1, 0};
+    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger, sizeof(struct linger)) == -1) {
+        logger->error("Failed to set SO_LINGER");
+        return true;
+    }
+
+    // bind socket
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;                   // IPV4
+    addr.sin_addr.s_addr = ::htonl(INADDR_ANY);  // default
+    addr.sin_port = htons(port);
+
+    // change string IP to network byte order
+    if (inet_pton(AF_INET, ipv4.data(), &addr.sin_addr) <= 0) {
+        logger->error("Given ipv4 address is invalild: {}", ipv4);
+        return true;
+    }
+
+    if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr),
+               sizeof(addr)) < 0) {
+        logger->error("Failed to bind TCP server local addr");
+        return true;
+    }
+
+    // debugging - get the actual listening port number
+    socklen_t addr_size = sizeof(addr);
+    if (getsockname(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr), &addr_size) == -1) {
+        logger->error("getsockname failed");
+        return true;
+    }
+    logger->info("TCP server is lstening on port {}", ntohs(addr.sin_port));
+
+    if (listen(*ctx->sock, SOMAXCONN) == -1) {
+        logger->error("TCP server cannot listen the socket");
+        return true;
+    }
+
+    // success
+    return false;
+}
+
+std::string convert_tcpudp_result_to_str(
+    const std::string &srcip, const std::string &dstip,
+    const tcpudp_result_info_t &result_info,
+    const result_stat_t &network_stat) {
     std::stringstream ss;
     ss << srcip << "," << dstip << ","
        << timestamp_ns_to_string(result_info.ts_start) << ","

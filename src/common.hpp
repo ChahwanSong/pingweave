@@ -1,17 +1,16 @@
 #pragma once
 
-#include <arpa/inet.h>
+#include <arpa/inet.h>  // inet_pton, inet_ntop
 #include <dirent.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <ifaddrs.h>
 #include <netdb.h>
-#include <netinet/in.h>
-#include <signal.h>  // For kill(), signal()
+#include <netinet/in.h>  // sockaddr_in
+#include <signal.h>      // For kill(), signal()
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>  // directory
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>  // For waitpid()
 #include <time.h>
@@ -29,6 +28,7 @@
 #include <future>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <numeric>
 #include <set>

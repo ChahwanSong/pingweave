@@ -45,8 +45,9 @@ const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS = 1000;
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS = 1000;
 
 // port that UDP server will listen
+const static int PINGWEAVE_TCP_PORT_SERVER = 33334;
 const static int PINGWEAVE_UDP_PORT_CLIENT = 33335;
-const static int PINGWEAVE_UDP_PORT_SERVER = 33336;  // both TX & RX
+const static int PINGWEAVE_UDP_PORT_SERVER = 33336;
 
 // IB HW Timestamp correction factor
 const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;

@@ -1,15 +1,15 @@
 #pragma once
 
-#include "udp_common.hpp"
+#include "tcpudp_common.hpp"
 
-struct udp_pinginfo_t {
+struct tcpudp_pinginfo_t {
     uint64_t pingid;          // ping ID
     std::string dstip;        // destination IP addr
     uint64_t time_ping_send;  // timestamp of ping
     uint64_t network_delay;   // ping latency
 
     // Assignment operator
-    udp_pinginfo_t& operator=(const udp_pinginfo_t& other) {
+    tcpudp_pinginfo_t& operator=(const tcpudp_pinginfo_t& other) {
         if (this == &other) {
             return *this;  // Self-assignment check
         }
@@ -21,19 +21,19 @@ struct udp_pinginfo_t {
     }
 };
 
-class UdpPinginfoMap {
+class TcpUdpPinginfoMap {
    public:
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    explicit UdpPinginfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
-                            UdpClientQueue* queue, int threshold_ms = 1000)
+    explicit TcpUdpPinginfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
+                            TcpUdpClientQueue* queue, int threshold_ms = 1000)
         : threshold_ms(threshold_ms),
           client_queue(queue),
           logger(ping_table_logger) {}
 
     // if already exists, return false
-    bool insert(const Key& key, const udp_pinginfo_t& value) {
+    bool insert(const Key& key, const tcpudp_pinginfo_t& value) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
@@ -52,7 +52,7 @@ class UdpPinginfoMap {
     }
 
     // if fail to find, return false
-    bool get(const Key& key, udp_pinginfo_t& value) {
+    bool get(const Key& key, tcpudp_pinginfo_t& value) {
         std::shared_lock lock(mutex_);
         auto it = map.find(key);
         if (it != map.end()) {
@@ -112,7 +112,7 @@ class UdpPinginfoMap {
 
    private:
     struct MapEntry {
-        udp_pinginfo_t value;
+        tcpudp_pinginfo_t value;
         TimePoint timestamp;
         typename std::list<Key>::iterator listIter;
     };
@@ -183,5 +183,5 @@ class UdpPinginfoMap {
     const int threshold_ms;
     mutable std::shared_mutex mutex_;  // shared_mutex for read-write locking
     std::shared_ptr<spdlog::logger> logger;
-    UdpClientQueue* client_queue;
+    TcpUdpClientQueue* client_queue;
 };

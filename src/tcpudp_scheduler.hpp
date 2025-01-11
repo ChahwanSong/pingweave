@@ -5,12 +5,12 @@
 // Vector to store (IP)
 typedef std::vector<std::string> udpAddressInfo_t;
 
-class UdpMsgScheduler : public MsgScheduler {
+class TcpUdpMsgScheduler : public MsgScheduler {
    public:
-    UdpMsgScheduler(const std::string& ip, const std::string& protocol,
+    TcpUdpMsgScheduler(const std::string& ip, const std::string& protocol,
                      std::shared_ptr<spdlog::logger> logger)
         : MsgScheduler(ip, protocol, logger) {}
-    ~UdpMsgScheduler() {}
+    ~TcpUdpMsgScheduler() {}
 
     int next(std::string& result, uint64_t& time_sleep_us) {
         auto load_now = std::chrono::steady_clock::now();

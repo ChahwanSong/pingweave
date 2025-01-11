@@ -1,17 +1,17 @@
 #pragma once
 
-#include "udp_common.hpp"
-#include "udp_ping_info.hpp"
-#include "udp_scheduler.hpp"
+#include "tcpudp_common.hpp"
+#include "tcpudp_ping_info.hpp"
+#include "tcpudp_scheduler.hpp"
 
 void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
-                          UdpPinginfoMap* ping_table,
+                          TcpUdpPinginfoMap* ping_table,
                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
     uint32_t ping_uid = 0;
     uint64_t time_sleep_us = 0;
-    UdpMsgScheduler scheduler(ipv4, "udp", logger);
+    TcpUdpMsgScheduler scheduler(ipv4, "udp", logger);
     std::string dst_addr;
 
     try {
@@ -35,7 +35,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                 logger->debug("Sending PING message (ping ID:{}), time: {}",
                               pingid, timestamp_ns_to_string(send_time_system));
 
-                if (send_message(ctx_tx, dst_addr, PINGWEAVE_UDP_PORT_SERVER,
+                if (send_udp_message(ctx_tx, dst_addr, PINGWEAVE_UDP_PORT_SERVER,
                                  pingid, logger)) {
                     // something went wrong
                     continue;
@@ -53,7 +53,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
 }
 
 void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
-                          UdpPinginfoMap* ping_table,
+                          TcpUdpPinginfoMap* ping_table,
                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
@@ -62,7 +62,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
             // Wait for the next UDP message event
             uint64_t pingid = 0;
             std::string sender;
-            if (receive_message(ctx_rx, pingid, sender, logger)) {
+            if (receive_udp_message(ctx_rx, pingid, sender, logger)) {
                 // something wrong
                 continue;
             }
@@ -81,7 +81,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 
 void udp_client_result_thread(
     const std::string& ipv4,
-    const std::string& protocol, UdpClientQueue* client_queue,
+    const std::string& protocol, TcpUdpClientQueue* client_queue,
     std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
     if (!get_int_param_from_ini(report_interval_ms,
@@ -93,13 +93,13 @@ void udp_client_result_thread(
     }
 
     // dstip -> result history
-    std::unordered_map<uint32_t, struct udp_result_info_t> dstip2result;
+    std::unordered_map<uint32_t, struct tcpudp_result_info_t> dstip2result;
 
     // msg from RX Thread
-    struct udp_result_msg_t result_msg;
+    struct tcpudp_result_msg_t result_msg;
 
     // result pointer
-    struct udp_result_info_t* info;
+    struct tcpudp_result_info_t* info;
 
     // timer for report
     auto last_report_time = std::chrono::steady_clock::now();
@@ -147,7 +147,7 @@ void udp_client_result_thread(
                     result_stat_t network_stat =
                         calc_result_stats(result_info.network_delays);
 
-                    auto result = convert_udp_result_to_str(
+                    auto result = convert_tcpudp_result_to_str(
                         ipv4, uint2ip(dstip), result_info, network_stat);
                     logger->info(result);         // logging
                     agg_result += result + "\n";  // aggregate logs
@@ -203,7 +203,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     }
 
     // Internal message-queue
-    UdpClientQueue client_queue(QUEUE_SIZE);
+    TcpUdpClientQueue client_queue(QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = protocol + "_table_" + ipv4;
@@ -221,7 +221,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
             "Failed to get a param 'logger_cpp_process_udp_ping_table'");
     }
 
-    UdpPinginfoMap ping_table(ping_table_logger, &client_queue,
+    TcpUdpPinginfoMap ping_table(ping_table_logger, &client_queue,
                               PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS);
 
     // Initialize UDP contexts

@@ -33,10 +33,11 @@ struct result_stat_t {
     uint64_t percentile_99;
 };
 
-/*******
- * UDP *
- ********/
-union udp_pingmsg_t {
+
+/*************
+ * TCP & UDP *
+ *************/
+union tcpudp_pingmsg_t {
     char raw[16];
     struct {
         uint32_t _prefix; // IP ++ PingUID
@@ -54,6 +55,23 @@ struct close_fd {
     }
 };
 
+// TCP socket 
+using tcp_socket = std::unique_ptr<int, close_fd>;
+
+// context for TCP ping
+struct tcp_context {
+    /* socket */
+    tcp_socket sock;
+    
+    /* buffer */
+    char buffer[sizeof(tcpudp_pingmsg_t)];
+
+    /* interface*/
+    std::string ipv4;
+    std::string iface;
+};
+
+
 // UDP socket
 using udp_socket = std::unique_ptr<int, close_fd>;
 
@@ -63,7 +81,7 @@ struct udp_context {
     udp_socket sock;
 
     /* buffer */
-    char buffer[sizeof(udp_pingmsg_t)];
+    char buffer[sizeof(tcpudp_pingmsg_t)];
 
     /* interface*/
     std::string ipv4;
@@ -71,7 +89,7 @@ struct udp_context {
 };
 
 // udp ping result msg
-struct alignas(32) udp_result_msg_t {
+struct alignas(32) tcpudp_result_msg_t {
     uint64_t pingid;
     uint32_t dstip;
     uint64_t time_ping_send;
@@ -81,7 +99,7 @@ struct alignas(32) udp_result_msg_t {
 };
 
 // udp result info of ping
-struct udp_result_info_t {
+struct tcpudp_result_info_t {
     uint32_t n_success = 0;
     uint32_t n_failure = 0;
     uint32_t n_weird = 0;
@@ -92,7 +110,7 @@ struct udp_result_info_t {
     std::vector<uint64_t> network_delays;
 
     // default constructor
-    udp_result_info_t() = default;
+    tcpudp_result_info_t() = default;
 };
 
 

@@ -23,7 +23,7 @@ DOWNLOAD_DIR = ../download
 HTML_DIR = ../html
 
 # 공통 소스 파일
-SRCS_COMMON = common.cpp rdma_common.cpp udp_common.cpp
+SRCS_COMMON = common.cpp rdma_common.cpp tcpudp_common.cpp
 OBJS_COMMON = $(addprefix $(BIN_DIR)/, $(SRCS_COMMON:.cpp=.o))
 
 # 메인용 소스 파일 및 오브젝트 파일
