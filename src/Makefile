@@ -21,6 +21,7 @@ LOGS_DIR = ../logs
 UPLOAD_DIR = ../upload
 DOWNLOAD_DIR = ../download
 HTML_DIR = ../html
+IMAGE_DIR = ../image
 
 # 공통 소스 파일
 SRCS_COMMON = common.cpp rdma_common.cpp tcpudp_common.cpp
@@ -53,6 +54,7 @@ $(TARGET_MAIN): $(OBJS_MAIN)
 	@mkdir -p $(UPLOAD_DIR)
 	@mkdir -p $(DOWNLOAD_DIR)
 	@mkdir -p $(HTML_DIR)
+	@mkdir -p $(IMAGE_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(TARGET_SIMPLE): $(OBJS_SIMPLE)

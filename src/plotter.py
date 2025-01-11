@@ -282,6 +282,9 @@ def plot_heatmap_value(
             xaxis_title="Source IP",
             yaxis_title="Destination IP",
             title=f"{outname} ({current_time})",
+            autosize=True,
+            width=1080,
+            height=950,
             plot_bgcolor="white",
             paper_bgcolor="white",
         )
@@ -293,6 +296,9 @@ def plot_heatmap_value(
         # save to HTML file
         fig.write_html(f"{HTML_DIR}/{outname}.html")
 
+        # save to IMAGE file
+        fig.write_image(f"{IMAGE_DIR}/{outname}.png", scale=4, width=800, height=700)
+
         # return the path of HTML
         return f"{HTML_DIR}/{outname}.html"
 
@@ -301,7 +307,7 @@ def plot_heatmap_value(
         return ""  # return nothing if failure
 
 
-def plot_heatmap_udp(data, outname="result"):
+def plot_heatmap_udp(data, category_group_name="tcp_group1"):
     delay_steps = [1000000, 5000000, 20000000]
     delay_tick_steps = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
 
@@ -365,9 +371,9 @@ def plot_heatmap_udp(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_mean",
+        category_group_name + "_network_mean",
     ):
-        output_files.append(outname + "_network_mean")
+        output_files.append(category_group_name + "_network_mean")
     # network p50
     if plot_heatmap_value(
         records,
@@ -376,9 +382,9 @@ def plot_heatmap_udp(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_p50",
+        category_group_name + "_network_p50",
     ):
-        output_files.append(outname + "_network_p50")
+        output_files.append(category_group_name + "_network_p50")
     # network p99
     if plot_heatmap_value(
         records,
@@ -387,9 +393,9 @@ def plot_heatmap_udp(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_p99",
+        category_group_name + "_network_p99",
     ):
-        output_files.append(outname + "_network_p99")
+        output_files.append(category_group_name + "_network_p99")
     # success ratio
     if plot_heatmap_value(
         records,
@@ -398,9 +404,9 @@ def plot_heatmap_udp(data, outname="result"):
         ratio_steps,
         ratio_tick_steps,
         map_value_to_color_index_ratio,
-        outname + "_failure_ratio",
+        category_group_name + "_failure_ratio",
     ):
-        output_files.append(outname + "_failure_ratio")
+        output_files.append(category_group_name + "_failure_ratio")
     # weird ratio
     if plot_heatmap_value(
         records,
@@ -409,14 +415,14 @@ def plot_heatmap_udp(data, outname="result"):
         ratio_steps,
         ratio_tick_steps,
         map_value_to_color_index_ratio,
-        outname + "_weird_ratio",
+        category_group_name + "_weird_ratio",
     ):
-        output_files.append(outname + "_weird_ratio")
+        output_files.append(category_group_name + "_weird_ratio")
 
     return output_files
 
 
-def plot_heatmap_rdma(data, outname="result"):
+def plot_heatmap_rdma(data, category_group_name="result"):
     delay_steps = [100000, 500000, 5000000]
     delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
 
@@ -495,9 +501,9 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_mean",
+        category_group_name + "_network_mean",
     ):
-        output_files.append(outname + "_network_mean")
+        output_files.append(category_group_name + "_network_mean")
     # network p50
     if plot_heatmap_value(
         records,
@@ -506,9 +512,9 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_p50",
+        category_group_name + "_network_p50",
     ):
-        output_files.append(outname + "_network_p50")
+        output_files.append(category_group_name + "_network_p50")
     # network p99
     if plot_heatmap_value(
         records,
@@ -517,9 +523,9 @@ def plot_heatmap_rdma(data, outname="result"):
         delay_steps,
         delay_tick_steps,
         map_value_to_color_index_ping_delay,
-        outname + "_network_p99",
+        category_group_name + "_network_p99",
     ):
-        output_files.append(outname + "_network_p99")
+        output_files.append(category_group_name + "_network_p99")
     # success ratio
     if plot_heatmap_value(
         records,
@@ -528,9 +534,9 @@ def plot_heatmap_rdma(data, outname="result"):
         ratio_steps,
         ratio_tick_steps,
         map_value_to_color_index_ratio,
-        outname + "_failure_ratio",
+        category_group_name + "_failure_ratio",
     ):
-        output_files.append(outname + "_failure_ratio")
+        output_files.append(category_group_name + "_failure_ratio")
     # weird ratio
     if plot_heatmap_value(
         records,
@@ -539,9 +545,9 @@ def plot_heatmap_rdma(data, outname="result"):
         ratio_steps,
         ratio_tick_steps,
         map_value_to_color_index_ratio,
-        outname + "_weird_ratio",
+        category_group_name + "_weird_ratio",
     ):
-        output_files.append(outname + "_weird_ratio")
+        output_files.append(category_group_name + "_weird_ratio")
     return output_files
 
 
@@ -665,7 +671,6 @@ async def pingweave_plotter():
                                 new_file_list += plot_heatmap_rdma(
                                     group_data, f"{category}_{group}"
                                 )
-                                
 
                     # clear all HTML
                     clear_directory_conditional(HTML_DIR, new_file_list)

@@ -9,6 +9,7 @@ import psutil
 import multiprocessing
 import copy
 from setproctitle import setproctitle
+import re
 
 from logger import initialize_pingweave_logger
 import yaml  # python3 -m pip install pyyaml
@@ -193,24 +194,279 @@ async def post_address(request):
         return web.Response(text="Internal webserver error", status=500)
 
 
+## simple index example
+# async def index(request):
+#     # 디렉토리 내의 파일 목록을 가져옵니다.
+#     files = os.listdir(HTML_DIR)
+#     # HTML 파일만 필터링합니다.
+#     html_files = [f for f in files if f.endswith(".html")]
+#     # 인덱스 페이지를 생성합니다.
+#     file_links = [f'<li><a href="/{fname}">{fname}</a></li>' for fname in html_files]
+#     content = f"""
+#     <html>
+#         <head><title>Available HTML Files</title></head>
+#         <body>
+#             <h1>Available PingWeave list</h1>
+#             <ul>
+#                 {''.join(file_links)}
+#             </ul>
+#         </body>
+#     </html>
+#     """
+#     return web.Response(text=content, content_type="text/html")
+
+
 async def index(request):
-    # 디렉토리 내의 파일 목록을 가져옵니다.
     files = os.listdir(HTML_DIR)
-    # HTML 파일만 필터링합니다.
     html_files = [f for f in files if f.endswith(".html")]
-    # 인덱스 페이지를 생성합니다.
-    file_links = [f'<li><a href="/{fname}">{fname}</a></li>' for fname in html_files]
+
+    # 1) Group the HTML files by protocol -> group -> (fname, measure)
+    grouped_files = {}
+    for fname in html_files:
+        name_only = fname.replace(".html", "")
+        tokens = name_only.split("_")
+
+        if len(tokens) < 3:
+            protocol = "others"
+            group_name = "others"
+            measure = name_only
+        else:
+            protocol = tokens[0]
+            measure = "_".join(tokens[-2:])
+            middle_tokens = tokens[1:-2]
+            group_name = "_".join(middle_tokens) if middle_tokens else "no_group"
+
+        if protocol not in grouped_files:
+            grouped_files[protocol] = {}
+        if group_name not in grouped_files[protocol]:
+            grouped_files[protocol][group_name] = []
+        grouped_files[protocol][group_name].append((fname, measure))
+
+    protocol_list = sorted(grouped_files.keys())
+
+    # -------------------- Build HTML --------------------
     content = f"""
     <html>
-        <head><title>Available HTML Files</title></head>
-        <body>
-            <h1>Available pingmesh list</h1>
-            <ul>
-                {''.join(file_links)}
-            </ul>
-        </body>
+      <head>
+        <title>PingWeave Dashboard</title>
+        <!-- Local Bootstrap CSS -->
+        <link rel="stylesheet" href="/bootstrap/css/bootstrap.min.css">
+        <!-- Local Bootstrap JS (including Popper) -->
+        <script src="/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+        <script>
+          // (A) Format date to "YYYY-MM-DD HH:mm:SS"
+          function formatDateTime(dateObj) {{
+            let year = dateObj.getFullYear();
+            let month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            let day = String(dateObj.getDate()).padStart(2, '0');
+            let hour = String(dateObj.getHours()).padStart(2, '0');
+            let minute = String(dateObj.getMinutes()).padStart(2, '0');
+            let second = String(dateObj.getSeconds()).padStart(2, '0');
+            return year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second;
+          }}
+
+          // (B) Called when an image finishes loading
+          function recordLoad(imgElem) {{
+            let now = Date.now();
+            imgElem.dataset.loadedAt = now;
+          }}
+
+          // (C) Update each image's load time every second
+          function updateImageTimes() {{
+            let now = Date.now();
+            let images = document.querySelectorAll('img[data-loaded-at]');
+            images.forEach(img => {{
+              let loadedTime = parseInt(img.dataset.loadedAt);
+              if (!loadedTime) return;
+              let diffSec = Math.floor((now - loadedTime) / 1000);
+              let displayElem = img.parentNode.querySelector('.timeSinceImageLoad');
+              if (displayElem) {{
+                displayElem.innerText = diffSec + " seconds since this image loaded.";
+              }}
+            }});
+          }}
+          setInterval(updateImageTimes, 1000);
+
+          // (D) Automatically refresh images every 10 seconds
+          function reloadAllImages() {{
+            let images = document.querySelectorAll('img[data-original-src]');
+            images.forEach(img => {{
+              let original = img.dataset.originalSrc;
+              // Cache-busting query parameter
+              let newSrc = original + "?_=" + Date.now();
+              img.src = newSrc;
+            }});
+          }}
+          setInterval(reloadAllImages, 10000);
+
+          // (E) Show current time in "YYYY-MM-DD HH:MM:SS" at top-right
+          function updateCurrentTime() {{
+            let now = new Date();
+            let timeString = formatDateTime(now); // e.g. 2025-11-21 21:13:26
+            let currentTimeElem = document.getElementById('currentTime');
+            if (currentTimeElem) {{
+              currentTimeElem.textContent = timeString;
+            }}
+          }}
+          setInterval(updateCurrentTime, 1000);
+
+        </script>
+      </head>
+      <body class="bg-light">
+        <!-- Container -->
+        <div class="container my-4">
+          <!-- (F) Current time at top-right -->
+          <div id="currentTime" 
+               class="text-secondary mb-2" 
+               style="text-align:right; font-size:0.9em;">
+          </div>
+
+          <h1 class="mb-3">PingWeave Dashboard </h1>
+
+          <p class="text-secondary">
+            This PingWeave dashboard shows a grouped end-to-end latency monitoring with a mesh grid.<br>
+          </p>
+
+          <!-- Protocol Tabs -->
+          <ul class="nav nav-tabs" id="protocolTab" role="tablist">
+    """
+
+    # Build protocol tabs
+    first_protocol = True
+    for protocol in protocol_list:
+        active_class = "active" if first_protocol else ""
+        aria_selected = "true" if first_protocol else "false"
+        content += f"""
+            <li class="nav-item" role="presentation">
+              <button
+                class="nav-link {active_class}"
+                id="tab-{protocol}"
+                data-bs-toggle="tab"
+                data-bs-target="#panel-{protocol}"
+                type="button"
+                role="tab"
+                aria-controls="panel-{protocol}"
+                aria-selected="{aria_selected}">
+                {protocol}
+              </button>
+            </li>
+        """
+        first_protocol = False
+
+    content += """
+          </ul>
+          <div class="tab-content" id="protocolTabContent">
+    """
+
+    # Protocol tab panes
+    first_protocol = True
+    for protocol in protocol_list:
+        show_active = "show active" if first_protocol else ""
+        first_protocol = False
+
+        content += f"""
+            <div
+              class="tab-pane fade {show_active}"
+              id="panel-{protocol}"
+              role="tabpanel"
+              aria-labelledby="tab-{protocol}">
+
+              <div class="container mt-4">
+                <ul class="nav nav-pills mb-3" id="groupTab-{protocol}" role="tablist">
+        """
+
+        group_dict = grouped_files[protocol]
+        group_list = sorted(group_dict.keys())
+
+        first_group = True
+        for group_name in group_list:
+            active_class = "active" if first_group else ""
+            aria_selected = "true" if first_group else "false"
+            safe_group_id = f"{protocol}-{group_name}".replace(" ", "_")
+            content += f"""
+                  <li class="nav-item" role="presentation">
+                    <button
+                      class="nav-link {active_class}"
+                      id="tab-{safe_group_id}"
+                      data-bs-toggle="pill"
+                      data-bs-target="#panel-{safe_group_id}"
+                      type="button"
+                      role="tab"
+                      aria-controls="panel-{safe_group_id}"
+                      aria-selected="{aria_selected}">
+                      {group_name}
+                    </button>
+                  </li>
+            """
+            first_group = False
+
+        content += f"""
+                </ul>
+                <div class="tab-content" id="groupTabContent-{protocol}">
+        """
+
+        first_group = True
+        for group_name in group_list:
+            show_active = "show active" if first_group else ""
+            first_group = False
+            safe_group_id = f"{protocol}-{group_name}".replace(" ", "_")
+
+            file_list = group_dict[group_name]
+            file_list = sorted(file_list, key=lambda x: x[1])
+
+            content += f"""
+                  <div
+                    class="tab-pane fade {show_active}"
+                    id="panel-{safe_group_id}"
+                    role="tabpanel"
+                    aria-labelledby="tab-{safe_group_id}">
+
+                    <h5 class="mb-3">Group: {group_name} ({len(file_list)} files)</h5>
+                    <ul class="list-unstyled">
+            """
+            for fname, measure in file_list:
+                base_name = fname.replace(".html", "")
+                original_src = f"/image/{base_name}.png"
+                content += f"""
+                      <li class="mb-4 border-bottom pb-3">
+                        <div><strong>Measure:</strong> {measure}</div>
+                        <div><strong>Filename:</strong> <a href="/{fname}" target="_blank">{fname}</a></div>
+                        <div class="mt-2">
+                          <img src="{original_src}"
+                               data-original-src="{original_src}"
+                               alt="{base_name}"
+                               onload="recordLoad(this)"
+                               data-loaded-at=""
+                               style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
+                          <div class="timeSinceImageLoad text-muted small mt-1"></div>
+                        </div>
+                      </li>
+                """
+
+            content += """
+                    </ul>
+                  </div>
+            """
+
+        content += """
+                </div> <!-- end groupTabContent -->
+              </div> <!-- end container -->
+            </div> <!-- end protocol tab pane -->
+        """
+
+    content += """
+          </div> <!-- end protocolTabContent -->
+        </div> <!-- end container -->
+
+        <script>
+          // Trigger the first time update for currentTime
+          updateCurrentTime();
+        </script>
+      </body>
     </html>
     """
+
     return web.Response(text=content, content_type="text/html")
 
 
@@ -230,7 +486,9 @@ async def pingweave_webserver():
             try:
                 app = web.Application()
                 app.router.add_get("/", index)  # indexing for html files
-                app.router.add_static("/", HTML_DIR)  # static route for html
+                app.router.add_static("/", HTML_DIR)  # static route for html files
+                app.router.add_static("/image", IMAGE_DIR)  # static route for images
+                app.router.add_static("/bootstrap", BOOTSTRAP_DIR)  # for bootstrap
                 app.router.add_get("/pinglist", get_pinglist)
                 app.router.add_get("/address_store", get_address_store)
                 app.router.add_post("/address", post_address)
