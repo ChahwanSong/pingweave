@@ -24,6 +24,7 @@ unixsocket /var/run/redis/redis-server.sock
 unixsocketperm 700
 port 0  # TCP/IP inactivate (optional)
 ```
+
 * python >= 3.7 (for aiohttp)
 * python packages (versions do not necessarily be same with clients)
     * pyyaml
@@ -35,6 +36,7 @@ port 0  # TCP/IP inactivate (optional)
     * redis (client)
     * logging
     * datetime
+    * kaleido
 
 ### Install & Build
 

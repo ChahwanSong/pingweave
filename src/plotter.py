@@ -13,8 +13,19 @@ import os
 import time
 import configparser
 from setproctitle import setproctitle
+from concurrent.futures import ThreadPoolExecutor
 
 from macro import *
+
+tcpudp_delay_steps = [1000000, 5000000, 20000000]
+tcpudp_delay_tick_steps = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
+tcpudp_ratio_steps = [0.05, 0.5, 0.9]
+tcpudp_ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
+
+rdma_delay_steps = [100000, 500000, 5000000]
+rdma_delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
+rdma_ratio_steps = [0.05, 0.5, 0.9]
+rdma_ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
 
 logger = initialize_pingweave_logger(socket.gethostname(), "plotter", 5, False)
 
@@ -110,29 +121,6 @@ def load_config_ini():
         collect_port = None
 
 
-def check_ip_active(target_ip):
-    """
-    Checks if the given IP address is active and associated with an interface that is UP.
-    """
-    try:
-        net_if_addrs = psutil.net_if_addrs()
-        net_if_stats = psutil.net_if_stats()
-
-        for iface, addrs in net_if_addrs.items():
-            for addr in addrs:
-                if addr.family == socket.AF_INET and addr.address == target_ip:
-                    if iface in net_if_stats and net_if_stats[iface].isup:
-                        return True
-                    else:
-                        logger.error(f"Interface {iface} with IP {target_ip} is down.")
-                        return False
-        logger.error(f"No active interface found with IP address {target_ip}.")
-        return False
-    except Exception as e:
-        logger.error(f"Error checking IP activity: {e}")
-        return False
-
-
 def read_pinglist():
     global pinglist_in_memory
 
@@ -148,14 +136,16 @@ def read_pinglist():
         logger.error(f"Error loading pinglist: {e}")
 
 
-def clear_directory_conditional(directory_path: str, except_files: list):
+def clear_directory_conditional(
+    directory_path: str, except_files: list, format: str = "html"
+):
     try:
         # get entries in directory
         for entry in os.listdir(directory_path):
             entry_path = os.path.join(directory_path, entry)
 
             # check except files
-            entry_prefix = entry.split(".html")[0]
+            entry_prefix = entry.split(f".{format}")[0]
             if entry_prefix not in except_files:
                 logger.info(f"Deleting a file or directory: {entry}")
 
@@ -307,248 +297,196 @@ def plot_heatmap_value(
         return ""  # return nothing if failure
 
 
-def plot_heatmap_udp(data, category_group_name="tcp_group1"):
-    delay_steps = [1000000, 5000000, 20000000]
-    delay_tick_steps = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
+def calculate_ratios(n_success, n_failure, n_weird):
+    failure_ratio = (
+        -1 if n_success + n_failure == 0 else n_failure / (n_success + n_failure)
+    )
+    weird_ratio = (
+        -1
+        if n_success + n_failure + n_weird == 0
+        else n_weird / (n_success + n_failure + n_weird)
+    )
+    return failure_ratio, weird_ratio
 
-    ratio_steps = [0.05, 0.5, 0.9]
-    ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
 
+def prepare_default_record(src, dst, plot_type):
+    default_record = {
+        "source": src,
+        "destination": dst,
+        "failure_ratio": -1,
+        "weird_ratio": -1,
+        "network_mean": -1,
+        "ping_start_time": "N/A",
+        "ping_end_time": "N/A",
+    }
+    if plot_type == "rdma":
+        default_record.update(
+            {
+                "client_mean": -1,
+                "server_mean": -1,
+                "network_p50": -1,
+                "client_p50": -1,
+                "server_p50": -1,
+                "network_p99": -1,
+                "client_p99": -1,
+                "server_p99": -1,
+            }
+        )
+    else:
+        default_record.update(
+            {
+                "network_p50": -1,
+                "network_p99": -1,
+            }
+        )
+    return default_record
+
+
+def prepare_record(k, v, plot_type):
+    src, dst = k.split(",")
+    if not v:
+        return prepare_default_record(src, dst, plot_type)
+
+    ts_ping_start, ts_ping_end, n_success, n_failure, n_weird = v[:5]
+    failure_ratio, weird_ratio = calculate_ratios(
+        int(n_success), int(n_failure), int(n_weird)
+    )
+
+    if plot_type == "tcpudp":
+        _, network_mean, _, network_p50, _, network_p99 = v[5:11]
+        return {
+            "source": src,
+            "destination": dst,
+            "failure_ratio": failure_ratio,
+            "weird_ratio": weird_ratio,
+            "network_mean": float(network_mean),
+            "network_p50": float(network_p50),
+            "network_p99": float(network_p99),
+            "ping_start_time": ts_ping_start,
+            "ping_end_time": ts_ping_end,
+        }
+
+    if plot_type == "rdma":
+        _, client_mean, _, client_p50, _, client_p99 = v[5:11]
+        _, network_mean, _, network_p50, _, network_p99 = v[11:17]
+        _, server_mean, _, server_p50, _, server_p99 = v[17:23]
+        return {
+            "source": src,
+            "destination": dst,
+            "failure_ratio": failure_ratio,
+            "weird_ratio": weird_ratio,
+            "network_mean": float(network_mean),
+            "client_mean": float(client_mean),
+            "server_mean": float(server_mean),
+            "network_p50": float(network_p50),
+            "client_p50": float(client_p50),
+            "server_p50": float(server_p50),
+            "network_p99": float(network_p99),
+            "client_p99": float(client_p99),
+            "server_p99": float(server_p99),
+            "ping_start_time": ts_ping_start,
+            "ping_end_time": ts_ping_end,
+        }
+
+
+def plot_heatmap(data, category_group_name="group", plot_type="tcpudp"):
     output_files = []
-    records = []
-    for k, v in data.items():
-        src, dst = k.split(",")
-        if v:
-            ts_ping_start, ts_ping_end, n_success, n_failure, n_weird = v[0:5]
-            n_success = int(n_success)
-            n_failure = int(n_failure)
-            n_weird = int(n_weird)
-            if n_success + n_failure == 0:
-                failure_ratio = -1
-            else:
-                failure_ratio = 1.0 * n_failure / (n_success + n_failure)
+    records = [prepare_record(k, v, plot_type) for k, v in data.items()]
 
-            if n_success + n_failure + n_weird == 0:
-                weird_ratio = -1
-            else:
-                weird_ratio = 1.0 * n_weird / (n_success + n_failure + n_weird)
+    plot_params = {
+        "tcpudp": [
+            (
+                "network_mean",
+                tcpudp_delay_steps,
+                tcpudp_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "network_p50",
+                tcpudp_delay_steps,
+                tcpudp_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "network_p99",
+                tcpudp_delay_steps,
+                tcpudp_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "failure_ratio",
+                tcpudp_ratio_steps,
+                tcpudp_ratio_tick_steps,
+                map_value_to_color_index_ratio,
+            ),
+            (
+                "weird_ratio",
+                tcpudp_ratio_steps,
+                tcpudp_ratio_tick_steps,
+                map_value_to_color_index_ratio,
+            ),
+        ],
+        "rdma": [
+            (
+                "network_mean",
+                rdma_delay_steps,
+                rdma_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "network_p50",
+                rdma_delay_steps,
+                rdma_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "network_p99",
+                rdma_delay_steps,
+                rdma_delay_tick_steps,
+                map_value_to_color_index_ping_delay,
+            ),
+            (
+                "failure_ratio",
+                rdma_ratio_steps,
+                rdma_ratio_tick_steps,
+                map_value_to_color_index_ratio,
+            ),
+            (
+                "weird_ratio",
+                rdma_ratio_steps,
+                rdma_ratio_tick_steps,
+                map_value_to_color_index_ratio,
+            ),
+        ],
+    }[plot_type]
 
-            _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
-                5:11
-            ]
-            records.append(
-                {
-                    "source": src,
-                    "destination": dst,
-                    "failure_ratio": failure_ratio,
-                    "weird_ratio": weird_ratio,
-                    "network_mean": float(network_mean),
-                    "network_p50": float(network_p50),
-                    "network_p99": float(network_p99),
-                    "ping_start_time": ts_ping_start,
-                    "ping_end_time": ts_ping_end,
-                }
-            )
-        else:
-            records.append(
-                {
-                    "source": src,
-                    "destination": dst,
-                    "failure_ratio": -1,
-                    "weird_ratio": -1,
-                    "network_mean": -1,
-                    "network_p50": -1,
-                    "network_p99": -1,
-                    "ping_start_time": "N/A",
-                    "ping_end_time": "N/A",
-                }
-            )
-    # network mean
-    if plot_heatmap_value(
-        records,
-        "network_mean",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_mean",
-    ):
-        output_files.append(category_group_name + "_network_mean")
-    # network p50
-    if plot_heatmap_value(
-        records,
-        "network_p50",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_p50",
-    ):
-        output_files.append(category_group_name + "_network_p50")
-    # network p99
-    if plot_heatmap_value(
-        records,
-        "network_p99",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_p99",
-    ):
-        output_files.append(category_group_name + "_network_p99")
-    # success ratio
-    if plot_heatmap_value(
-        records,
-        "failure_ratio",
-        "ping_end_time",
-        ratio_steps,
-        ratio_tick_steps,
-        map_value_to_color_index_ratio,
-        category_group_name + "_failure_ratio",
-    ):
-        output_files.append(category_group_name + "_failure_ratio")
-    # weird ratio
-    if plot_heatmap_value(
-        records,
-        "weird_ratio",
-        "ping_end_time",
-        ratio_steps,
-        ratio_tick_steps,
-        map_value_to_color_index_ratio,
-        category_group_name + "_weird_ratio",
-    ):
-        output_files.append(category_group_name + "_weird_ratio")
+    def process_plot(metric, steps, tick_steps, color_index):
+        plot_name = "{}_{}".format(category_group_name, metric)
+        if plot_heatmap_value(
+            records, metric, "ping_end_time", steps, tick_steps, color_index, plot_name
+        ):
+            return plot_name
+        return None
+
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(process_plot, metric, steps, tick_steps, color_index)
+            for metric, steps, tick_steps, color_index in plot_params
+        ]
+        for future in futures:
+            result = future.result()
+            if result:
+                output_files.append(result)
 
     return output_files
 
 
-def plot_heatmap_rdma(data, category_group_name="result"):
-    delay_steps = [100000, 500000, 5000000]
-    delay_tick_steps = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
-
-    ratio_steps = [0.05, 0.5, 0.9]
-    ratio_tick_steps = ["No Data", "Failure", "~5%", "~50%", "~90%", "All failed"]
-
-    output_files = []
-    records = []
-    for k, v in data.items():
-        src, dst = k.split(",")
-        if v:
-            ts_ping_start, ts_ping_end, n_success, n_failure, n_weird = v[0:5]
-            n_success = int(n_success)
-            n_failure = int(n_failure)
-            n_weird = int(n_weird)
-            if n_success + n_failure == 0:
-                failure_ratio = -1
-            else:
-                failure_ratio = 1.0 * n_failure / (n_success + n_failure)
-
-            if n_success + n_failure + n_weird == 0:
-                weird_ratio = -1
-            else:
-                weird_ratio = 1.0 * n_weird / (n_success + n_failure + n_weird)
-
-            _, client_mean, client_max, client_p50, client_p95, client_p99 = v[5:11]
-            _, network_mean, network_max, network_p50, network_p95, network_p99 = v[
-                11:17
-            ]
-            _, server_mean, server_max, server_p50, server_p95, server_p99 = v[17:23]
-            records.append(
-                {
-                    "source": src,
-                    "destination": dst,
-                    "failure_ratio": failure_ratio,
-                    "weird_ratio": weird_ratio,
-                    "network_mean": float(network_mean),
-                    "client_mean": float(client_mean),
-                    "server_mean": float(server_mean),
-                    "network_p50": float(network_p50),
-                    "client_p50": float(client_p50),
-                    "server_p50": float(server_p50),
-                    "network_p99": float(network_p99),
-                    "client_p99": float(client_p99),
-                    "server_p99": float(server_p99),
-                    "ping_start_time": ts_ping_start,
-                    "ping_end_time": ts_ping_end,
-                }
-            )
-        else:
-            records.append(
-                {
-                    "source": src,
-                    "destination": dst,
-                    "failure_ratio": -1,
-                    "weird_ratio": -1,
-                    "network_mean": -1,
-                    "client_mean": -1,
-                    "server_mean": -1,
-                    "network_p50": -1,
-                    "client_p50": -1,
-                    "server_p50": -1,
-                    "network_p99": -1,
-                    "client_p99": -1,
-                    "server_p99": -1,
-                    "ping_start_time": "N/A",
-                    "ping_end_time": "N/A",
-                }
-            )
-
-    # network mean
-    if plot_heatmap_value(
-        records,
-        "network_mean",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_mean",
-    ):
-        output_files.append(category_group_name + "_network_mean")
-    # network p50
-    if plot_heatmap_value(
-        records,
-        "network_p50",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_p50",
-    ):
-        output_files.append(category_group_name + "_network_p50")
-    # network p99
-    if plot_heatmap_value(
-        records,
-        "network_p99",
-        "ping_end_time",
-        delay_steps,
-        delay_tick_steps,
-        map_value_to_color_index_ping_delay,
-        category_group_name + "_network_p99",
-    ):
-        output_files.append(category_group_name + "_network_p99")
-    # success ratio
-    if plot_heatmap_value(
-        records,
-        "failure_ratio",
-        "ping_end_time",
-        ratio_steps,
-        ratio_tick_steps,
-        map_value_to_color_index_ratio,
-        category_group_name + "_failure_ratio",
-    ):
-        output_files.append(category_group_name + "_failure_ratio")
-    # weird ratio
-    if plot_heatmap_value(
-        records,
-        "weird_ratio",
-        "ping_end_time",
-        ratio_steps,
-        ratio_tick_steps,
-        map_value_to_color_index_ratio,
-        category_group_name + "_weird_ratio",
-    ):
-        output_files.append(category_group_name + "_weird_ratio")
-    return output_files
+def process_category_group(category, group, group_data):
+    if category in {"udp", "tcp"}:
+        return plot_heatmap(group_data, f"{category}_{group}", "tcpudp")
+    elif category in {"roce", "ib"}:
+        return plot_heatmap(group_data, f"{category}_{group}", "rdma")
+    return []
 
 
 async def pingweave_plotter():
@@ -558,26 +496,16 @@ async def pingweave_plotter():
 
     try:
         while True:
-            if not check_ip_active(control_host):
-                logger.warning(
-                    f"No active interface for controller host {control_host}. Exit..."
-                )
-                exit(1)
-
             try:
                 # plot the graph for every X seconds
-                now = int(time.time())
+                now_plot_time = int(time.time())
                 if (
                     last_plot_time + int(interval_report_ping_result_millisec / 1000)
-                    < now
+                    < now_plot_time
                     and redis_server != None
                 ):
                     # update the last plot time
-                    last_plot_time = now
-
-                    logger.info(
-                        f"Pingweave plotter is running on {control_host}:{collect_port}"
-                    )
+                    last_plot_time = now_plot_time
 
                     # read pinglist (synchronous) -> pinglist_in_memory
                     # pinglist = {'udp': {'group1': ['192.168.1.1', '192.168.1.2', '192.168.1.3']}}
@@ -609,9 +537,7 @@ async def pingweave_plotter():
                         for key in keys:
                             value = redis_server.get(key)
                             if value is None:
-                                logger.warning(
-                                    f"Redis Key {key} not found in Redis. Skipping..."
-                                )
+                                logger.warning(f"Redis Key {key} not found. Skip.")
                                 continue
 
                             value = value.split(",")
@@ -653,28 +579,30 @@ async def pingweave_plotter():
 
                     # plot for each category/group
                     new_file_list = []
-                    for category, data in records.items():
-                        for group, group_data in data.items():
-                            if category == "udp":
-                                new_file_list += plot_heatmap_udp(
-                                    group_data, f"{category}_{group}"
-                                )
-                            # elif category == "tcp":
-                            #     new_file_list += plot_heatmap_udp(
-                            #         group_data, f"{category}_{group}"
-                            #     )
-                            elif category == "roce":
-                                new_file_list += plot_heatmap_rdma(
-                                    group_data, f"{category}_{group}"
-                                )
-                            elif category == "ib":
-                                new_file_list += plot_heatmap_rdma(
-                                    group_data, f"{category}_{group}"
-                                )
+                    with ThreadPoolExecutor() as executor:
+                        # Create tasks for all combinations of category and group
+                        futures = [
+                            executor.submit(
+                                process_category_group, category, group, group_data
+                            )
+                            for category, data in records.items()
+                            for group, group_data in data.items()
+                        ]
 
-                    # clear all HTML
-                    clear_directory_conditional(HTML_DIR, new_file_list)
+                        # Collect results
+                        for future in futures:
+                            new_file_list += future.result()
 
+                    # clear all stale HTML and images
+                    clear_directory_conditional(HTML_DIR, new_file_list, "html") 
+                    clear_directory_conditional(IMAGE_DIR, new_file_list, "png")
+
+                    elapsed_time = time.time() - now_plot_time
+                    logger.info(
+                        f"Pingweave plotter is running on {control_host}:{collect_port} | Elapsed time: {elapsed_time:.2f} seconds"
+                    )
+                else:
+                    await asyncio.sleep(1)
             except KeyError as e:
                 logger.error(f"Plotter - Missing key error: {e}")
             except TypeError as e:
@@ -683,8 +611,7 @@ async def pingweave_plotter():
                 logger.error(f"Plotter -  IndexError occurred: {e}")
             except Exception as e:
                 logger.error(f"Plotter - Unhandled exception: {e}")
-            finally:
-                await asyncio.sleep(1)
+                
     except KeyboardInterrupt:
         logger.info("pingweave_plotter received KeyboardInterrupt. Exiting.")
     except Exception as e:

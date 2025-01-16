@@ -1,11 +1,11 @@
 udp:
-  udp_test:
+  group1:
     - 10.200.200.3 # terra
     - 10.200.200.2 # mare    
 roce:
-  roce_test:
+  group2:
     - 10.200.200.3 # terra
     - 10.200.200.2 # mare
 ib:
-  dummy:
+  group3:
     - 0.0.0.0 # dummy
