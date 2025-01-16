@@ -12,7 +12,19 @@ import psutil
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from setproctitle import setproctitle
-import plotly.graph_objects as go
+
+# import plotly.graph_objects as go
+
+from bokeh.plotting import figure, output_file, save
+from bokeh.models import (
+    ColumnDataSource,
+    HoverTool,
+    LinearColorMapper,
+    ColorBar,
+    BasicTicker,
+    FixedTicker,
+)
+# from bokeh.io import export_png
 
 from macro import (
     CONFIG_PATH,
@@ -236,7 +248,6 @@ PLOT_PARAMS = {
 # ======================== #
 #      Plotting Helpers    #
 # ======================== #
-
 def plot_heatmap_value(
     records: list[dict],
     value_name: str,
@@ -247,14 +258,17 @@ def plot_heatmap_value(
     outname: str
 ) -> str:
     """
-    Creates a heatmap Plotly figure from the records (list of dicts) and saves
+    Creates a heatmap Bokeh figure from the records (list of dicts) and saves
     both HTML and PNG files to the specified directories. Returns the path
     to the HTML file on success; returns an empty string on failure.
     """
     try:
+        # Ensure correct length of tick steps vs color scale
         if len(tick_steps) != len(COLOR_SCALE):
-            msg = (f"Length of tick_steps must match length of COLOR_SCALE: "
-                   f"{len(tick_steps)} vs {len(COLOR_SCALE)}")
+            msg = (
+                f"Length of tick_steps must match length of COLOR_SCALE: "
+                f"{len(tick_steps)} vs {len(COLOR_SCALE)}"
+            )
             logger.error(msg)
             raise RuntimeError(msg)
 
@@ -269,16 +283,20 @@ def plot_heatmap_value(
         df["destination_idx"] = df["destination"].map(destination_ip_to_index)
 
         pivot_table = df.pivot(
-            index="destination_idx", columns="source_idx", values=value_name
+            index="destination_idx",
+            columns="source_idx",
+            values=value_name
         ).fillna(-1)
         z_values = pivot_table.values
 
         time_pivot = df.pivot(
-            index="destination_idx", columns="source_idx", values=time_name
+            index="destination_idx",
+            columns="source_idx",
+            values=time_name
         ).fillna("N/A")
         time_values = time_pivot.values
 
-        # Prepare text for hover
+        # Prepare hover text
         text_matrix = []
         for i in range(z_values.shape[0]):
             row_texts = []
@@ -297,69 +315,111 @@ def plot_heatmap_value(
                 row_texts.append(text)
             text_matrix.append(row_texts)
 
-        # Vectorize color mapping
+        # Vectorize color mapping to convert numeric values -> discrete indices
         vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
-        z_colors = vectorized_map_func(z_values)
+        z_colors_index = vectorized_map_func(z_values)
 
-        num_x = len(pivot_table.columns)
-        num_y = len(pivot_table.index)
+        # Flatten the array into 1D lists for x-coord, y-coord, color indices, hover text
+        x_coords = []
+        y_coords = []
+        color_indices = []
+        hover_texts = []
 
-        # Dynamically calculate xgap and ygap to keep visuals manageable
-        xgap = max(0.2, int(20 / num_x))
-        ygap = max(0.2, int(20 / num_y))
+        num_rows, num_cols = z_values.shape
+        for i in range(num_rows):
+            for j in range(num_cols):
+                x_coords.append(j)
+                y_coords.append(i)
+                color_indices.append(z_colors_index[i][j])
+                hover_texts.append(text_matrix[i][j])
 
-        fig = go.Figure(
-            data=go.Heatmap(
-                z=z_colors,
-                colorscale=COLOR_SCALE,
-                x=pivot_table.columns.values,
-                y=pivot_table.index.values,
-                zmin=0,
-                zmax=len(tick_steps) - 1,
-                xgap=xgap,
-                ygap=ygap,
-                customdata=text_matrix,
-                hovertemplate="%{customdata}",
-                hoverinfo="text",
-                name="",
-                colorbar=dict(
-                    tickmode="array",
-                    tickvals=list(range(len(tick_steps))),
-                    ticktext=tick_steps,
-                    title=value_name,
-                ),
-            )
+        # Create a color mapper
+        color_mapper = LinearColorMapper(
+            palette=COLOR_SCALE,
+            low=0,
+            high=len(tick_steps) - 1
         )
 
+        # Prepare ColumnDataSource
+        source_data = dict(
+            x=x_coords,
+            y=y_coords,
+            value=color_indices,
+            hover_text=hover_texts,
+        )
+        source = ColumnDataSource(data=source_data)
+
+        # Create figure (note the use of width=..., height=... now)
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fig.update_layout(
-            xaxis_title="Source IP",
-            yaxis_title="Destination IP",
+        p = figure(
             title=f"{outname} ({current_time})",
-            autosize=True,
-            width=1080,
-            height=950,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
+            x_range=(-0.5, num_cols - 0.5),
+            y_range=(-0.5, num_rows - 0.5),
+            tooltips=None,  # We'll add a HoverTool separately
+            width=1080,     # <--- changed from plot_width
+            height=950,     # <--- changed from plot_height
+            toolbar_location="above",
+            match_aspect=False,
         )
 
+        # Draw the heatmap
+        p.rect(
+            x="x",
+            y="y",
+            width=0.97,            # slightly less than 1
+            height=0.97,           # slightly less than 1
+            source=source,
+            fill_color={"field": "value", "transform": color_mapper},
+            line_color="white",   # optionally show a border around each cell
+            line_width=0,         # adjust as needed
+        )
+
+        # Add a hover tool
+        hover = HoverTool(tooltips="@hover_text{safe}")
+        p.add_tools(hover)
+
+        # Add a color bar
+        color_bar = ColorBar(
+            color_mapper=color_mapper,
+            location=(0, 0),
+            ticker=FixedTicker(ticks=list(range(len(tick_steps)))),
+            major_label_overrides={
+                i: label for i, label in enumerate(tick_steps)
+            },
+            title=value_name,
+            label_standoff=8,
+        )
+        p.add_layout(color_bar, 'right')
+
+        p.xaxis.axis_label = "Source IP"
+        p.yaxis.axis_label = "Destination IP"
+
+        
         # Hide axis tick labels
-        fig.update_xaxes(visible=True, showticklabels=False)
-        fig.update_yaxes(visible=True, showticklabels=False)
+        # p.xaxis.visible = True
+        p.xaxis.major_label_text_font_size = '0pt'
+        p.xaxis.major_tick_line_color = None
+        p.xaxis.minor_tick_line_color = None
+        # p.yaxis.visible = True
+        p.yaxis.major_label_text_font_size = '0pt'
+        p.yaxis.major_tick_line_color = None
+        p.yaxis.minor_tick_line_color = None
 
         # Save to HTML and PNG
         html_path = os.path.join(HTML_DIR, f"{outname}.html")
         png_path = os.path.join(IMAGE_DIR, f"{outname}.png")
 
-        fig.write_html(html_path)
-        fig.write_image(png_path, scale=4, width=800, height=700)
+        output_file(html_path, title=outname)
+        save(p)
+        
+        # export_png(p, filename=png_path)
 
         return html_path
 
     except Exception as e:
         logger.error(f"plot_heatmap_value exception: {e}")
         return ""
-
+    
 
 # ======================== #
 #     Data Calculations    #
@@ -558,7 +618,7 @@ async def pingweave_plotter() -> None:
                     # Step 2: Prepare template records and IP->group mapping
                     records = copy.deepcopy(pinglist_in_memory)
                     map_ip_to_groups = {}
-
+                    
                     for proto, cat_data in pinglist_in_memory.items():
                         for group, ip_list in cat_data.items():
                             # Make a template for each possible src-dst combination
@@ -574,7 +634,7 @@ async def pingweave_plotter() -> None:
 
                     # Step 3: Read data from Redis
                     cursor = "0"
-                    while cursor != "0":
+                    while cursor != 0: # IMPORTANT: != 0 (do not use != "0")
                         current_time = datetime.now()
                         cursor, keys = redis_server.scan(cursor=cursor)
                         for key in keys:
@@ -582,7 +642,7 @@ async def pingweave_plotter() -> None:
                             if value is None:
                                 logger.warning(f"Redis key {key} not found. Skipping.")
                                 continue
-
+                            
                             value_splits = value.split(",")
                             # Filter out old data
                             try:

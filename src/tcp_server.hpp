@@ -33,9 +33,29 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
         log_bound_address(*ctx_server.sock, server_logger);
     }
 
-    const int THRESHOLD_CONSECUTIVE_FAILURE = 5;
     int consecutive_failures = 0;  // 연속 실패 횟수 추적
 
+    sockaddr_in newSocketInfo;
+    socklen_t newSocketInfoLength = sizeof(newSocketInfo);
+    int newSocketFileDescriptor;
+
+    while (true) {
+        server_logger->debug("Waiting a new TCP connection...");
+        newSocketFileDescriptor = accept(*ctx_server.sock, (sockaddr *)&newSocketInfo, &newSocketInfoLength);
+        if (newSocketFileDescriptor == -1) {
+            server_logger->warn("Failed to accept a new TCP connection.");
+            consecutive_failures++;
+
+            if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
+                server_logger->error("Too many ({}) consecutive accept() failures. Leave 1s interval", consecutive_failures);
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                consecutive_failures = 0;
+            }
+        }
+
+        /* close right after acception */
+        close(newSocketFileDescriptor);
+    }
     // while (true) {
     //     uint64_t pingid = 0;
     //     std::string addr_msg_from;

@@ -105,3 +105,12 @@ r = redis.StrictRedis(unix_socket_path='/var/run/redis/redis-server.sock', decod
 # PING 테스트
 print(r.ping())  # 출력: True
 ```
+
+Redis key-value prints
+```shell
+redis-cli -s /var/run/redis/redis-server.sock keys "*" | while read key; do
+  value=$(redis-cli -s /var/run/redis/redis-server.sock get "$key")
+  echo "$key => $value"
+done
+
+```

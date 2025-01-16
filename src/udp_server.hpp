@@ -37,7 +37,6 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
         log_bound_address(*ctx_server.sock, server_logger);
     }
 
-    const int THRESHOLD_CONSECUTIVE_FAILURE = 5;
     int consecutive_failures = 0;  // 연속 실패 횟수 추적
 
     while (true) {
@@ -53,9 +52,8 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
             // wait 1 second if 5 consecutive failures
             if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
                 server_logger->error(
-                    "Too many ({}) consecutive receive failures. Waiting 1 "
-                    "second before retry...",
-                    THRESHOLD_CONSECUTIVE_FAILURE);
+                    "Too many ({}) consecutive receive failures. Leave 1s interval.",
+                    consecutive_failures);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 consecutive_failures = 0;
             }
