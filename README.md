@@ -36,6 +36,7 @@ port 0  # TCP/IP inactivate (optional)
     * redis (client)
     * logging
     * datetime
+    * setproctitle
     * kaleido
 
 ### Install & Build

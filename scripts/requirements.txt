@@ -8,3 +8,4 @@ jinja2
 redis
 datetime
 setproctitle
+kaleido
