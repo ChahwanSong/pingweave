@@ -22,6 +22,7 @@ struct ProcessInfo {
 std::vector<ProcessInfo> processes_cpp_programs;
 ProcessInfo process_py_client = {0};
 ProcessInfo process_py_server = {0};
+ProcessInfo process_py_plotter = {0};
 
 bool running = true;
 
@@ -50,7 +51,7 @@ void start_cpp_programs(
         program_function,
     std::vector<ProcessInfo>& processes_cpp_programs,
     std::set<std::string>& running_cpp_programs);
-    
+
 /* main function */
 int main() {
     spdlog::info("Clear the download / upload directory");
@@ -62,6 +63,7 @@ int main() {
                            spdlog::default_logger());  // alarm to controller
     process_py_client.host = "null";
     process_py_server.host = "null";
+    process_py_plotter.host = "null";
 
     // sanity check - table expiry timer
     if (PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS > 2000) {
@@ -136,10 +138,11 @@ int main() {
         }
 
         /* 2. Terminate threads which are not in pinglist. */
-        // python - check only server because a client must always be running
+        // python - check only server/plotter because a client must always be
+        // running
         if (process_py_server.pid > 0 &&
             process_py_server.host != controller_host) {
-            spdlog::info("IP {} is no more controller. Exit the python thread",
+            spdlog::info("IP {} is no more controller. Exit py_server thread",
                          process_py_server.host);
             int result = kill(process_py_server.pid, SIGTERM);
             if (result != 0) {
@@ -148,6 +151,19 @@ int main() {
             }
             process_py_server = {0};
             process_py_server.host = "null";
+        }
+
+        if (process_py_plotter.pid > 0 &&
+            process_py_plotter.host != controller_host) {
+            spdlog::info("IP {} is no more controller. Exit py_plotter thread",
+                         process_py_plotter.host);
+            int result = kill(process_py_plotter.pid, SIGTERM);
+            if (result != 0) {
+                spdlog::error("Failed to send signal to PID {}: {}",
+                              process_py_plotter.pid, strerror(errno));
+            }
+            process_py_plotter = {0};
+            process_py_plotter.host = "null";
         }
 
         // cpp programs running on this node
@@ -184,6 +200,8 @@ int main() {
         if (local_ips.find(controller_host) != local_ips.end()) {
             start_python_process(process_py_server, "pingweave_server.py",
                                  "py_server", controller_host);
+            start_python_process(process_py_plotter, "pingweave_plotter.py",
+                                 "py_plotter", controller_host);
         }
 
         // Start Python client
@@ -219,7 +237,8 @@ int main() {
 void set_process_name(const std::string& new_name) {
     // `program_invocation_name` points to the original `argv[0]`
     extern char* program_invocation_name;
-    strncpy(program_invocation_name, new_name.c_str(), strlen(program_invocation_name));
+    strncpy(program_invocation_name, new_name.c_str(),
+            strlen(program_invocation_name));
     program_invocation_name[strlen(new_name.c_str())] = '\0';
 }
 
@@ -261,6 +280,7 @@ void signal_handler(int sig) {
     }
     kill(process_py_client.pid, SIGTERM);
     kill(process_py_server.pid, SIGTERM);
+    kill(process_py_plotter.pid, SIGTERM);
     exit(EXIT_SUCCESS);
 }
 
@@ -289,6 +309,13 @@ void sigchld_handler(int sig) {
             process_py_server = {0};  // renew
             process_py_server.host = "null";
         }
+        if (process_py_plotter.pid == pid) {
+            spdlog::info("-> process name: {}", process_py_plotter.name);
+            alarm_msg +=
+                process_py_plotter.host + ":" + process_py_plotter.name;
+            process_py_plotter = {0};  // renew
+            process_py_plotter.host = "null";
+        }
         for (auto it = processes_cpp_programs.begin();
              it != processes_cpp_programs.end(); ++it) {
             if (it->pid == pid) {
@@ -308,7 +335,6 @@ void sigchld_handler(int sig) {
 
     errno = saved_errno;  // back to previous errno
 }
-
 
 void terminate_invalid_cpp_program(const std::set<std::string>& myaddr,
                                    const std::string& program_name,

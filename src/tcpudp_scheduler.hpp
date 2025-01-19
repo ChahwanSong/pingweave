@@ -8,14 +8,15 @@ typedef std::vector<std::string> udpAddressInfo_t;
 class TcpUdpMsgScheduler : public MsgScheduler {
    public:
     TcpUdpMsgScheduler(const std::string& ip, const std::string& protocol,
-                     std::shared_ptr<spdlog::logger> logger)
+                       std::shared_ptr<spdlog::logger> logger)
         : MsgScheduler(ip, protocol, logger) {}
     ~TcpUdpMsgScheduler() {}
 
     int next(std::string& result, uint64_t& time_sleep_us) {
         auto load_now = std::chrono::steady_clock::now();
-        auto load_elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(
-            load_now - last_load_time);
+        auto load_elapsed_time =
+            std::chrono::duration_cast<std::chrono::seconds>(load_now -
+                                                             last_load_time);
 
         // Check the time to load the address_store
         if (load_elapsed_time.count() > load_config_interval_sec) {
@@ -24,10 +25,11 @@ class TcpUdpMsgScheduler : public MsgScheduler {
         }
 
         auto ping_now = std::chrono::steady_clock::now();
-        auto ping_elapsed_time =
+        auto ping_elapsed_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
-                ping_now - last_ping_time);
-        if (ping_elapsed_time.count() >= inter_ping_interval_us) {
+                ping_now - last_ping_time)
+                .count();
+        if (ping_elapsed_time_us >= inter_ping_interval_us) {
             last_ping_time = ping_now;
 
             if (!addressInfo.empty()) {
@@ -36,11 +38,11 @@ class TcpUdpMsgScheduler : public MsgScheduler {
                 time_sleep_us = 0;
                 return 1;  // Success
             } else {
-                time_sleep_us = 1000000; // if no addr to send, sleep 1 second
+                time_sleep_us = 1000000;  // if no addr to send, sleep 1 second
                 return 0;  // Failure: No address information available
             }
         } else {
-            time_sleep_us = inter_ping_interval_us - ping_elapsed_time.count();
+            time_sleep_us = inter_ping_interval_us - ping_elapsed_time_us;
             return 0;  // Failure: Called too soon
         }
     }
@@ -55,10 +57,10 @@ class TcpUdpMsgScheduler : public MsgScheduler {
 
         try {
             // Load pinglist.yaml
-            std::ifstream ifs_pinglist(get_src_dir() +
-                                       DIR_DOWNLOAD_PATH + "/pinglist.yaml");
+            std::ifstream ifs_pinglist(get_src_dir() + DIR_DOWNLOAD_PATH +
+                                       "/pinglist.yaml");
             fkyaml::node pinglist = fkyaml::node::deserialize(ifs_pinglist);
-            
+
             if (pinglist.contains(protocol)) {
                 for (auto& group : pinglist[protocol]) {
                     for (auto& ip : group) {
@@ -73,14 +75,13 @@ class TcpUdpMsgScheduler : public MsgScheduler {
                 }
             }
 
-            logger->debug(
-                "Loaded #{} relevant addresses from pinglist YAML.",
-                addressInfoNew.size());
+            logger->debug("Loaded #{} relevant addresses from pinglist YAML.",
+                          addressInfoNew.size());
             if (addressInfo.size() != addressInfoNew.size()) {
                 logger->info("AddressInfo changed: {} -> {}",
                              addressInfo.size(), addressInfoNew.size());
             }
-            
+
             // save the new address info
             addressInfo.clear();
             addressInfo = addressInfoNew;
@@ -98,9 +99,8 @@ class TcpUdpMsgScheduler : public MsgScheduler {
                           inter_ping_interval_us);
         } catch (const std::exception& e) {
             ++load_yaml_retry_cnt;
-            logger->warn(
-                "(Retry {}/{}) Failed to load and parse YAML file: {}",
-                load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
+            logger->warn("(Retry {}/{}) Failed to load and parse YAML file: {}",
+                         load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
             if (load_yaml_retry_cnt >= MAX_RETRY_LOAD_YAML) {
                 // clear if successively failed >= MAX_RETRY_LOAD_YAML times
                 logger->info(

@@ -28,10 +28,11 @@ class RdmaMsgScheduler : public MsgScheduler {
         }
 
         auto ping_now = std::chrono::steady_clock::now();
-        auto ping_elapsed_time =
+        auto ping_elapsed_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
-                ping_now - last_ping_time);
-        if (ping_elapsed_time.count() >= inter_ping_interval_us) {
+                ping_now - last_ping_time)
+                .count();
+        if (ping_elapsed_time_us >= inter_ping_interval_us) {
             last_ping_time = ping_now;
 
             if (!addressInfo.empty()) {
@@ -44,8 +45,7 @@ class RdmaMsgScheduler : public MsgScheduler {
                 return 0;  // Failure: No address information available
             }
         } else {
-            time_sleep_us =
-                inter_ping_interval_us - ping_elapsed_time.count();  //
+            time_sleep_us = inter_ping_interval_us - ping_elapsed_time_us;
             return 0;  // Failure: Called too soon
         }
     }

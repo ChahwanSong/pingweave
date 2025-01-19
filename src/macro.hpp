@@ -25,16 +25,17 @@ const static int MESSAGE_SIZE = 64;                  // Message size of 64B
 const static int MAX_NUM_HOSTS_IN_PINGLIST = 10000;  // Maximum of host number
 
 // RDMA parameters
-const static int NUM_BUFFER = 256;        // to avoid buffer corruption for CQE
-const static int TX_DEPTH = 1;            // rdma
-const static int RX_DEPTH = 1;            // rdma
-const static int SERVICE_LEVEL = 0;       // by default 0 (lowest priority)
-const static int BATCH_CQE = 16;          // batch size for ibv_poll_cq()
+const static int NUM_BUFFER = 256;   // to avoid buffer corruption for CQE
+const static int TX_DEPTH = 1;       // rdma
+const static int RX_DEPTH = 1;       // rdma
+const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
+const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
 const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
+const static int SMALL_JITTERING_MICROSEC = 10;  // in event polling for cqe
 
 // Params for internal message queue btw threads
-const static int QUEUE_SIZE = (1 << 16);     // large enough
-const static int WAIT_DEQUEUE_TIME_SEC = 1;  // seconds
+const static int MSG_QUEUE_SIZE = (1 << 16);  // large enough
+const static int WAIT_DEQUEUE_TIME_SEC = 1;   // seconds
 
 // Ping interval (for each src-dst pair) / Report interval
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds

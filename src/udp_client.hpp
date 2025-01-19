@@ -35,8 +35,9 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                 logger->debug("Sending PING message (ping ID:{}), time: {}",
                               pingid, timestamp_ns_to_string(send_time_system));
 
-                if (send_udp_message(ctx_tx, dst_addr, PINGWEAVE_UDP_PORT_SERVER,
-                                 pingid, logger)) {
+                if (send_udp_message(ctx_tx, dst_addr,
+                                     PINGWEAVE_UDP_PORT_SERVER, pingid,
+                                     logger)) {
                     // something went wrong
                     continue;
                 }
@@ -79,10 +80,10 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
     }
 }
 
-void udp_client_result_thread(
-    const std::string& ipv4,
-    const std::string& protocol, TcpUdpClientQueue* client_queue,
-    std::shared_ptr<spdlog::logger> logger) {
+void udp_client_result_thread(const std::string& ipv4,
+                              const std::string& protocol,
+                              TcpUdpClientQueue* client_queue,
+                              std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
     if (!get_int_param_from_ini(report_interval_ms,
                                 "interval_report_ping_result_millisec")) {
@@ -203,7 +204,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     }
 
     // Internal message-queue
-    TcpUdpClientQueue client_queue(QUEUE_SIZE);
+    TcpUdpClientQueue client_queue(MSG_QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = protocol + "_table_" + ipv4;
@@ -222,7 +223,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     }
 
     TcpUdpPinginfoMap ping_table(ping_table_logger, &client_queue,
-                              PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS);
+                                 PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS);
 
     // Initialize UDP contexts
     udp_context ctx_tx, ctx_rx;

@@ -34,7 +34,6 @@ OBJS_MAIN = $(addprefix $(BIN_DIR)/, $(SRCS_MAIN:.cpp=.o))
 # 출력 파일
 TARGET_MAIN = $(BIN_DIR)/pingweave
 
-
 SRCS_SIMPLE = pingweave_simple.cpp $(SRCS_COMMON)
 OBJS_SIMPLE = $(addprefix $(BIN_DIR)/, $(SRCS_SIMPLE:.cpp=.o))
 TARGET_SIMPLE = $(BIN_DIR)/pingweave_simple

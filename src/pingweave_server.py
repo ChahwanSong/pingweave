@@ -32,12 +32,6 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from plotter import run_pingweave_plotter  # Import the plotter function
-except ImportError as e:
-    logger.error(f"Could not import run_pingweave_plotter from plotter.py: {e}")
-    sys.exit(1)
-
-try:
     from webserver import run_pingweave_webserver  # Import the webserver function
 except ImportError as e:
     logger.error(f"Could not import run_pingweave_webserver from webserver.py: {e}")
@@ -66,11 +60,8 @@ if __name__ == "__main__":
         process_collector = multiprocessing.Process(
             target=run_pingweave_collector, name="pingweave_collector", daemon=True
         )
-        process_plotter = multiprocessing.Process(
-            target=run_pingweave_plotter, name="pingweave_plotter", daemon=True
-        )
 
-        processes = [process_server, process_collector, process_plotter]
+        processes = [process_server, process_collector]
 
         # Start processes
         for process in processes:

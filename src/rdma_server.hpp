@@ -275,7 +275,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             ibv_end_poll(ctx_tx->cq_s.cq_ex);
         } else {
             // nothing to poll. add a small jittering.
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
             return;
         }
     } else {
@@ -286,7 +287,8 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
             logger->error("Failed to poll CQ");
             throw std::runtime_error("tx cqe - Failed to poll CQ");
         } else if (num_cqes == 0) {  // no completion
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
             return;
         }
 
@@ -452,7 +454,7 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
     }
 
     // Create internal queue
-    RdmaServerQueue server_queue(QUEUE_SIZE);
+    RdmaServerQueue server_queue(MSG_QUEUE_SIZE);
 
     // Create the table
     PingMsgMap ping_table(PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS);

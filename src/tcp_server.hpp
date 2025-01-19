@@ -3,6 +3,11 @@
 #include "tcpudp_common.hpp"
 #include "tcpudp_ping_info.hpp"
 
+/**
+ * NOTE: TCP Server is simple. It receives SYN packet, and respond to it.
+ * The response will be SYN-ACK, and close a socket immediately.
+ * This can lead to a
+ */
 
 // TCP server main function
 void tcp_server(const std::string& ipv4, const std::string& protocol) {
@@ -41,13 +46,17 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
 
     while (true) {
         server_logger->debug("Waiting a new TCP connection...");
-        newSocketFileDescriptor = accept(*ctx_server.sock, (sockaddr *)&newSocketInfo, &newSocketInfoLength);
+        newSocketFileDescriptor = accept(
+            *ctx_server.sock, (sockaddr*)&newSocketInfo, &newSocketInfoLength);
         if (newSocketFileDescriptor == -1) {
             server_logger->warn("Failed to accept a new TCP connection.");
             consecutive_failures++;
 
             if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
-                server_logger->error("Too many ({}) consecutive accept() failures. Leave 1s interval", consecutive_failures);
+                server_logger->error(
+                    "Too many ({}) consecutive accept() failures. Leave 1s "
+                    "interval",
+                    consecutive_failures);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 consecutive_failures = 0;
             }
@@ -56,34 +65,4 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
         /* close right after acception */
         close(newSocketFileDescriptor);
     }
-    // while (true) {
-    //     uint64_t pingid = 0;
-    //     std::string addr_msg_from;
-    //     if (receive_udp_message(&ctx_server, pingid, addr_msg_from,
-    //                         server_logger)) {
-    //         // receive_message 실패 시 처리
-    //         consecutive_failures++;
-    //         server_logger->warn("receive_message failed ({} times in a row)",
-    //                             consecutive_failures);
-
-    //         // wait 1 second if 5 consecutive failures
-    //         if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
-    //             server_logger->error(
-    //                 "Too many ({}) consecutive receive failures. Waiting 1 "
-    //                 "second before retry...",
-    //                 THRESHOLD_CONSECUTIVE_FAILURE);
-    //             std::this_thread::sleep_for(std::chrono::seconds(1));
-    //             consecutive_failures = 0;
-    //         }
-
-    //         continue;
-    //     }
-
-    //     if (send_udp_message(&ctx_server, addr_msg_from, PINGWEAVE_UDP_PORT_CLIENT,
-    //                      pingid, server_logger)) {
-    //         // somethign wrong
-    //         server_logger->warn("Failed to send response to {}", addr_msg_from);
-    //         continue;
-    //     }
-    // }
 }

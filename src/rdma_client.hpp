@@ -236,7 +236,8 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 ibv_end_poll(ctx_tx->cq_s.cq_ex);
             } else {
                 // nothing to poll. add a small jittering.
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
                 return;
             }
         } else {
@@ -246,7 +247,8 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                 logger->error("Failed to poll CQ");
                 throw std::runtime_error("tx cqe - Failed to poll CQ");
             } else if (num_cqes == 0) {  // no completion
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::sleep_for(
+                    std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
                 return;
             }
 
@@ -282,7 +284,6 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
             throw std::runtime_error(
                 "tx cqe - Failed to post cqe request notification.");
         }
-
     } catch (const std::exception& e) {
         logger->error("TX CQE handler exits unexpectedly: {}", e.what());
         throw;  // Propagate exception
@@ -450,7 +451,8 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
     }
 }
 
-void rdma_client_result_thread(const std::string& ipv4,const std::string& protocol,
+void rdma_client_result_thread(const std::string& ipv4,
+                               const std::string& protocol,
                                RdmaClientQueue* client_queue,
                                std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
@@ -533,7 +535,8 @@ void rdma_client_result_thread(const std::string& ipv4,const std::string& protoc
 
                 // send to collector
                 if (agg_result.size() > 0) {
-                    message_to_http_server(agg_result, "/result_" + protocol, logger);
+                    message_to_http_server(agg_result, "/result_" + protocol,
+                                           logger);
                 }
 
                 // clear the history
@@ -580,7 +583,7 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
     }
 
     // Internal message-queue
-    RdmaClientQueue client_queue(QUEUE_SIZE);
+    RdmaClientQueue client_queue(MSG_QUEUE_SIZE);
 
     // ping table with timeout
     const std::string ping_table_logname = protocol + "_table_" + ipv4;

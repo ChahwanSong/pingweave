@@ -25,15 +25,6 @@ unixsocketperm 700
 port 0  # TCP/IP inactivate (optional)
 ```
 
-To plot `html` and `png` using `bokeh` library, `chromium` and `chromedriver` is required:
-```shell
-# RHEL
-dnf install chromium chromedriver
-
-# Ubuntu
-sudo apt-get install chromium-browser chromium-chromedriver
-```
-
 * python >= 3.7 (for aiohttp)
 * python packages (versions do not necessarily be same with clients)
     * pyyaml
@@ -45,7 +36,9 @@ sudo apt-get install chromium-browser chromium-chromedriver
     * logging
     * datetime
     * setproctitle
-    * bokeh (>3.0)
+    * plotly
+    * kaleido
+    * matplotlib
 
 ### Install & Build
 

@@ -7,4 +7,6 @@ jinja2
 redis
 datetime
 setproctitle
-bokeh
+plotly
+kaleido
+matplotlib
