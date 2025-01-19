@@ -9,7 +9,7 @@ LOG_DIR = os.path.join(SCRIPT_DIR, "../logs")
 UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
 DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
 HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
-IMAGE_DIR = os.path.join(SCRIPT_DIR, "../image")
+SUMMARY_DIR = os.path.join(SCRIPT_DIR, "../summary")
 WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
 BOOTSTRAP_DIR = os.path.join(SCRIPT_DIR, "../libs/bootstrap")
 

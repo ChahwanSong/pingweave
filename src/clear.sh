@@ -6,4 +6,4 @@ rm -rf $(pwd)/../result
 rm -rf $(pwd)/../download
 rm -rf $(pwd)/../upload
 rm -rf $(pwd)/../html
-rm -rf $(pwd)/../image
+rm -rf $(pwd)/../summary

@@ -160,6 +160,24 @@ else
     exit 1
 fi
 
+
+######### Additional Option ########
+# Handle -c option for pip requirements
+if [[ "$1" == "-c" ]]; then
+    cecho "YELLOW" "Installing Python requirements from requirements.txt..."
+    REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
+    if [[ -f "$REQUIREMENTS_FILE" ]]; then
+        python3 -m pip install -r "$REQUIREMENTS_FILE" || {
+            cecho "RED" "Error: Failed to install Python requirements."
+            exit 1
+        }
+        cecho "GREEN" "Python requirements installed successfully."
+    else
+        cecho "RED" "Error: requirements.txt not found at $REQUIREMENTS_FILE."
+        exit 1
+    fi
+fi
+
 ######### Make ########
 cecho "YELLOW" "Navigating to source directory and cleaning up..."
 cd "$SCRIPT_DIR/../src" || {
@@ -218,19 +236,3 @@ sudo systemctl status pingweave.service || {
 }
 cecho "GREEN" "Pingweave service installed and running successfully."
 
-######### Additional Option ########
-# Handle -c option for pip requirements
-if [[ "$1" == "-c" ]]; then
-    cecho "YELLOW" "Installing Python requirements from requirements.txt..."
-    REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
-    if [[ -f "$REQUIREMENTS_FILE" ]]; then
-        python3 -m pip install -r "$REQUIREMENTS_FILE" || {
-            cecho "RED" "Error: Failed to install Python requirements."
-            exit 1
-        }
-        cecho "GREEN" "Python requirements installed successfully."
-    else
-        cecho "RED" "Error: requirements.txt not found at $REQUIREMENTS_FILE."
-        exit 1
-    fi
-fi

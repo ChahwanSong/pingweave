@@ -5,9 +5,11 @@ import configparser
 import asyncio
 import time
 import socket
+import html
 import psutil
 import multiprocessing
 import copy
+from datetime import datetime
 from setproctitle import setproctitle
 import re
 
@@ -193,29 +195,6 @@ async def post_address(request):
         logger.error(f"Error processing POST from {client_ip}: {e}")
         return web.Response(text="Internal webserver error", status=500)
 
-
-## simple index example
-# async def index(request):
-#     # 디렉토리 내의 파일 목록을 가져옵니다.
-#     files = os.listdir(HTML_DIR)
-#     # HTML 파일만 필터링합니다.
-#     html_files = [f for f in files if f.endswith(".html")]
-#     # 인덱스 페이지를 생성합니다.
-#     file_links = [f'<li><a href="/{fname}">{fname}</a></li>' for fname in html_files]
-#     content = f"""
-#     <html>
-#         <head><title>Available HTML Files</title></head>
-#         <body>
-#             <h1>Available PingWeave list</h1>
-#             <ul>
-#                 {''.join(file_links)}
-#             </ul>
-#         </body>
-#     </html>
-#     """
-#     return web.Response(text=content, content_type="text/html")
-
-
 async def index(request):
     files = os.listdir(HTML_DIR)
     html_files = [f for f in files if f.endswith(".html")]
@@ -255,7 +234,7 @@ async def index(request):
         <script src="/bootstrap/js/bootstrap.bundle.min.js"></script>
 
         <script>
-          // (A) Format date to "YYYY-MM-DD HH:mm:SS"
+          // Show current time in "YYYY-MM-DD HH:MM:SS" at top-right
           function formatDateTime(dateObj) {{
             let year = dateObj.getFullYear();
             let month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -266,51 +245,22 @@ async def index(request):
             return year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second;
           }}
 
-          // (B) Called when an image finishes loading
-          function recordLoad(imgElem) {{
-            let now = Date.now();
-            imgElem.dataset.loadedAt = now;
-          }}
-
-          // (C) Update each image's load time every second
-          function updateImageTimes() {{
-            let now = Date.now();
-            let images = document.querySelectorAll('img[data-loaded-at]');
-            images.forEach(img => {{
-              let loadedTime = parseInt(img.dataset.loadedAt);
-              if (!loadedTime) return;
-              let diffSec = Math.floor((now - loadedTime) / 1000);
-              let displayElem = img.parentNode.querySelector('.timeSinceImageLoad');
-              if (displayElem) {{
-                displayElem.innerText = diffSec + " seconds since this image loaded.";
-              }}
-            }});
-          }}
-          setInterval(updateImageTimes, 1000);
-
-          // (D) Automatically refresh images every 10 seconds
-          function reloadAllImages() {{
-            let images = document.querySelectorAll('img[data-original-src]');
-            images.forEach(img => {{
-              let original = img.dataset.originalSrc;
-              // Cache-busting query parameter
-              let newSrc = original + "?_=" + Date.now();
-              img.src = newSrc;
-            }});
-          }}
-          setInterval(reloadAllImages, 10000);
-
-          // (E) Show current time in "YYYY-MM-DD HH:MM:SS" at top-right
           function updateCurrentTime() {{
             let now = new Date();
-            let timeString = formatDateTime(now); // e.g. 2025-11-21 21:13:26
+            let timeString = formatDateTime(now);
             let currentTimeElem = document.getElementById('currentTime');
             if (currentTimeElem) {{
               currentTimeElem.textContent = timeString;
             }}
           }}
+
+          // Update the clock every second
           setInterval(updateCurrentTime, 1000);
 
+          // Auto-reload every 10 seconds
+          setInterval(function() {{
+            window.location.reload();
+          }}, 10000);
         </script>
       </head>
       <body class="bg-light">
@@ -322,7 +272,7 @@ async def index(request):
                style="text-align:right; font-size:0.9em;">
           </div>
 
-          <h1 class="mb-3">PingWeave Dashboard </h1>
+          <h1 class="mb-3">PingWeave Dashboard</h1>
 
           <p class="text-secondary">
             This PingWeave dashboard shows a grouped end-to-end latency monitoring with a mesh grid.<br>
@@ -426,20 +376,38 @@ async def index(request):
                     <ul class="list-unstyled">
             """
             for fname, measure in file_list:
-                base_name = fname.replace(".html", "")
-                original_src = f"/image/{base_name}.png"
+                # Attempt to load summary text
+                summary_fname = fname.replace(".html", ".summary")
+                summary_path = os.path.join(SUMMARY_DIR, summary_fname)
+
+                # Default fallback
+                summary_text = "No summary available."
+                summary_timestamp_html = ""
+
+                if os.path.exists(summary_path):
+                    with open(summary_path, "r", encoding="utf-8") as f:
+                        summary_text = f.read()
+                    # If we loaded the summary, show a timestamp
+                    loaded_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    summary_timestamp_html = f"""
+                        <div class="text-muted small">
+                          Summary loaded at: {loaded_timestamp}
+                        </div>
+                    """
+
+                # Escape HTML special chars to display text safely
+                summary_text_escaped = html.escape(summary_text)
+
                 content += f"""
                       <li class="mb-4 border-bottom pb-3">
                         <div><strong>Measure:</strong> {measure}</div>
-                        <div><strong>Filename:</strong> <a href="/{fname}" target="_blank">{fname}</a></div>
+                        <div><strong>Filename:</strong> 
+                          <a href="/{fname}" target="_blank">{fname}</a>
+                        </div>
                         <div class="mt-2">
-                          <img src="{original_src}"
-                               data-original-src="{original_src}"
-                               alt="{base_name}"
-                               onload="recordLoad(this)"
-                               data-loaded-at=""
-                               style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
-                          <div class="timeSinceImageLoad text-muted small mt-1"></div>
+                          <strong>Summary:</strong>
+                          <div style="white-space: pre-wrap;">{summary_text_escaped}</div>
+                          {summary_timestamp_html}
                         </div>
                       </li>
                 """
@@ -487,7 +455,7 @@ async def pingweave_webserver():
                 app = web.Application()
                 app.router.add_get("/", index)  # indexing for html files
                 app.router.add_static("/", HTML_DIR)  # static route for html files
-                app.router.add_static("/image", IMAGE_DIR)  # static route for images
+                app.router.add_static("/summary", SUMMARY_DIR)  # static route for images
                 app.router.add_static("/bootstrap", BOOTSTRAP_DIR)  # for bootstrap
                 app.router.add_get("/pinglist", get_pinglist)
                 app.router.add_get("/address_store", get_address_store)
