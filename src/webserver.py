@@ -261,6 +261,47 @@ async def index(request):
           setInterval(function() {{
             window.location.reload();
           }}, 10000);
+
+          // Keep track of which tabs are active so we can restore them after reload
+          document.addEventListener('DOMContentLoaded', function() {{
+            // 1) Restore the saved protocol tab (if any)
+            let savedProtocolTabId = localStorage.getItem('activeProtocolTab');
+            if (savedProtocolTabId) {{
+              let tabElement = document.querySelector('#' + savedProtocolTabId);
+              if (tabElement) {{
+                // Use Bootstrap's Tab API to show the saved tab
+                let protocolTab = new bootstrap.Tab(tabElement);
+                protocolTab.show();
+              }}
+            }}
+
+            // 2) Restore the saved group tab (if any)
+            let savedGroupTabId = localStorage.getItem('activeGroupTab');
+            if (savedGroupTabId) {{
+              let groupTabElement = document.querySelector('#' + savedGroupTabId);
+              if (groupTabElement) {{
+                let groupTab = new bootstrap.Tab(groupTabElement);
+                groupTab.show();
+              }}
+            }}
+
+            // 3) Listen for protocol-tab changes to save the new active tab
+            const protocolTabEls = document.querySelectorAll('#protocolTab .nav-link');
+            protocolTabEls.forEach(el => {{
+              el.addEventListener('shown.bs.tab', (event) => {{
+                // event.target.id might be something like "tab-roce" or "tab-ib"
+                localStorage.setItem('activeProtocolTab', event.target.id);
+              }});
+            }});
+
+            // 4) Listen for group-tab changes to save the new active group
+            const groupTabEls = document.querySelectorAll('.nav-pills .nav-link');
+            groupTabEls.forEach(el => {{
+              el.addEventListener('shown.bs.tab', (event) => {{
+                localStorage.setItem('activeGroupTab', event.target.id);
+              }});
+            }});
+          }});
         </script>
       </head>
       <body class="bg-light">
@@ -287,11 +328,14 @@ async def index(request):
     for protocol in protocol_list:
         active_class = "active" if first_protocol else ""
         aria_selected = "true" if first_protocol else "false"
+        # ID for the <button> that we'll use as localStorage key
+        # e.g., tab-roce, tab-ib, etc.
+        protocol_button_id = f"tab-{protocol}"
         content += f"""
             <li class="nav-item" role="presentation">
               <button
                 class="nav-link {active_class}"
-                id="tab-{protocol}"
+                id="{protocol_button_id}"
                 data-bs-toggle="tab"
                 data-bs-target="#panel-{protocol}"
                 type="button"
@@ -333,12 +377,15 @@ async def index(request):
         for group_name in group_list:
             active_class = "active" if first_group else ""
             aria_selected = "true" if first_group else "false"
+
+            # ID for the group tab's button
             safe_group_id = f"{protocol}-{group_name}".replace(" ", "_")
+            group_button_id = f"tab-{safe_group_id}"  # e.g., tab-roce-myGroup
             content += f"""
                   <li class="nav-item" role="presentation">
                     <button
                       class="nav-link {active_class}"
-                      id="tab-{safe_group_id}"
+                      id="{group_button_id}"
                       data-bs-toggle="pill"
                       data-bs-target="#panel-{safe_group_id}"
                       type="button"
@@ -436,7 +483,6 @@ async def index(request):
     """
 
     return web.Response(text=content, content_type="text/html")
-
 
 async def pingweave_webserver():
     load_config_ini()
