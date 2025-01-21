@@ -81,10 +81,14 @@ uint32_t ip2uint(const std::string &ip);
 std::string uint2ip(const uint32_t &ip);
 uint64_t make_pingid(const uint32_t &high, const uint32_t &low);
 void parse_pingid(const uint64_t &value, uint32_t &high, uint32_t &low);
-uint64_t get_current_timestamp_ns();
+std::chrono::system_clock::time_point get_current_timestamp_system_clock();
+std::chrono::steady_clock::time_point get_current_timestamp_steady_clock();
+uint64_t convert_clock_to_ns(std::chrono::system_clock::time_point val);
+uint64_t convert_clock_to_ns(std::chrono::steady_clock::time_point val);
+uint64_t get_current_timestamp_system_ns();
+uint64_t get_current_timestamp_steady_ns();
+std::string get_current_timestamp_system_str();
 std::string timestamp_ns_to_string(uint64_t timestamp_ns);
-std::string get_current_timestamp_string();
-uint64_t get_current_timestamp_steady();
 uint64_t calc_time_delta_with_bitwrap(const uint64_t &t1, const uint64_t &t2,
                                       const uint64_t &mask);
 uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,

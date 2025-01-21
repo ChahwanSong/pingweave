@@ -34,7 +34,8 @@ class TcpUdpPinginfoMap {
           logger(ping_table_logger) {}
 
     // if already exists, return false
-    bool insert(const Key& key, const tcpudp_pinginfo_t& value) {
+    bool insert(const Key& key, const uint64_t& pingid,
+                const std::string& dstip) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
@@ -47,8 +48,11 @@ class TcpUdpPinginfoMap {
         auto listIter = keyList.emplace(keyList.end(), key);
 
         // Add to map
-        TimePoint now = std::chrono::steady_clock::now();
-        map[key] = {value, now, listIter};
+        TimePoint steady_now = get_current_timestamp_steady_clock();
+        map[key] = {{pingid, dstip, get_current_timestamp_system_ns(),
+                     convert_clock_to_ns(steady_now)},
+                    steady_now,
+                    listIter};
         return true;
     }
 
@@ -125,7 +129,7 @@ class TcpUdpPinginfoMap {
     // NOTE: this function itself is not thread-safe
     // so, it must be used with unique_lock
     int expireEntries() {
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now = get_current_timestamp_steady_clock();
         int n_remove = 0;
 
         while (!keyList.empty()) {

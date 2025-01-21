@@ -76,7 +76,7 @@ class RdmaPinginfoMap {
         auto listIter = keyList.emplace(keyList.end(), key);
 
         // Add to map
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now = get_current_timestamp_steady_clock();
         map[key] = {value, now, listIter};
         return true;
     }
@@ -301,7 +301,7 @@ class RdmaPinginfoMap {
     // NOTE: this function itself is not thread-safe
     // so, it must be used with unique_lock
     int expireEntries() {
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now = get_current_timestamp_steady_clock();
         int n_remove = 0;
 
         while (!keyList.empty()) {

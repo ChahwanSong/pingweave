@@ -11,8 +11,8 @@ class MsgScheduler {
         : ipaddr(ip),
           logger(logger),
           protocol(protocol),
-          last_ping_time(std::chrono::steady_clock::now()),
-          last_load_time(std::chrono::steady_clock::now()),
+          last_ping_time(get_current_timestamp_steady_clock()),
+          last_load_time(get_current_timestamp_steady_clock()),
           addr_idx(0) {
         if (!get_int_param_from_ini(interval_send_ping_microsec,
                                     "interval_send_ping_microsec")) {

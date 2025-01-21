@@ -29,6 +29,8 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
                      const uint64_t &pingid,
                      std::shared_ptr<spdlog::logger> logger);
 
+int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger);
+
 /*******************
  *       TCP       *
  ******************/

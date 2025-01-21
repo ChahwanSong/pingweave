@@ -16,7 +16,7 @@ class RdmaMsgScheduler : public MsgScheduler {
 
     int next(std::tuple<std::string, std::string, uint32_t, uint32_t>& result,
              uint64_t& time_sleep_us) {
-        auto load_now = std::chrono::steady_clock::now();
+        auto load_now = get_current_timestamp_steady_clock();
         auto load_elapsed_time =
             std::chrono::duration_cast<std::chrono::seconds>(load_now -
                                                              last_load_time);
@@ -27,7 +27,7 @@ class RdmaMsgScheduler : public MsgScheduler {
             last_load_time = load_now;
         }
 
-        auto ping_now = std::chrono::steady_clock::now();
+        auto ping_now = get_current_timestamp_steady_clock();
         auto ping_elapsed_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 ping_now - last_ping_time)

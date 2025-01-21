@@ -117,7 +117,7 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
 
-                    cqe_time = get_current_timestamp_steady();
+                    cqe_time = get_current_timestamp_steady_ns();
                     ping_msg.x.time = cqe_time;
 
                     // Parse GRH header (for debugging)
@@ -303,7 +303,7 @@ void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
 
             if (wc.opcode == IBV_WC_SEND) {
                 // get CQE time
-                cqe_time = get_current_timestamp_steady();
+                cqe_time = get_current_timestamp_steady_ns();
 
                 // PONG ACK's CQE -> ignore
                 if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {

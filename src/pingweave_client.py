@@ -82,7 +82,7 @@ def fetch_data(ip: str, port: str, data_type: str):
                     try:
                         existing_data = yaml.safe_load(existing_file)
                     except yaml.YAMLError as e:
-                        logger.error(f"Failed to load existing YAML file: {e}")
+                        logger.error(f"Failed to load YAML file {yaml_file_path}: {e}")
                         existing_data = None
 
                 if existing_data == parsed_data:

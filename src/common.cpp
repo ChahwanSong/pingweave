@@ -336,18 +336,65 @@ void parse_pingid(const uint64_t &value, uint32_t &high, uint32_t &low) {
     low = static_cast<uint32_t>(value & 0xFFFFFFFF);
 }
 
-// Get current time in 64-bit nanoseconds
-uint64_t get_current_timestamp_ns() {
-    // Get the current time point from the system clock
-    auto now = std::chrono::system_clock::now();
+// get system clock from chrono
+std::chrono::system_clock::time_point get_current_timestamp_system_clock() {
+    return std::chrono::system_clock::now();
+}
+
+// get steady clock from chrono
+std::chrono::steady_clock::time_point get_current_timestamp_steady_clock() {
+    return std::chrono::steady_clock::now();
+}
+
+// convert system clock to ns
+uint64_t convert_clock_to_ns(std::chrono::system_clock::time_point val) {
     // Convert to time since epoch in nanoseconds
     auto epoch_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        now.time_since_epoch())
+                        val.time_since_epoch())
                         .count();
     return static_cast<uint64_t>(epoch_ns);
 }
 
-// Convert 64-bit nanoseconds timestamp to a human-readable string
+// convert steady clock to ns
+uint64_t convert_clock_to_ns(std::chrono::steady_clock::time_point val) {
+    // Convert to time since epoch in nanoseconds
+    auto epoch_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        val.time_since_epoch())
+                        .count();
+    return static_cast<uint64_t>(epoch_ns);    
+}
+
+// Get current time in 64-bit nanoseconds
+uint64_t get_current_timestamp_system_ns() {
+    // Get the current time point from the system clock
+    return convert_clock_to_ns(get_current_timestamp_system_clock());
+}
+
+// Function to get current timestamp
+uint64_t get_current_timestamp_steady_ns() {
+    // Get the current time point from the steady clock
+    return convert_clock_to_ns(get_current_timestamp_steady_clock());
+}
+
+// Get current time as a formatted string
+std::string get_current_timestamp_system_str() {
+    // Get the current time point from the system clock
+    auto now = std::chrono::system_clock::now();
+    // Convert to time_t for formatting
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    // Convert to tm structure for local time
+    std::tm tm_format = *std::localtime(&now_time);
+
+    // Format the time as a string
+    char time_buffer[32];
+    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S",
+                  &tm_format);
+
+    return std::string(time_buffer);
+}
+
+
+// Convert 64-bit nanoseconds timestamp to a human-readable string (only system clock)
 std::string timestamp_ns_to_string(uint64_t timestamp_ns) {
     // Convert nanoseconds to seconds and nanoseconds part
     auto seconds = timestamp_ns / 1'000'000'000LL;
@@ -368,32 +415,6 @@ std::string timestamp_ns_to_string(uint64_t timestamp_ns) {
                   time_buffer, nanoseconds_part);
 
     return std::string(result_buffer);
-}
-
-// Get current time as a formatted string
-std::string get_current_timestamp_string() {
-    // Get the current time point from the system clock
-    auto now = std::chrono::system_clock::now();
-    // Convert to time_t for formatting
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    // Convert to tm structure for local time
-    std::tm tm_format = *std::localtime(&now_time);
-
-    // Format the time as a string
-    char time_buffer[32];
-    std::strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S",
-                  &tm_format);
-
-    return std::string(time_buffer);
-}
-
-// Function to get current timestamp
-uint64_t get_current_timestamp_steady() {
-    struct timespec ts = {};
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
-        throw std::runtime_error("Failed to call clock_gettime.");
-    }
-    return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000LL + ts.tv_nsec;
 }
 
 // calculate time difference with considering bit wrap-around (UDP)

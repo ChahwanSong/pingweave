@@ -22,18 +22,14 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                 auto pingid = make_pingid(ip2uint(ipv4), ping_uid++);
 
                 // Record the send time
-                uint64_t send_time_system = get_current_timestamp_ns();
-                uint64_t send_time_steady = get_current_timestamp_steady();
-                if (!ping_table->insert(pingid,
-                                        {pingid, dst_addr, send_time_system,
-                                         send_time_steady})) {
+                if (!ping_table->insert(pingid, pingid, dst_addr)) {
                     logger->warn("Failed to insert ping ID {} into ping_table.",
                                  pingid);
                 }
 
                 // Send the PING message
-                logger->debug("Sending PING message (ping ID:{}), time: {}",
-                              pingid, timestamp_ns_to_string(send_time_system));
+                logger->debug("Sending PING message (ping ID:{}, dstip:{})",
+                              pingid, dst_addr);
 
                 if (send_udp_message(ctx_tx, dst_addr,
                                      PINGWEAVE_UDP_PORT_SERVER, pingid,
@@ -68,7 +64,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
                 continue;
             }
 
-            uint64_t recv_time_steady = get_current_timestamp_steady();
+            uint64_t recv_time_steady = get_current_timestamp_steady_ns();
             if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
                 logger->warn(
                     "PONG (pingid: {}) error occurs in update_pong_info.",
@@ -105,7 +101,7 @@ void udp_client_result_thread(const std::string& ipv4,
     struct tcpudp_result_info_t* info;
 
     // timer for report
-    auto last_report_time = std::chrono::steady_clock::now();
+    auto last_report_time = get_current_timestamp_steady_clock();
 
     /** RESULT: (dstip, #success, #failure, #weird, mean, max, p50, p95, p99) */
     try {
@@ -136,7 +132,7 @@ void udp_client_result_thread(const std::string& ipv4,
             }
 
             // Check the interval for report
-            auto current_time = std::chrono::steady_clock::now();
+            auto current_time = get_current_timestamp_steady_clock();
             auto elapsed_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     current_time - last_report_time)

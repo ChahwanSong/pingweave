@@ -179,31 +179,29 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
     }
     ctx->sock = tcp_socket(new int(fd));
 
-    
-    if (ctx->is_server) {  //server     
+    if (ctx->is_server) {  // server
         // set socket options - reusability
         int enable = 1;
-        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &enable,
-                        sizeof(int)) < 0) {
+        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+                       &enable, sizeof(int)) < 0) {
             logger->error("Failed to set SO_REUSEADDR | SO_REUSEPORT");
             return true;
         }
-        logger->debug("TCP server socket - set option - SO_REUSEADDR | SO_REUSEPORT");
-
+        logger->debug(
+            "TCP server socket - set option - SO_REUSEADDR | SO_REUSEPORT");
     }
 
-    if (!ctx->is_server) { // client
+    if (!ctx->is_server) {  // client
         struct timeval tv;
         tv.tv_sec = PINGWEAVE_TCP_SOCK_TIMEOUT_SEC;
         tv.tv_usec = 0;
 
-        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_RCVTIMEO | SO_SNDTIMEO, (char *)&tv,
-                       sizeof(tv)) < 0) {
+        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_RCVTIMEO | SO_SNDTIMEO,
+                       (char *)&tv, sizeof(tv)) < 0) {
             logger->error("Failed to set SO_SNDTIMEO Timeout.");
             return true;
         }
         logger->debug("TCP client socket - set option - RCVTIMEO and SNDTIMEO");
-
 
         // (1) any queued data is thrown away and reset is send immediately,
         // and (2) the receiver of the RST can tell that the other end did an
@@ -283,27 +281,24 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
         }
 
         // Record the send time
-        uint64_t send_time_system = get_current_timestamp_ns();
-        uint64_t send_time_steady = get_current_timestamp_steady();
-        if (!ping_table->insert(
-                pingid, {pingid, dst_ip, send_time_system, send_time_steady})) {
+        if (!ping_table->insert(pingid, pingid, dst_ip)) {
             logger->warn("Failed to insert ping ID {} into ping_table.",
                          pingid);
         }
 
         // Send the PING message
-        logger->debug("Sending PING message, ping ID:{}, dst: {}, time: {}",
-                      pingid, dst_ip, timestamp_ns_to_string(send_time_system));
+        logger->debug("Sending PING message, ping ID:{}, dst: {}", pingid,
+                      dst_ip);
 
         // Connect socket
         if (connect(*ctx_client.sock, (const sockaddr *)&ctx_client.addr,
                     sizeof(sockaddr_in)) == -1) {
-            logger->error("Connection failed - {} -> {}", src_ip, dst_ip);
+            logger->debug("Connection failed - {} -> {}", src_ip, dst_ip);
             return true;
         }
 
         // End of handshake
-        uint64_t recv_time_steady = get_current_timestamp_steady();
+        uint64_t recv_time_steady = get_current_timestamp_steady_ns();
         if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
             logger->warn("PONG (pingid: {}) error occurs in update_pong_info.",
                          pingid);
@@ -341,6 +336,36 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
         logger->error("Unknown exception in send_tcp_message");
         return false;
     }
+}
+
+int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger) {
+    if (sockfd < 0) {
+        logger->warn("Failed to accept a new TCP connection.");
+        return true;
+    }
+    
+    // // Instead of waiting FIN, use a timeout.
+    // // This is to avoid indefinite waiting and resource starvation.
+    // std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // // Wait the server-side FIN packet
+    // char buffer[64];
+    // ssize_t bytes_received;
+    // while ((bytes_received = recv(sockfd, buffer, 64, 0)) > 0) {
+    //     // In this scenario, the server does not send any data
+    //     // So, this loop should exit when read returns 0 (connection closed)
+    // }
+    // if (bytes_received == 0) {
+    //     logger->debug("Connection closed by server (FIN received)");
+    // } else if (bytes_received < 0) {
+    //     logger->error("recv loop failed");
+    // }
+
+    /* server makes passive-close (i.e., after FIN from client) */
+    close(sockfd);
+    
+    // success
+    return false;
 }
 
 std::string convert_tcpudp_result_to_str(

@@ -30,7 +30,7 @@ class PingMsgMap {
         }
 
         // add to list and map with timestamp
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now = get_current_timestamp_steady_clock();
         auto listIter = keyList.emplace(keyList.end(), key);
         map[key] = {value, now, listIter};
         return true;
@@ -79,7 +79,7 @@ class PingMsgMap {
     };
 
     int expireEntries() {
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now = get_current_timestamp_steady_clock();
         int n_remove = 0;
 
         while (!keyList.empty()) {

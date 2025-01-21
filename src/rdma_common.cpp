@@ -632,7 +632,7 @@ int save_device_info(struct rdma_context *ctx,
     }
 
     // 4. get a current time
-    std::string now = get_current_timestamp_string();
+    std::string now = get_current_timestamp_system_str();
 
     // 5. save as lines (GID, LID, QPN, TIME)
     outfile << ctx->wired_gid << "\n"

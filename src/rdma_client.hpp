@@ -86,7 +86,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                     }
 
                     // Get current time
-                    recv_time = get_current_timestamp_steady();
+                    recv_time = get_current_timestamp_steady_ns();
 
                     // Handle the received message (PONG or ACK)
                     handle_received_message(ctx_rx, pong_msg, ping_table,
@@ -131,7 +131,7 @@ void client_process_rx_cqe(rdma_context* ctx_rx, RdmaPinginfoMap* ping_table,
                     logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
 
                     // Get current time
-                    cqe_time = get_current_timestamp_steady();
+                    cqe_time = get_current_timestamp_steady_ns();
                     recv_time = cqe_time;
 
                     // Parse the received message
@@ -365,8 +365,8 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 msg.x.lid = rx_lid;
 
                 // Record the send time
-                uint64_t send_time_system = get_current_timestamp_ns();
-                uint64_t send_time_steady = get_current_timestamp_steady();
+                uint64_t send_time_system = get_current_timestamp_system_ns();
+                uint64_t send_time_steady = get_current_timestamp_steady_ns();
                 if (!ping_table->insert(
                         msg.x.pingid,
                         {msg.x.pingid, msg.x.qpn, msg.x.gid, msg.x.lid, dst_ip,
@@ -474,7 +474,7 @@ void rdma_client_result_thread(const std::string& ipv4,
     struct rdma_result_info_t* info;
 
     // timer for report
-    auto last_report_time = std::chrono::steady_clock::now();
+    auto last_report_time = get_current_timestamp_steady_clock();
 
     /** RESULT: (dstip, #success, #failure, mean, max, p50, p95, p99) */
     try {
@@ -508,7 +508,7 @@ void rdma_client_result_thread(const std::string& ipv4,
             }
 
             // Check the interval for report
-            auto current_time = std::chrono::steady_clock::now();
+            auto current_time = get_current_timestamp_steady_clock();
             auto elapsed_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     current_time - last_report_time)

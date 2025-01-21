@@ -60,7 +60,7 @@ void tcp_client_result_thread(const std::string& ipv4,
     struct tcpudp_result_info_t* info;
 
     // timer for report
-    auto last_report_time = std::chrono::steady_clock::now();
+    auto last_report_time = get_current_timestamp_steady_clock();
 
     /** RESULT: (dstip, #success, #failure, #weird, mean, max, p50, p95, p99) */
     try {
@@ -91,7 +91,7 @@ void tcp_client_result_thread(const std::string& ipv4,
             }
 
             // Check the interval for report
-            auto current_time = std::chrono::steady_clock::now();
+            auto current_time = get_current_timestamp_steady_clock();
             auto elapsed_time =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     current_time - last_report_time)
