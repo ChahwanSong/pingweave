@@ -63,7 +63,8 @@ class RdmaPinginfoMap {
           logger(ping_table_logger) {}
 
     // if already exists, return false
-    bool insert(const Key& key, const rdma_pinginfo_t& value) {
+    bool insert(const Key& key, const union rdma_pingmsg_t& msg,
+                const std::string& dstip) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
@@ -76,8 +77,13 @@ class RdmaPinginfoMap {
         auto listIter = keyList.emplace(keyList.end(), key);
 
         // Add to map
-        TimePoint now = get_current_timestamp_steady_clock();
-        map[key] = {value, now, listIter};
+        TimePoint steady_now = get_current_timestamp_steady_clock();
+        map[key] = {
+            {msg.x.pingid, msg.x.qpn, msg.x.gid, msg.x.lid, dstip,
+             get_current_timestamp_system_ns(), convert_clock_to_ns(steady_now),
+             0, 0, PINGWEAVE_MASK_INIT},
+            steady_now,
+            listIter};
         return true;
     }
 
@@ -105,11 +111,10 @@ class RdmaPinginfoMap {
             it->second.value.network_delay = x;
         } else {
             /**
-             * NOTE: For self-ping, from time to time, At client, CQE of PONG's
-             * arrival can be earlier than PING's CQE. This is because self-ping
-             * delay can be only 10s of nanoseconds but PING's CQE delay can be
-             * longer than that. In this case, we handle the timestamp
-             * accordingly.
+             * NOTE: For self-ping, from time to time, CQE of PONG's
+             * arrival occurs earlier than PING's CQE. This is because self-ping
+             * delay is only tens of nanoseconds but PING's CQE delay is
+             * longer than that. Here, we handle the timestamp accordingly.
              */
             it->second.value.network_delay =
                 calc_time_delta_with_modulo(x, it->second.value.network_delay,

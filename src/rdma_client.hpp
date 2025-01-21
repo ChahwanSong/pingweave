@@ -365,13 +365,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 msg.x.lid = rx_lid;
 
                 // Record the send time
-                uint64_t send_time_system = get_current_timestamp_system_ns();
-                uint64_t send_time_steady = get_current_timestamp_steady_ns();
-                if (!ping_table->insert(
-                        msg.x.pingid,
-                        {msg.x.pingid, msg.x.qpn, msg.x.gid, msg.x.lid, dst_ip,
-                         send_time_system, send_time_steady, 0, 0,
-                         PINGWEAVE_MASK_INIT})) {
+                if (!ping_table->insert(msg.x.pingid, msg, dst_ip)) {
                     logger->warn("Failed to insert ping ID {} into ping_table.",
                                  msg.x.pingid);
                 }
@@ -379,9 +373,8 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 // Send the PING message
                 logger->debug(
                     "Sending PING message (ping ID: {}, QPN: {}, GID: {}, LID: "
-                    "{}), Timestamp: {}, send_time: {}, dst_GID:{}",
+                    "{}), dst_GID:{}",
                     msg.x.pingid, msg.x.qpn, parsed_gid(&msg.x.gid), msg.x.lid,
-                    timestamp_ns_to_string(send_time_system), send_time_steady,
                     parsed_gid(&dst_addr.x.gid));
 
                 // sanity check
@@ -395,7 +388,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 } else {
                     // if RNIC_TIMESTAMP is not supported, update ping cqe here
                     if (!ctx_tx->rnic_hw_ts) {
-                        auto cqe_time = send_time_steady;
+                        auto cqe_time = get_current_timestamp_steady_ns();
                         if (!ping_table->update_ping_cqe_time(msg.x.pingid,
                                                               cqe_time)) {
                             logger->warn(

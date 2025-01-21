@@ -62,7 +62,7 @@ def fetch_data(ip: str, port: str, data_type: str):
     """
     if not os.path.exists(DOWNLOAD_PATH):
         os.makedirs(DOWNLOAD_PATH)
-    
+
     yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
     is_error = False
     try:
@@ -92,7 +92,7 @@ def fetch_data(ip: str, port: str, data_type: str):
             # Write to YAML file
             with open(yaml_file_path, "w") as yaml_file:
                 yaml.dump(parsed_data, yaml_file, default_flow_style=False)
-                
+
             logger.info(f"Saved new data '{data_type}' to '{yaml_file_path}'.")
 
     except (yaml.YAMLError, json.JSONDecodeError) as e:
@@ -188,7 +188,8 @@ def send_gid_files(ip, port):
                 logger.error(f"Failed to read file {filename}: {e}")
             except Exception as e:
                 logger.error(f"Unexpected error with file {filename}: {e}")
-        
+
+
 def main():
     while True:
         # Load the config file
@@ -202,7 +203,7 @@ def main():
         fetch_data(control_host, control_port, "address_store")
 
         # Sleep to prevent high CPU usage + small delay
-        time.sleep(interval_sync_pinglist_sec + random.randint(0,10) * 0.01)
+        time.sleep(interval_sync_pinglist_sec + random.randint(0, 10) * 0.01)
 
 
 if __name__ == "__main__":

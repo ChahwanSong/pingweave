@@ -43,16 +43,16 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
         uint64_t pingid = 0;
         std::string addr_msg_from;
         if (receive_udp_message(&ctx_server, pingid, addr_msg_from,
-                            server_logger)) {
+                                server_logger)) {
             // receive_message 실패 시 처리
             consecutive_failures++;
-            server_logger->warn("receive_message failed ({} times in a row)",
+            server_logger->warn("receive_message failed ({} times)",
                                 consecutive_failures);
 
             // wait 1 second if 5 consecutive failures
             if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
                 server_logger->error(
-                    "Too many ({}) consecutive receive failures. Leave 1s interval.",
+                    "Too many ({}) consecutive receive failures. Sleep 1s.",
                     consecutive_failures);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 consecutive_failures = 0;
@@ -61,8 +61,9 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
             continue;
         }
 
-        if (send_udp_message(&ctx_server, addr_msg_from, PINGWEAVE_UDP_PORT_CLIENT,
-                         pingid, server_logger)) {
+        if (send_udp_message(&ctx_server, addr_msg_from,
+                             PINGWEAVE_UDP_PORT_CLIENT, pingid,
+                             server_logger)) {
             // somethign wrong
             server_logger->warn("Failed to send response to {}", addr_msg_from);
             continue;
