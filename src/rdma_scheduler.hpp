@@ -94,7 +94,6 @@ class RdmaMsgScheduler : public MsgScheduler {
                         it[2].get_value_ref<fkyaml::node::integer_type&>());
                     uint32_t qpn = static_cast<uint32_t>(
                         it[3].get_value_ref<fkyaml::node::integer_type&>());
-
                     addressInfoNew.emplace_back(ip, gid, lid, qpn);
                 }
             }
@@ -123,7 +122,7 @@ class RdmaMsgScheduler : public MsgScheduler {
                           inter_ping_interval_us);
         } catch (const std::exception& e) {
             ++load_yaml_retry_cnt;
-            logger->warn("Failed to load YAML (retry {}/{}). ERROR Msg: {}",
+            logger->debug("Failed to load YAML (retry {}/{}). ERROR Msg: {}",
                          load_yaml_retry_cnt, MAX_RETRY_LOAD_YAML, e.what());
             if (load_yaml_retry_cnt >= MAX_RETRY_LOAD_YAML) {
                 // clear if successively failed >= MAX_RETRY_LOAD_YAML times

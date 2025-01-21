@@ -1,5 +1,7 @@
 #include "rdma_client.hpp"
 #include "rdma_server.hpp"
+#include "tcp_client.hpp"
+#include "tcp_server.hpp"
 #include "udp_client.hpp"
 #include "udp_server.hpp"
 
@@ -166,12 +168,12 @@ int main() {
         terminate_invalid_cpp_program(myaddr_ib, alias_ib_client,
                                       processes_cpp_programs,
                                       running_cpp_programs);
-        // terminate_invalid_cpp_program(myaddr_tcp, alias_tcp_server,
-        //                               processes_cpp_programs,
-        //                               running_cpp_programs);
-        // terminate_invalid_cpp_program(myaddr_tcp, alias_tcp_client,
-        //                               processes_cpp_programs,
-        //                               running_cpp_programs);
+        terminate_invalid_cpp_program(myaddr_tcp, alias_tcp_server,
+                                      processes_cpp_programs,
+                                      running_cpp_programs);
+        terminate_invalid_cpp_program(myaddr_tcp, alias_tcp_client,
+                                      processes_cpp_programs,
+                                      running_cpp_programs);
         terminate_invalid_cpp_program(myaddr_udp, alias_udp_server,
                                       processes_cpp_programs,
                                       running_cpp_programs);
@@ -199,10 +201,10 @@ int main() {
                            processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_ib, alias_ib_client, "ib", rdma_client,
                            processes_cpp_programs, running_cpp_programs);
-        // start_cpp_programs(myaddr_roce, alias_tcp_server, "tcp", tcp_server,
-        // processes_cpp_programs, running_cpp_programs);
-        // start_cpp_programs(myaddr_ib, alias_tcp_client, "tcp", tcp_client,
-        // processes_cpp_programs, running_cpp_programs);
+        start_cpp_programs(myaddr_tcp, alias_tcp_server, "tcp", tcp_server,
+        processes_cpp_programs, running_cpp_programs);
+        start_cpp_programs(myaddr_tcp, alias_tcp_client, "tcp", tcp_client,
+        processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_udp, alias_udp_server, "udp", udp_server,
                            processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_udp, alias_udp_client, "udp", udp_client,

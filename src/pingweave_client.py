@@ -85,7 +85,6 @@ def fetch_data(ip: str, port: str, data_type: str):
                         logger.error(f"Failed to load existing YAML file: {e}")
                         existing_data = None
 
-                # Compare existing and new data
                 if existing_data == parsed_data:
                     logger.debug(f"No changes detected in {data_type} data.")
                     return  # Exit early if data is unchanged
@@ -94,7 +93,7 @@ def fetch_data(ip: str, port: str, data_type: str):
             with open(yaml_file_path, "w") as yaml_file:
                 yaml.dump(parsed_data, yaml_file, default_flow_style=False)
                 
-            logger.debug(f"Saved {data_type} data to {yaml_file_path}.")
+            logger.info(f"Saved new data '{data_type}' to '{yaml_file_path}'.")
 
     except (yaml.YAMLError, json.JSONDecodeError) as e:
         logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
@@ -110,7 +109,7 @@ def fetch_data(ip: str, port: str, data_type: str):
 
     # If an error occurs, write an empty YAML file to prevent issues
     if is_error:
-        logger.debug(f"Dumping an empty YAML for {data_type}.")
+        logger.error(f"Error occured -> Dump an empty YAML for {data_type}.")
         with open(yaml_file_path, "w") as yaml_file:
             yaml.dump({}, yaml_file, default_flow_style=False)
 

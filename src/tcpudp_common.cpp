@@ -71,7 +71,7 @@ void log_bound_address(int sock_fd, std::shared_ptr<spdlog::logger> logger) {
     }
 }
 
-int send_udp_message(struct udp_context *ctx_tx, const std::string &dst_ip,
+int send_udp_message(struct udp_context *ctx, const std::string &dst_ip,
                      const uint16_t &dst_port, const uint64_t &pingid,
                      std::shared_ptr<spdlog::logger> logger) {
     sockaddr_in dest{};
@@ -89,7 +89,7 @@ int send_udp_message(struct udp_context *ctx_tx, const std::string &dst_ip,
     msg.x._pad = 0;
 
     auto sent =
-        sendto(*ctx_tx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
+        sendto(*ctx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
                reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
     if (sent < 0) {
         logger->error("Failed to send msg {} to {}", msg.x.pingid, dst_ip);
@@ -179,62 +179,182 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
     }
     ctx->sock = tcp_socket(new int(fd));
 
-    // set socket options
-    int enable = 1;
-    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) <
-        0) {
-        logger->error("Faile dto set SO_REUSEADDR");
-        return true;
-    }
-    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) <
-        0) {
-        logger->error("Faile dto set SO_REUSEPORT");
-        return true;
+    
+    if (ctx->is_server) {  //server     
+        // set socket options - reusability
+        int enable = 1;
+        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &enable,
+                        sizeof(int)) < 0) {
+            logger->error("Failed to set SO_REUSEADDR | SO_REUSEPORT");
+            return true;
+        }
+        logger->debug("TCP server socket - set option - SO_REUSEADDR | SO_REUSEPORT");
+
+        // // (1) any queued data is thrown away and reset is send immediately,
+        // // and (2) the receiver of the RST can tell that the other end did an
+        // // abort instead of a normal close
+        // struct linger solinger = {1, 0};
+        // if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger,
+        //                sizeof(struct linger)) == -1) {
+        //     logger->error("Failed to set SO_LINGER");
+        //     return true;
+        // }
     }
 
-    // set SO_LINGER:
-    // (1) any queued data is thrown away and the reset is send immediately, and
-    // (2) the receiver of the RST can tell that the other end did an abort
-    // instead of a normal close
-    struct linger solinger = {1, 0};
-    if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger, sizeof(struct linger)) == -1) {
-        logger->error("Failed to set SO_LINGER");
-        return true;
+    if (!ctx->is_server) { // client
+        struct timeval tv;
+        tv.tv_sec = PINGWEAVE_TCP_SOCK_TIMEOUT_SEC;
+        tv.tv_usec = 0;
+
+        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_RCVTIMEO | SO_SNDTIMEO, (char *)&tv,
+                       sizeof(tv)) < 0) {
+            logger->error("Failed to set SO_SNDTIMEO Timeout.");
+            return true;
+        }
+        logger->debug("TCP client socket - set option - RCVTIMEO and SNDTIMEO");
     }
 
     // bind socket
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;                   // IPV4
-    addr.sin_addr.s_addr = ::htonl(INADDR_ANY);  // default
-    addr.sin_port = htons(port);
+    std::memset(&ctx->addr, 0, sizeof(ctx->addr));
+    ctx->addr.sin_family = AF_INET;  // IPV4
+    ctx->addr.sin_port = htons(port);
+    ctx->addr.sin_addr.s_addr = htonl(INADDR_ANY);  // default
 
     // change string IP to network byte order
-    if (inet_pton(AF_INET, ipv4.data(), &addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ipv4.data(), &ctx->addr.sin_addr) <= 0) {
+        // -1: invalid address, 0: AF_INET is not supported
         logger->error("Given ipv4 address is invalild: {}", ipv4);
         return true;
     }
 
-    if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr),
-               sizeof(addr)) < 0) {
+    if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&ctx->addr),
+             sizeof(ctx->addr)) < 0) {
         logger->error("Failed to bind TCP server local addr");
         return true;
     }
 
-    // debugging - get the actual listening port number
-    socklen_t addr_size = sizeof(addr);
-    if (getsockname(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr), &addr_size) == -1) {
-        logger->error("getsockname failed");
-        return true;
-    }
-    logger->info("TCP server is lstening on port {}", ntohs(addr.sin_port));
+    // server is listening
+    if (ctx->is_server) {
+        // debugging - get the actual listening port number
+        socklen_t addr_size = sizeof(ctx->addr);
+        if (getsockname(*ctx->sock,
+                        reinterpret_cast<struct sockaddr *>(&ctx->addr),
+                        &addr_size) == -1) {
+            logger->error("getsockname failed");
+            return true;
+        }
+        logger->info("TCP server is lstening on port {}",
+                     ntohs(ctx->addr.sin_port));
 
-    if (listen(*ctx->sock, SOMAXCONN) == -1) {
-        logger->error("TCP server cannot listen the socket");
-        return true;
+        if (listen(*ctx->sock, SOMAXCONN) == -1) {
+            logger->error("TCP server cannot listen the socket");
+            return true;
+        }
     }
 
     // success
     return false;
+}
+
+int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
+                     const std::string &dst_ip, const uint16_t &dst_port,
+                     const uint64_t &pingid,
+                     std::shared_ptr<spdlog::logger> logger) {
+    // Initialize TCP contexts
+    tcp_context ctx_client;
+    ctx_client.is_server = false;
+    try {
+        if (make_ctx(&ctx_client, src_ip, 0, logger)) {
+            logger->error("Failed to create a client context for IP: {}",
+                          src_ip);
+            return true;
+        }
+
+        std::memset(&ctx_client.addr, 0, sizeof(ctx_client.addr));
+        ctx_client.addr.sin_family = AF_INET;
+        ctx_client.addr.sin_port = htons(dst_port);
+
+        if (inet_pton(AF_INET, dst_ip.data(), &ctx_client.addr.sin_addr) <= 0) {
+            logger->error("Invalid address/ Address not supported");
+            return true;
+        }
+
+        // Record the send time
+        uint64_t send_time_system = get_current_timestamp_ns();
+        uint64_t send_time_steady = get_current_timestamp_steady();
+        if (!ping_table->insert(
+                pingid, {pingid, dst_ip, send_time_system, send_time_steady})) {
+            logger->warn("Failed to insert ping ID {} into ping_table.",
+                         pingid);
+        }
+
+        // Send the PING message
+        logger->debug("Sending PING message, ping ID:{}, dst: {}, time: {}",
+                      pingid, dst_ip, timestamp_ns_to_string(send_time_system));
+
+        // Connect socket
+        if (connect(*ctx_client.sock, (const sockaddr *)&ctx_client.addr,
+                    sizeof(sockaddr_in)) == -1) {
+            logger->error("Connection failed - {} -> {}", src_ip, dst_ip);
+            return true;
+        }
+
+        // End of handshake
+        uint64_t recv_time_steady = get_current_timestamp_steady();
+        if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
+            logger->warn("PONG (pingid: {}) error occurs in update_pong_info.",
+                         pingid);
+        }
+
+        // Get a client's interface used for connection
+        /** NOTE: we do not bind a specific interface to make connection
+         * to avoid confliction
+         */
+        struct sockaddr_in local;
+        socklen_t addr_len = sizeof(local);
+        if (getsockname(*ctx_client.sock, (struct sockaddr *)&local,
+                        &addr_len) == -1) {
+            logger->error("getsockname failed.");
+            return true;
+        }
+        char local_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(local.sin_addr), local_ip, INET_ADDRSTRLEN);
+        std::string actual_ip = std::string(local_ip);
+        if (actual_ip != src_ip) {  // logging
+            logger->warn(
+                "The target src IP and actual IP used is different: {}, {}",
+                src_ip, actual_ip);
+        }
+
+        // instead of waiting FIN, use a timeout.
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        // // Wait the server-side FIN packet
+        // ssize_t bytes_received;
+        // while ((bytes_received = recv(*ctx_client.sock, ctx_client.buffer,
+        //                               sizeof(ctx_client.buffer), 0)) > 0) {
+        //     // In this scenario, the server does not send any data
+        //     // So, this loop should exit when read returns 0 (connection closed)
+        // }
+        // if (bytes_received == 0) {
+        //     logger->debug("Connection closed by server (FIN received): {}",
+        //                   dst_ip);
+        // } else if (bytes_received < 0) {
+        //     logger->error("recv loop failed: {}", dst_ip);
+        // }
+
+        // no need to close socket as we use the unique pointer
+
+        // success
+        return false;
+
+    } catch (const std::exception &e) {
+        logger->error("Exception in send_tcp_message: {}", e.what());
+        return false;
+    } catch (...) {
+        logger->error("Unknown exception in send_tcp_message");
+        return false;
+    }
 }
 
 std::string convert_tcpudp_result_to_str(

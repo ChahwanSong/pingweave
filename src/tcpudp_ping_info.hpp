@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tcpudp_common.hpp"
+#include "common.hpp"
 
 struct tcpudp_pinginfo_t {
     uint64_t pingid;          // ping ID
@@ -26,8 +26,9 @@ class TcpUdpPinginfoMap {
     using Key = uint64_t;
     using TimePoint = std::chrono::steady_clock::time_point;
 
-    explicit TcpUdpPinginfoMap(std::shared_ptr<spdlog::logger> ping_table_logger,
-                            TcpUdpClientQueue* queue, int threshold_ms = 1000)
+    explicit TcpUdpPinginfoMap(
+        std::shared_ptr<spdlog::logger> ping_table_logger,
+        TcpUdpClientQueue* queue, int threshold_ms = 1000)
         : threshold_ms(threshold_ms),
           client_queue(queue),
           logger(ping_table_logger) {}
@@ -84,14 +85,18 @@ class TcpUdpPinginfoMap {
         // send out for analysis
         if (!client_queue->try_enqueue(
                 {ping_info.pingid, ip2uint(ping_info.dstip),
-                 ping_info.time_ping_send, ping_info.network_delay, PINGWEAVE_RESULT_SUCCESS})) {
-            logger->warn("[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
-                         ping_info.pingid, ping_info.dstip);
+                 ping_info.time_ping_send, ping_info.network_delay,
+                 PINGWEAVE_RESULT_SUCCESS})) {
+            logger->warn(
+                "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result "
+                "queue",
+                ping_info.pingid, ping_info.dstip);
         }
 
         if (remove(ping_info.pingid)) {  // if failed to remove
             logger->warn(
-                "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
+                "[Expired?] Entry for pingid {} does not exist, so cannot "
+                "remove.",
                 ping_info.pingid);
         }
 
@@ -154,7 +159,8 @@ class TcpUdpPinginfoMap {
                     {ping_info.pingid, ip2uint(ping_info.dstip),
                      ping_info.time_ping_send, 0, PINGWEAVE_RESULT_FAILURE})) {
                 logger->error(
-                    "[Queue Full?] Failed to enqueue (pingid {}, failed) to result thread",
+                    "[Queue Full?] Failed to enqueue (pingid {}, failed) to "
+                    "result thread",
                     ping_info.pingid);
             }
 

@@ -137,7 +137,7 @@ async def get_address_store(request):
     current_time = int(time.time())
     client_ip = request.remote
     async with address_store_lock:
-        global address_store_checkpoint
+        global address_store, address_store_checkpoint
 
         # condition to filter old entries (every 1 minute)
         if address_store_checkpoint + 60 < current_time:
@@ -145,13 +145,16 @@ async def get_address_store(request):
             keys_old_entries = [
                 key
                 for key, value in address_store.items()
-                if value[5] + 300 < current_time
+                if value[5] + 300 < current_time # comparing utime
             ]
             for key in keys_old_entries:
                 logger.info(f"(EXPIRED) Remove old address information: {key}")
                 address_store.pop(key)
             address_store_checkpoint = current_time
-        response_data = address_store
+
+        # pop utime from address_store
+        response_data = {key: value[:-1] for key, value in address_store.items()}
+
     logger.debug(f"(SEND) address_store to client: {client_ip}")
     return web.json_response(response_data)
 
@@ -161,11 +164,11 @@ async def post_address(request):
     try:
         data = await request.json()
         ip_address = data.get("ip_address")
-        gid = data.get("gid")
-        lid = data.get("lid")
-        qpn = data.get("qpn")
-        dtime = data.get("dtime")
-        utime = int(time.time())
+        gid = data.get("gid") # GID of RNIC
+        lid = data.get("lid") # LID of RNIC
+        qpn = data.get("qpn") # QP number
+        dtime = data.get("dtime") # the time that QP is generated at end-host
+        utime = time.time() # the time that server received this post
 
         if all([ip_address, gid, lid, qpn, dtime]):
             async with address_store_lock:
@@ -185,7 +188,7 @@ async def post_address(request):
                     logger.critical(
                         f"Too many entries in address_store: {len(address_store)}"
                     )
-                    logger.error("Cleaning up address_store. Check your configuration.")
+                    logger.critical("Cleaning up address_store. Check your configuration.")
                     address_store.clear()
             return web.Response(text="Address updated", status=200)
         else:

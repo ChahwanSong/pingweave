@@ -3,11 +3,7 @@
 #include <infiniband/verbs.h>
 
 #include "common.hpp"
-
-// fully-blocking SPSC queue
-typedef moodycamel::BlockingReaderWriterQueue<struct rdma_result_msg_t>
-    RdmaClientQueue;
-typedef moodycamel::ReaderWriterQueue<union rdma_pingmsg_t> RdmaServerQueue;
+#include "rdma_ping_info.hpp"
 
 const static int GRH_SIZE = sizeof(ibv_grh);  // GRH header 40 B (see IB Spec)
 

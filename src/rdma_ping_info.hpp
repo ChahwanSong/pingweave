@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rdma_common.hpp"
+#include "common.hpp"
 
 struct rdma_pinginfo_t {
     uint64_t pingid;    // ping ID
@@ -228,8 +228,7 @@ class RdmaPinginfoMap {
             // sanity check
             if (ping_info.network_delay <= ping_info.server_delay) {
                 logger->warn(
-                    "pingid {} - network_delay {} is lower than server_delay "
-                    "{}",
+                    "pingid {} - network_delay < server_delay, {}, {} ",
                     ping_info.pingid, ping_info.network_delay,
                     ping_info.server_delay);
 
@@ -237,20 +236,23 @@ class RdmaPinginfoMap {
                 // ping_time, dstip, ping_time, {each entity's process delays}
                 if (!client_queue->try_enqueue(
                         {ping_info.pingid, ip2uint(ping_info.dstip),
-                        ping_info.time_ping_send, client_process_time, network_rtt,
-                        server_process_time, PINGWEAVE_RESULT_WEIRD})) {
+                         ping_info.time_ping_send, client_process_time,
+                         network_rtt, server_process_time,
+                         PINGWEAVE_RESULT_WEIRD})) {
                     logger->warn(
-                        "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
+                        "[Queue Full?] pingid {} (-> {}): Failed to enqueue to "
+                        "result queue",
                         ping_info.pingid, ping_info.dstip);
                 }
 
                 if (remove(ping_info.pingid)) {  // if failed to remove
                     logger->warn(
-                        "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
+                        "[Expired?] Entry for pingid {} does not exist, so "
+                        "cannot remove.",
                         ping_info.pingid);
                 }
 
-                return false; 
+                return false;
             }
 
             // send out for analysis
@@ -260,16 +262,18 @@ class RdmaPinginfoMap {
                      ping_info.time_ping_send, client_process_time, network_rtt,
                      server_process_time, PINGWEAVE_RESULT_SUCCESS})) {
                 logger->warn(
-                    "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result queue",
+                    "[Queue Full?] pingid {} (-> {}): Failed to enqueue to "
+                    "result queue",
                     ping_info.pingid, ping_info.dstip);
             }
 
             if (remove(ping_info.pingid)) {  // if failed to remove
                 logger->warn(
-                    "[Expired?] Entry for pingid {} does not exist, so cannot remove.",
+                    "[Expired?] Entry for pingid {} does not exist, so cannot "
+                    "remove.",
                     ping_info.pingid);
             }
-            return false;  
+            return false;
         }
 
         return true;  // not complete
@@ -338,11 +342,13 @@ class RdmaPinginfoMap {
                     ping_info.time_ping_send, ping_info.recv_bitmap);
 
                 // failure (packets might be lost)
-                if (!client_queue->try_enqueue(
-                        {ping_info.pingid, ip2uint(ping_info.dstip),
-                         ping_info.time_ping_send, 0, 0, 0, PINGWEAVE_RESULT_FAILURE})) {
+                if (!client_queue->try_enqueue({ping_info.pingid,
+                                                ip2uint(ping_info.dstip),
+                                                ping_info.time_ping_send, 0, 0,
+                                                0, PINGWEAVE_RESULT_FAILURE})) {
                     logger->warn(
-                        "[Queue Full?] Failed to enqueue (pingid {}, failed) to result "
+                        "[Queue Full?] Failed to enqueue (pingid {}, failed) "
+                        "to result "
                         "thread",
                         ping_info.pingid);
                 }

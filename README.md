@@ -49,9 +49,16 @@ port 0  # TCP/IP inactivate (optional)
 sudo cp $SCRIPT_DIR/scripts/pingweavectl /usr/local/bin
 ```
 
+####
+Test codes
 
 ```
 ps -eo pid,args,comm,rss,vsz --sort=-rss | awk '/pingweave/ {printf "PID: %s, ARGS: %s, COMMAND: %s, RSS: %.2f MB, VSZ: %.2f MB\n", $1, $2, $3, $4/1024, $5/1024}'
+```
+
+```
+../bin/pingweave_simple -a 10.200.200.3 --tcp -s
+../bin/pingweave_simple -a 10.200.200.2 --tcp -c
 ```
 
 ## Reconfiguration

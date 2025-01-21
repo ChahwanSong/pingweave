@@ -26,10 +26,13 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
             "Failed to get a param 'logger_cpp_process_tcp_server'");
     }
 
+
     // Initialize TCP context
     tcp_context ctx_server;
+    ctx_server.is_server = true;
     if (make_ctx(&ctx_server, ipv4, PINGWEAVE_TCP_PORT_SERVER, server_logger)) {
-        server_logger->error("Failed to create TX context for IP: {}", ipv4);
+        server_logger->error("Failed to create a server context for IP: {}",
+                             ipv4);
         throw std::runtime_error("Failed to create TCP context at server");
     }
 
@@ -48,21 +51,19 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
         server_logger->debug("Waiting a new TCP connection...");
         newSocketFileDescriptor = accept(
             *ctx_server.sock, (sockaddr*)&newSocketInfo, &newSocketInfoLength);
-        if (newSocketFileDescriptor == -1) {
+        if (newSocketFileDescriptor < 0) {
             server_logger->warn("Failed to accept a new TCP connection.");
             consecutive_failures++;
 
             if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
                 server_logger->error(
-                    "Too many ({}) consecutive accept() failures. Leave 1s "
-                    "interval",
+                    "Too many ({}) consecutive accept() failures.",
                     consecutive_failures);
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                consecutive_failures = 0;
+                return;
             }
         }
 
-        /* close right after acception */
+        /* active close */
         close(newSocketFileDescriptor);
     }
 }

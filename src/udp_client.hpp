@@ -70,7 +70,9 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 
             uint64_t recv_time_steady = get_current_timestamp_steady();
             if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
-                logger->warn("PONG (pingid: {}) error occurs.", pingid);
+                logger->warn(
+                    "PONG (pingid: {}) error occurs in update_pong_info.",
+                    pingid);
                 continue;
             }
         }

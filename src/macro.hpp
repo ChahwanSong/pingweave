@@ -41,8 +41,12 @@ const static int WAIT_DEQUEUE_TIME_SEC = 1;   // seconds
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds
 const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 11;    // seconds
 
+// TCP socket timeout
+const static int PINGWEAVE_TCP_SOCK_TIMEOUT_SEC = 1;
+
 // Table expiry timeout
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS = 1000;
+const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_TCP_MS = 1000;
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS = 1000;
 
 // port that UDP server will listen

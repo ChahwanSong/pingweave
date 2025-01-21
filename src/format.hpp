@@ -10,19 +10,17 @@
 
 // pingweave enumerate
 enum {
-    // WEIRD: when ping-pong (network) delay at client-side is 
+    // WEIRD: when ping-pong (network) delay at client-side is
     // lower than server-side process delay.
-    PINGWEAVE_RESULT_WEIRD = -2, 
+    PINGWEAVE_RESULT_WEIRD = -2,
     PINGWEAVE_RESULT_FAILURE = -1,
     PINGWEAVE_RESULT_SUCCESS = 0,
-    
+
     // OPCODE, WR_ID for RDMA
     PINGWEAVE_OPCODE_PONG = 1,
     PINGWEAVE_OPCODE_ACK = 2,
     PINGWEAVE_WRID_PONG_ACK = (NUM_BUFFER * 4),  // to ignore
 };
-
-
 
 // result stat
 struct result_stat_t {
@@ -33,14 +31,13 @@ struct result_stat_t {
     uint64_t percentile_99;
 };
 
-
 /*************
  * TCP & UDP *
  *************/
 union tcpudp_pingmsg_t {
     char raw[16];
     struct {
-        uint32_t _prefix; // IP ++ PingUID
+        uint32_t _prefix;  // IP ++ PingUID
         uint64_t pingid;
         uint32_t _pad;
     } x;
@@ -55,22 +52,27 @@ struct close_fd {
     }
 };
 
-// TCP socket 
+// TCP socket
 using tcp_socket = std::unique_ptr<int, close_fd>;
 
 // context for TCP ping
 struct tcp_context {
     /* socket */
     tcp_socket sock;
-    
+
     /* buffer */
     char buffer[sizeof(tcpudp_pingmsg_t)];
 
     /* interface*/
     std::string ipv4;
     std::string iface;
-};
 
+    /* address */
+    struct sockaddr_in addr;
+
+    /* server or client */
+    int is_server;
+};
 
 // UDP socket
 using udp_socket = std::unique_ptr<int, close_fd>;
@@ -112,7 +114,6 @@ struct tcpudp_result_info_t {
     // default constructor
     tcpudp_result_info_t() = default;
 };
-
 
 /********
  * RDMA *
@@ -207,13 +208,13 @@ struct rdma_context {
     char parsed_gid[33];
 
     /* ah map */
-    std::unordered_map<std::string, ibv_ah*> ah_map;
+    std::unordered_map<std::string, ibv_ah *> ah_map;
 
     /* protocol : ib or roce */
     std::string protocol;
-    
+
     /* traffic class */
-    int traffic_class; // 0 for IB, 106 for RoCE
+    int traffic_class;  // 0 for IB, 106 for RoCE
 
     /** TODO: deconstructor
      * 1.. channel
