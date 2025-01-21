@@ -190,15 +190,6 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
         }
         logger->debug("TCP server socket - set option - SO_REUSEADDR | SO_REUSEPORT");
 
-        // // (1) any queued data is thrown away and reset is send immediately,
-        // // and (2) the receiver of the RST can tell that the other end did an
-        // // abort instead of a normal close
-        // struct linger solinger = {1, 0};
-        // if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger,
-        //                sizeof(struct linger)) == -1) {
-        //     logger->error("Failed to set SO_LINGER");
-        //     return true;
-        // }
     }
 
     if (!ctx->is_server) { // client
@@ -212,6 +203,18 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
             return true;
         }
         logger->debug("TCP client socket - set option - RCVTIMEO and SNDTIMEO");
+
+
+        // (1) any queued data is thrown away and reset is send immediately,
+        // and (2) the receiver of the RST can tell that the other end did an
+        // abort instead of a normal close
+        struct linger solinger = {1, 0};
+        if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger,
+                       sizeof(struct linger)) == -1) {
+            logger->error("Failed to set SO_LINGER");
+            return true;
+        }
+        logger->debug("TCP client socket - set option - LO_LINGER {1, 0}");
     }
 
     // bind socket
@@ -326,24 +329,7 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
                 src_ip, actual_ip);
         }
 
-        // instead of waiting FIN, use a timeout.
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        // // Wait the server-side FIN packet
-        // ssize_t bytes_received;
-        // while ((bytes_received = recv(*ctx_client.sock, ctx_client.buffer,
-        //                               sizeof(ctx_client.buffer), 0)) > 0) {
-        //     // In this scenario, the server does not send any data
-        //     // So, this loop should exit when read returns 0 (connection closed)
-        // }
-        // if (bytes_received == 0) {
-        //     logger->debug("Connection closed by server (FIN received): {}",
-        //                   dst_ip);
-        // } else if (bytes_received < 0) {
-        //     logger->error("recv loop failed: {}", dst_ip);
-        // }
-
-        // no need to close socket as we use the unique pointer
+        /** NOTE: no need to close socket as we use the unique pointer */
 
         // success
         return false;

@@ -188,7 +188,7 @@ void tcp_client(const std::string& ipv4, const std::string& protocol) {
     std::thread result_thread(tcp_client_result_thread, ipv4, protocol,
                               &client_queue, result_logger);
 
-    // Start the RX thread
+    // Start the client thread
     std::thread client_thread(tcp_client_tx_thread, ipv4, &ping_table,
                               client_logger);
 

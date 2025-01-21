@@ -5,9 +5,31 @@
 
 /**
  * NOTE: TCP Server is simple. It receives SYN packet, and respond to it.
- * The response will be SYN-ACK, and close a socket immediately.
- * This can lead to a
  */
+
+void tcp_server_tx_thread(int sockfd, std::shared_ptr<spdlog::logger> logger) {
+    // Instead of waiting FIN, use a timeout.
+    // This is to avoid indefinite waiting and resource starvation. 
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // // Wait the server-side FIN packet
+    // char buffer[64];
+    // ssize_t bytes_received;
+    // while ((bytes_received = recv(sockfd, buffer, 64, 0)) > 0) {
+    //     // In this scenario, the server does not send any data
+    //     // So, this loop should exit when read returns 0 (connection closed)
+    // }
+    // if (bytes_received == 0) {
+    //     logger->debug("Connection closed by server (FIN received)");
+    // } else if (bytes_received < 0) {
+    //     logger->error("recv loop failed");
+    // }
+
+    /* server makes passive-close (i.e., after FIN from client) */
+    if (sockfd != -1) {
+        close(sockfd);
+    }
+}
 
 // TCP server main function
 void tcp_server(const std::string& ipv4, const std::string& protocol) {
@@ -26,7 +48,6 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
             "Failed to get a param 'logger_cpp_process_tcp_server'");
     }
 
-
     // Initialize TCP context
     tcp_context ctx_server;
     ctx_server.is_server = true;
@@ -41,29 +62,20 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
         log_bound_address(*ctx_server.sock, server_logger);
     }
 
-    int consecutive_failures = 0;  // 연속 실패 횟수 추적
-
     sockaddr_in newSocketInfo;
     socklen_t newSocketInfoLength = sizeof(newSocketInfo);
-    int newSocketFileDescriptor;
+    int newSockfd;
 
     while (true) {
         server_logger->debug("Waiting a new TCP connection...");
-        newSocketFileDescriptor = accept(
-            *ctx_server.sock, (sockaddr*)&newSocketInfo, &newSocketInfoLength);
-        if (newSocketFileDescriptor < 0) {
+        newSockfd = accept(*ctx_server.sock, (sockaddr*)&newSocketInfo,
+                           &newSocketInfoLength);
+        if (newSockfd < 0) {
             server_logger->warn("Failed to accept a new TCP connection.");
-            consecutive_failures++;
-
-            if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
-                server_logger->error(
-                    "Too many ({}) consecutive accept() failures.",
-                    consecutive_failures);
-                return;
-            }
+            continue;
         }
 
-        /* active close */
-        close(newSocketFileDescriptor);
+        std::thread t(tcp_server_tx_thread, newSockfd, server_logger);
+        t.detach();
     }
 }
