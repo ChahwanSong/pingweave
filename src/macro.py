@@ -14,4 +14,4 @@ WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
 BOOTSTRAP_DIR = os.path.join(SCRIPT_DIR, "../libs/bootstrap")
 
 # filter out in plotting if a data is too old
-INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 30
+INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 300

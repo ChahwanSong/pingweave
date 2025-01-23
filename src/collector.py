@@ -124,7 +124,7 @@ async def process_result_post(request: web.Request, prefix: str) -> web.Response
                     redis_server.set(key, value)
                 else:
                     logger.info(
-                        f"{prefix},{key} - out-of-order post arrival (prev: {prev_ts_end}, new: {new_ts_end})"
+                        f"{key} - out-of-order post arrival (prev: {prev_ts_end}, new: {new_ts_end})"
                     )
 
                 # TODO: Anyway, we keep all the data in database.
