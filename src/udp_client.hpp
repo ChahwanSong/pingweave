@@ -66,10 +66,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
 
             uint64_t recv_time_steady = get_current_timestamp_steady_ns();
             if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
-                logger->warn(
-                    "update_pong_info (pingid: {}) - cannot find the key in "
-                    "table.",
-                    pingid);
+                logger->warn("PONG ({}): No entry in ping_table", pingid);
                 continue;
             }
         }
