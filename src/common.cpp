@@ -174,23 +174,23 @@ int get_controller_info_from_ini(std::string &ip, int &port) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return false;
+        return true;
     }
 
     ip = parser.get("controller", "host");
     if (ip.empty()) {
         spdlog::error("pingweave.ini gives an erratic controller host ip.");
-        return false;
+        return true;
     }
 
     port = parser.getInt("controller", "port_collect");
     if (port < 0) {
         spdlog::error("pingweave.ini gives an erratic controller port.");
-        return false;
+        return true;
     }
 
     // success
-    return true;
+    return false;
 }
 
 int get_int_value_from_ini(IniParser &parser, const std::string &section,
@@ -532,19 +532,22 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
     return false;
 }
 
-int message_to_http_server(const std::string &message, const std::string &api,
+int message_to_http_server(std::string message, std::string controller_host,
+                           int controller_port, const std::string &req_api,
                            std::shared_ptr<spdlog::logger> logger) {
-    std::string controller_host;
-    int controller_port;
-    if (get_controller_info_from_ini(controller_host, controller_port)) {
-        send_message_to_http_server(controller_host, controller_port, message,
-                                    api, logger);
-        return false;  // success
+    if (message.empty()) {
+        // skip to send an empty message
+        return true;
     }
 
-    // failed
-    logger->error("Failed to post {}.", api);
-    return true;
+    if (send_message_to_http_server(controller_host, controller_port, message,
+                                req_api, logger)) {
+        logger->error("Failed to post - api: {}, msg: {}.", req_api, message);
+        return true;  // failed
+    }
+
+    // success
+    return false;
 }
 
 // calculate stats from delay histroy

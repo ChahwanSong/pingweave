@@ -52,15 +52,25 @@ void start_cpp_programs(
         program_function,
     std::vector<ProcessInfo>& processes_cpp_programs,
     std::set<std::string>& running_cpp_programs);
-    
+
 /* main function */
 int main() {
     spdlog::info("Clear the download / upload directory");
     delete_files_in_directory(get_src_dir() + DIR_UPLOAD_PATH);
     delete_files_in_directory(get_src_dir() + DIR_DOWNLOAD_PATH);
 
+    // get controller address and port
+    std::string controller_host;
+    int controller_port;
+    if (get_controller_info_from_ini(controller_host, controller_port)) {
+        spdlog::error(
+            "Exit the main thread - failed to load pingweave.ini file");
+        throw;  // Propagate exception
+    }
+
     spdlog::info("--- Main thread starts");
-    message_to_http_server("Main thread starts", "/alarm",
+    message_to_http_server("Main thread starts", controller_host,
+                           controller_port, "/alarm",
                            spdlog::default_logger());  // alarm to controller
     process_py_client.host = "null";
     process_py_server.host = "null";
@@ -87,12 +97,6 @@ int main() {
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
             spdlog::info("[main] Child process (PID: {}) terminated.", pid);
         }
-
-        /* Load the controler address and my RDMA/UDP IP addresses */
-        std::string controller_host;
-        int controller_port;
-        // get controller address from config/pingweave.ini
-        get_controller_info_from_ini(controller_host, controller_port);
 
         // get local ip addresses
         std::set<std::string> local_ips = get_all_local_ips();
@@ -202,9 +206,9 @@ int main() {
         start_cpp_programs(myaddr_ib, alias_ib_client, "ib", rdma_client,
                            processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_tcp, alias_tcp_server, "tcp", tcp_server,
-        processes_cpp_programs, running_cpp_programs);
+                           processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_tcp, alias_tcp_client, "tcp", tcp_client,
-        processes_cpp_programs, running_cpp_programs);
+                           processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_udp, alias_udp_server, "udp", udp_server,
                            processes_cpp_programs, running_cpp_programs);
         start_cpp_programs(myaddr_udp, alias_udp_client, "udp", udp_client,
@@ -221,7 +225,8 @@ int main() {
 void set_process_name(const std::string& new_name) {
     // `program_invocation_name` points to the original `argv[0]`
     extern char* program_invocation_name;
-    strncpy(program_invocation_name, new_name.c_str(), strlen(program_invocation_name));
+    strncpy(program_invocation_name, new_name.c_str(),
+            strlen(program_invocation_name));
     program_invocation_name[strlen(new_name.c_str())] = '\0';
 }
 
@@ -255,8 +260,18 @@ pid_t start_process(std::function<void()> func, const std::string& name) {
 // Signal handler to terminate all child processes
 void signal_handler(int sig) {
     running = false;
+
+    // get controller address and port
+    std::string controller_host;
+    int controller_port;
+    if (get_controller_info_from_ini(controller_host, controller_port)) {
+        spdlog::error("signal_handler - failed to load pingweave.ini file");
+        throw;  // Propagate exception
+    }
+
     spdlog::critical("*** Main thread exits. ***");
-    message_to_http_server("*** Main thread exits", "/alarm",
+    message_to_http_server("*** Main thread exits", controller_host,
+                           controller_port, "/alarm",
                            spdlog::default_logger());  // send to controller
     for (int i = 0; i < processes_cpp_programs.size(); ++i) {
         kill(processes_cpp_programs[i].pid, SIGTERM);
@@ -301,8 +316,18 @@ void sigchld_handler(int sig) {
             }
         }
 
+        // get controller address and port
+        std::string controller_host;
+        int controller_port;
+        if (get_controller_info_from_ini(controller_host, controller_port)) {
+            spdlog::error(
+                "sigchld_handler - failed to load pingweave.ini file");
+            throw;  // Propagate exception
+        }
+
         // send to controller
-        message_to_http_server(alarm_msg, "/alarm", spdlog::default_logger());
+        message_to_http_server(alarm_msg, controller_host, controller_port,
+                               "/alarm", spdlog::default_logger());
 
         // ensure to kill the process
         kill(pid, SIGTERM);
@@ -310,7 +335,6 @@ void sigchld_handler(int sig) {
 
     errno = saved_errno;  // back to previous errno
 }
-
 
 void terminate_invalid_cpp_program(const std::set<std::string>& myaddr,
                                    const std::string& program_name,

@@ -28,7 +28,7 @@ if python_version < (3, 6):
     logger.critical(f"Python 3.6 or higher is required. Current version: {sys.version}")
     sys.exit(1)
 
-
+retry_cntr_fetch_data = {}
 def load_config_ini():
     """
     Reads the configuration file and updates global variables.
@@ -63,8 +63,12 @@ def fetch_data(ip: str, port: str, data_type: str):
     if not os.path.exists(DOWNLOAD_PATH):
         os.makedirs(DOWNLOAD_PATH)
 
+    global retry_cntr_fetch_data
+    if data_type not in retry_cntr_fetch_data:
+        retry_cntr_fetch_data[data_type] = 0
+
     yaml_file_path = os.path.join(DOWNLOAD_PATH, f"{data_type}.yaml")
-    is_error = False
+    
     try:
         url = f"http://{ip}:{port}/{data_type}"
         logger.debug(f"Requesting {url}")
@@ -82,37 +86,43 @@ def fetch_data(ip: str, port: str, data_type: str):
                     try:
                         existing_data = yaml.safe_load(existing_file)
                     except yaml.YAMLError as e:
-                        logger.error(f"Failed to load YAML file {yaml_file_path}: {e}")
+                        logger.warning(f"Failed to safe_load YAML file {yaml_file_path}")
                         existing_data = None
 
                 if existing_data == parsed_data:
                     logger.debug(f"No changes detected in {data_type} data.")
+                    retry_cntr_fetch_data[data_type] = 0
                     return  # Exit early if data is unchanged
 
             # Write to YAML file
             with open(yaml_file_path, "w") as yaml_file:
                 yaml.dump(parsed_data, yaml_file, default_flow_style=False)
-
+            
             logger.info(f"Saved new data '{data_type}' to '{yaml_file_path}'.")
-
+            retry_cntr_fetch_data[data_type] = 0
+            return
+        
     except (yaml.YAMLError, json.JSONDecodeError) as e:
         logger.error(f"Failed to parse or write {data_type} as YAML: {e}")
-        is_error = True
+    
     except urllib.error.URLError as e:
         logger.error(
             f"Failed to connect to the server at {ip}:{port} for {data_type}. Error: {e}"
         )
-        is_error = True
     except Exception as e:
         logger.error(f"An unexpected error occurred while fetching {data_type}: {e}")
-        is_error = True
+    
+    # If an error occurs consecutively more than 3 times, write an empty YAML file to prevent issues
+    retry_cntr_fetch_data[data_type] += 1
 
-    # If an error occurs, write an empty YAML file to prevent issues
-    if is_error:
-        logger.error(f"Error occured -> Dump an empty YAML for {data_type}.")
-        with open(yaml_file_path, "w") as yaml_file:
-            yaml.dump({}, yaml_file, default_flow_style=False)
-
+    if retry_cntr_fetch_data[data_type] > 3:
+        logger.error(f"Error occured 3 times. Dump an empty YAML for {data_type}.")
+        try:
+            with open(yaml_file_path, "w") as yaml_file:
+                yaml.dump({}, yaml_file, default_flow_style=False)
+        except Exception as e:
+            logger.critical(f"Failed to dump an empty YAML for {data_type}.")
+        retry_cntr_fetch_data[data_type] = 0
 
 def send_gid_files(ip, port):
     """

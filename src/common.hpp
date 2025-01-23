@@ -47,7 +47,7 @@
 #include "macro.hpp"
 
 extern "C" {
-    #include <net/if.h>
+#include <net/if.h>
 }
 
 // fully-blocking SPSC queue
@@ -56,7 +56,6 @@ typedef moodycamel::BlockingReaderWriterQueue<struct tcpudp_result_msg_t>
 typedef moodycamel::BlockingReaderWriterQueue<struct rdma_result_msg_t>
     RdmaClientQueue;
 typedef moodycamel::ReaderWriterQueue<union rdma_pingmsg_t> RdmaServerQueue;
-
 
 std::set<std::string> get_all_local_ips();
 int get_my_addr_from_pinglist(const std::string &pinglist_filename,
@@ -98,8 +97,8 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
                                 const std::string &message,
                                 const std::string &api,
                                 std::shared_ptr<spdlog::logger> logger);
-int message_to_http_server(const std::string &message,
-                           const std::string &req_api,
+int message_to_http_server(std::string message, std::string controller_host,
+                           int controller_port, const std::string &req_api,
                            std::shared_ptr<spdlog::logger> logger);
 
 // statistics

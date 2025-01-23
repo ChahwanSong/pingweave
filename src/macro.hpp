@@ -35,7 +35,7 @@ const static int SMALL_JITTERING_MICROSEC = 10;  // in event polling for cqe
 
 // Params for internal message queue btw threads
 const static int MSG_QUEUE_SIZE = (1 << 16);  // large enough
-const static int WAIT_DEQUEUE_TIME_SEC = 1;   // seconds
+const static int WAIT_DEQUEUE_TIME_MS = 10;   // milliseconds
 
 // Ping interval (for each src-dst pair) / Report interval
 const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds

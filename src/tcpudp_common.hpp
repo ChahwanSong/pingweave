@@ -16,17 +16,16 @@ int initialize_contexts(struct udp_context &ctx_tx, udp_context &ctx_rx,
 
 void log_bound_address(int sock_fd, std::shared_ptr<spdlog::logger> logger);
 
-int send_udp_message(struct udp_context *ctx_tx, const std::string &dst_ip,
-                     const uint16_t &dst_port, const uint64_t &pingid,
+int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
+                     uint16_t dst_port, uint64_t pingid,
                      std::shared_ptr<spdlog::logger> logger);
 
 int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
                         std::string &sender_ip,
                         std::shared_ptr<spdlog::logger> logger);
 
-int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
-                     const std::string &dst_ip, const uint16_t &dst_port,
-                     const uint64_t &pingid,
+int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
+                     std::string dst_ip, uint16_t dst_port, uint64_t pingid,
                      std::shared_ptr<spdlog::logger> logger);
 
 int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger);

@@ -71,8 +71,8 @@ void log_bound_address(int sock_fd, std::shared_ptr<spdlog::logger> logger) {
     }
 }
 
-int send_udp_message(struct udp_context *ctx, const std::string &dst_ip,
-                     const uint16_t &dst_port, const uint64_t &pingid,
+int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
+                     uint16_t dst_port, uint64_t pingid,
                      std::shared_ptr<spdlog::logger> logger) {
     sockaddr_in dest{};
     dest.sin_family = AF_INET;
@@ -89,7 +89,7 @@ int send_udp_message(struct udp_context *ctx, const std::string &dst_ip,
     msg.x._pad = 0;
 
     auto sent =
-        sendto(*ctx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
+        sendto(*ctx_tx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
                reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
     if (sent < 0) {
         logger->error("Failed to send msg {} to {}", msg.x.pingid, dst_ip);
@@ -257,9 +257,8 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
     return false;
 }
 
-int send_tcp_message(TcpUdpPinginfoMap *ping_table, const std::string &src_ip,
-                     const std::string &dst_ip, const uint16_t &dst_port,
-                     const uint64_t &pingid,
+int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
+                     std::string dst_ip, uint16_t dst_port, uint64_t pingid,
                      std::shared_ptr<spdlog::logger> logger) {
     // Initialize TCP contexts
     tcp_context ctx_client;
@@ -343,7 +342,7 @@ int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger) {
         logger->warn("Failed to accept a new TCP connection.");
         return true;
     }
-    
+
     // // Instead of waiting FIN, use a timeout.
     // // This is to avoid indefinite waiting and resource starvation.
     // std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -363,7 +362,7 @@ int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger) {
 
     /* server makes passive-close (i.e., after FIN from client) */
     close(sockfd);
-    
+
     // success
     return false;
 }

@@ -5,6 +5,7 @@ import configparser
 from aiohttp import web  # aiohttp for webserver
 import redis  # in-memory key-value storage
 import yaml  # python3 -m pip install pyyaml
+from datetime import datetime, timedelta
 import psutil
 from logger import initialize_pingweave_logger
 from macro import *
@@ -83,103 +84,72 @@ def load_config_ini():
         collect_port = 8080
 
 
-async def handle_result_roce_post(request):
+async def process_result_post(request: web.Request, prefix: str) -> web.Response:
+    """
+    A helper function that encapsulates the common logic of parsing lines from the request,
+    building the Redis key/value, and logging errors.
+    """
     client_ip = request.remote
-    
     try:
         raw_data = await request.text()
         logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
 
         results = raw_data.strip().split("\n")
 
-        # TODO: add publish -> for persistent database
+        if redis_server is not None:
+            for line in results:
+                data = line.strip().split(",")
+                if len(data) < 3:
+                    logger.warning(f"Skipping malformed line: {line}")
+                    continue
+                # e.g., key = "roce,192.168.0.1,192.168.0.2"
+                #       value = "ts_start,ts_end,#success,#fail,..."
+                key = f"{prefix}," + ",".join(data[:2])
+                value = ",".join(data[2:])
 
-        if redis_server != None:
-            for result in results:
-                # send to redis server
-                data = result.strip().split(",")
-                key = "roce," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
-                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
-                redis_server.set(key, value)
+                # Because HTTP POST can be delayed at client-side, out-of-order arrival is
+                # possible. To avoid showing a old data for redis, we drop the old POST
+                # by comparing the 'ts_end'.
+                prev_ts_end_raw = redis_server.get(key)
+                if prev_ts_end_raw:
+                    prev_ts_end = datetime.strptime(
+                        prev_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                else:
+                    prev_ts_end = datetime.min
+
+                # compare with new post time
+                new_ts_end = datetime.strptime(data[3][:26], "%Y-%m-%d %H:%M:%S.%f")
+                if prev_ts_end < new_ts_end:
+                    redis_server.set(key, value)
+                else:
+                    logger.info(
+                        f"{prefix},{key} - out-of-order post arrival (prev: {prev_ts_end}, new: {new_ts_end})"
+                    )
+
+                # TODO: Anyway, we keep all the data in database.
 
         return web.Response(text="Data processed successfully", status=200)
     except Exception as e:
-        logger.error(f"Error processing POST result_roce from {client_ip}: {e}")
+        logger.error(f"Error processing POST result_{prefix} from {client_ip}: {e}")
         return web.Response(text="Internal server error", status=500)
+
+
+# Now each protocol-specific endpoint becomes a simple wrapper:
+async def handle_result_roce_post(request):
+    return await process_result_post(request, "roce")
 
 
 async def handle_result_ib_post(request):
-    client_ip = request.remote
-
-    try:
-        raw_data = await request.text()
-        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
-
-        results = raw_data.strip().split("\n")
-
-        # TODO: add publish -> for persistent database
-
-        if redis_server != None:
-            for result in results:
-                # send to redis server
-                data = result.strip().split(",")
-                key = "ib," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
-                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
-                redis_server.set(key, value)
-
-        return web.Response(text="Data processed successfully", status=200)
-    except Exception as e:
-        logger.error(f"Error processing POST result_ib from {client_ip}: {e}")
-        return web.Response(text="Internal server error", status=500)
+    return await process_result_post(request, "ib")
 
 
 async def handle_result_udp_post(request):
-    client_ip = request.remote
+    return await process_result_post(request, "udp")
 
-    try:
-        raw_data = await request.text()
-        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
-
-        results = raw_data.strip().split("\n")
-
-        # TODO: add publish -> for persistent database
-
-        if redis_server != None:
-            for result in results:
-                # send to redis server
-                data = result.strip().split(",")
-                key = "udp," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
-                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
-                redis_server.set(key, value)
-
-        return web.Response(text="Data processed successfully", status=200)
-    except Exception as e:
-        logger.error(f"Error processing POST result_rdma from {client_ip}: {e}")
-        return web.Response(text="Internal server error", status=500)
 
 async def handle_result_tcp_post(request):
-    client_ip = request.remote
-
-    try:
-        raw_data = await request.text()
-        logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
-
-        results = raw_data.strip().split("\n")
-
-        # TODO: add publish -> for persistent database
-
-        if redis_server != None:
-            for result in results:
-                # send to redis server
-                data = result.strip().split(",")
-                key = "tcp," + ",".join(data[0:2])  # 192.168.0.1,192.168.0.2
-                value = ",".join(data[2:])  # ts_start, ts_end, #success, #fail, ...
-                redis_server.set(key, value)
-
-        return web.Response(text="Data processed successfully", status=200)
-    except Exception as e:
-        logger.error(f"Error processing POST result_rdma from {client_ip}: {e}")
-        return web.Response(text="Internal server error", status=500)
+    return await process_result_post(request, "tcp")
 
 
 async def handle_alarm_post(request):

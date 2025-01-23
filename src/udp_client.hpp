@@ -100,15 +100,25 @@ void udp_client_result_thread(const std::string& ipv4,
     // result pointer
     struct tcpudp_result_info_t* info;
 
+    // get controller address and port
+    std::string controller_host;
+    int controller_port;
+    if (get_controller_info_from_ini(controller_host, controller_port)) {
+        logger->error(
+            "Exit the result thread - failed to load pingweave.ini file");
+        throw;  // Propagate exception
+    }
+
     // timer for report
     auto last_report_time = get_current_timestamp_steady_clock();
 
     /** RESULT: (dstip, #success, #failure, #weird, mean, max, p50, p95, p99) */
     try {
         while (true) {
-            // fully-blocking with timeout (1 sec)
+            // fully-blocking with timeout (default: 10 milliseconds)
             if (client_queue->wait_dequeue_timed(
-                    result_msg, std::chrono::seconds(WAIT_DEQUEUE_TIME_SEC))) {
+                    result_msg,
+                    std::chrono::milliseconds(WAIT_DEQUEUE_TIME_MS))) {
                 logger->debug("{}, {}, {}, {}, {}",
                               timestamp_ns_to_string(result_msg.time_ping_send),
                               uint2ip(result_msg.dstip), result_msg.pingid,
@@ -123,11 +133,14 @@ void udp_client_result_thread(const std::string& ipv4,
                 if (result_msg.result == PINGWEAVE_RESULT_SUCCESS) {  // success
                     ++info->n_success;
                     info->network_delays.push_back(result_msg.network_delay);
-                } else if (result_msg.result ==
-                           PINGWEAVE_RESULT_FAILURE) {  // failure
+                } else if (result_msg.result == PINGWEAVE_RESULT_FAILURE) {
                     ++info->n_failure;
-                } else {  // weird
+                } else if (result_msg.result == PINGWEAVE_RESULT_WEIRD) {
                     ++info->n_weird;
+                } else {
+                    logger->error("Unknown type of result - {}, dstip:{}",
+                                  result_msg.result, result_msg.dstip);
+                    continue;
                 }
             }
 
@@ -153,10 +166,10 @@ void udp_client_result_thread(const std::string& ipv4,
                 }
 
                 // send to collector
-                if (agg_result.size() > 0) {
-                    message_to_http_server(agg_result, "/result_" + protocol,
-                                           logger);
-                }
+                std::thread t(message_to_http_server, agg_result,
+                              controller_host, controller_port,
+                              "/result_" + protocol, logger);
+                t.detach();
 
                 // clear the history
                 dstip2result.clear();
@@ -167,6 +180,7 @@ void udp_client_result_thread(const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in result_thread: {}", e.what());
+        throw;
     }
 }
 
