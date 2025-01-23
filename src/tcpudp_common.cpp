@@ -299,8 +299,9 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
         // End of handshake
         uint64_t recv_time_steady = get_current_timestamp_steady_ns();
         if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
-            logger->warn("PONG (pingid: {}) error occurs in update_pong_info.",
-                         pingid);
+            logger->warn(
+                "update_pong_info (pingid: {}) - cannot find the key in table",
+                pingid);
         }
 
         // Get a client's interface used for connection
