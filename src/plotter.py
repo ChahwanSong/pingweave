@@ -354,7 +354,7 @@ def plot_heatmap_value(
 
         # Logging the HTML generating time
         elapsed_time = time.time() - now_plot_time
-        logger.debug(f"{outname}.html - elapsed time: {elapsed_time} seconds")
+        logger.info(f"{outname}.html - elapsed time: {elapsed_time} seconds")
 
         # Save a summary 
         counts = [0] * len(tick_steps)
@@ -594,7 +594,7 @@ async def pingweave_plotter() -> None:
                         for key in keys:
                             value = redis_server.get(key)
                             if value is None:
-                                logger.warning(f"Redis key {key} not found. Skipping.")
+                                logger.warning(f"Redis key {key} not found. Skip.")
                                 continue
 
                             value_splits = value.split(",")
@@ -602,7 +602,7 @@ async def pingweave_plotter() -> None:
                             try:
                                 measure_time = datetime.strptime(value_splits[1][:26], "%Y-%m-%d %H:%M:%S.%f")
                             except ValueError:
-                                logger.debug(f"Invalid datetime format in key {key}. Skipping.")
+                                logger.debug(f"Invalid datetime format in key {key}. Skip.")
                                 continue
 
                             time_diff = abs((current_time - measure_time).total_seconds())
