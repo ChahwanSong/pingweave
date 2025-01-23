@@ -30,13 +30,13 @@ from logger import initialize_pingweave_logger
 
 TCPUDP_DELAY_STEPS = [1_000_000, 5_000_000, 20_000_000]  # in ns
 TCPUDP_DELAY_TICK_STEPS = ["No Data", "Failure", "~1ms", "~5ms", "~20ms", ">20ms"]
-TCPUDP_RATIO_STEPS = [0.05, 0.5, 0.9]
-TCPUDP_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~50%", "~90%", "100%"]
+TCPUDP_RATIO_STEPS = [0.05, 0.2, 0.5]
+TCPUDP_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~20%", "~50%", "100%"]
 
 RDMA_DELAY_STEPS = [100_000, 500_000, 5_000_000]  # in ns
 RDMA_DELAY_TICK_STEPS = ["No Data", "Failure", "~100µs", "~500µs", "~5ms", ">5ms"]
-RDMA_RATIO_STEPS = [0.05, 0.5, 0.9]
-RDMA_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~50%", "~90%", "100%"]
+RDMA_RATIO_STEPS = [0.05, 0.2, 0.5]
+RDMA_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~20%", "~50%", "100%"]
 
 COLOR_SCALE = ["black", "purple", "green", "yellow", "orange", "red"]
 
