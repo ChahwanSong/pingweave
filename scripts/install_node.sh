@@ -18,6 +18,7 @@ print_help() {
     echo "  -h, --help       Show this help message and exit"
     echo "  -c               Install Python requirements from requirements.txt"
     echo "  -d               Stop and remove pingweave.service"
+    echo "  -p               Copy pip.conf to ~/.pip"
     echo ""
     echo "If no options are provided, the script will perform the following steps:"
     echo "  1. Check system prerequisites (systemd and Python >= 3.6)."
@@ -30,7 +31,7 @@ print_help() {
 if [[ -z "$1" ]]; then
     cecho "YELLOW" "No options provided. The script will proceed with the default operations."
 else
-    cecho "YELLOW" "Selected option: $1"
+    cecho "YELLOW" "Selected option: $1 $2"
 fi
 
 # Handle -h or --help option
@@ -39,8 +40,9 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
+
 # Handle -d option to stop and remove pingweave service immediately
-if [[ "$1" == "-d" ]]; then
+if [[ " $@ " == *" -d "* ]]; then
     cecho "YELLOW" "Stopping and removing pingweave service..."
     sudo systemctl stop pingweave.service || {
         cecho "RED" "Error: Failed to stop pingweave service."
@@ -59,12 +61,15 @@ if [[ "$1" == "-d" ]]; then
     exit 0
 fi
 
-# Handle invalid options
-if [[ -n "$1" && "$1" != "-c" ]]; then
-    cecho "RED" "Error: Invalid option '$1'"
-    print_help
-    exit 1
+
+# Check if -p is present in any argument
+if [[ " $@ " == *" -p "* ]]; then
+    cecho "YELLOW" "Copying pip.conf file to ~/.pip directory..."
+    mkdir -p "$HOME/.pip"
+    cp "$SCRIPT_DIR/pip.conf" "$HOME/.pip"
+    cecho "GREEN" "Copying pip.conf to $HOME/.pip directory is successful"
 fi
+
 
 ######## prerequisite ########
 # (1) Check systemd
@@ -124,6 +129,32 @@ else
     cecho "GREEN" "Python version is 3.6 or higher: $PYTHON_VERSION"
 fi
 
+
+######### python package installation ########
+
+if [[ "$1" == "-c" ]]; then
+    # controller
+    REQUIREMENTS_TXT="requirements_controller.txt"
+else
+    # agent
+    REQUIREMENTS_TXT="requirements_agent.txt"
+fi
+
+cecho "YELLOW" "Installing Python requirements from $REQUIREMENTS_TXT..."
+
+REQUIREMENTS_FILE="$SCRIPT_DIR/$REQUIREMENTS_TXT"
+if [[ -f "$REQUIREMENTS_FILE" ]]; then
+    python3 -m pip install -r "$REQUIREMENTS_FILE" || {
+        cecho "RED" "Error: Failed to install Python requirements."
+        exit 1
+    }
+    cecho "GREEN" "Python requirements installed successfully."
+else
+    cecho "RED" "Error: $REQUIREMENTS_TXT not found at $REQUIREMENTS_FILE."
+    exit 1
+fi
+
+
 ###### RDMA CORE ######
 cecho "YELLOW" "Checking RDMA Core and related packages installation..."
 
@@ -160,23 +191,6 @@ else
     exit 1
 fi
 
-
-######### Additional Option ########
-# Handle -c option for pip requirements
-if [[ "$1" == "-c" ]]; then
-    cecho "YELLOW" "Installing Python requirements from requirements.txt..."
-    REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
-    if [[ -f "$REQUIREMENTS_FILE" ]]; then
-        python3 -m pip install -r "$REQUIREMENTS_FILE" || {
-            cecho "RED" "Error: Failed to install Python requirements."
-            exit 1
-        }
-        cecho "GREEN" "Python requirements installed successfully."
-    else
-        cecho "RED" "Error: requirements.txt not found at $REQUIREMENTS_FILE."
-        exit 1
-    fi
-fi
 
 ######### Make ########
 cecho "YELLOW" "Navigating to source directory and cleaning up..."

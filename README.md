@@ -8,8 +8,9 @@ PingWeave
 * ibverbs library (e.g., libibverbs) - "rdma-core" or "rdma-core-devel"
 * chronyd.service (NTP time synchronization) - to evict stale information 
 
-### Nodes
+### Agent
 * python >= 3.6 (for asyncio)
+* kafka
 
 ### Controller
 * redis: in-memory key-value store
@@ -39,6 +40,7 @@ port 0  # TCP/IP inactivate (optional)
     * plotly
     * kaleido
     * matplotlib
+    * confluent-kafka
 
 ### Install & Build
 

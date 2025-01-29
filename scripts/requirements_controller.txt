@@ -1,0 +1,13 @@
+pyyaml
+psutil
+pandas
+numpy
+aiohttp
+jinja2
+redis
+datetime
+setproctitle
+plotly
+kaleido
+matplotlib
+pyzmq
