@@ -22,8 +22,8 @@ struct ProcessInfo {
 
 // Global variables
 std::vector<ProcessInfo> processes_cpp_programs;
-ProcessInfo process_py_client = {0};
-ProcessInfo process_py_server = {0};
+ProcessInfo process_py_agent = {0};
+ProcessInfo process_py_ctrl = {0};
 
 bool running = true;
 
@@ -35,6 +35,9 @@ const std::string alias_tcp_server = "pingweave_tcp_server";
 const std::string alias_tcp_client = "pingweave_tcp_client";
 const std::string alias_udp_server = "pingweave_udp_server";
 const std::string alias_udp_client = "pingweave_udp_client";
+
+const std::string alias_ctrl_py = "pingweave_ctrl.py";
+const std::string alias_agent_py = "pingweave_agent.py";
 
 void terminate_invalid_cpp_program(const std::set<std::string>& myaddr,
                                    const std::string& program_name,
@@ -72,14 +75,13 @@ int main() {
     message_to_http_server("Main thread starts", controller_host,
                            controller_port, "/alarm",
                            spdlog::default_logger());  // alarm to controller
-    process_py_client.host = "null";
-    process_py_server.host = "null";
+    process_py_agent.host = "null";
+    process_py_ctrl.host = "null";
 
     // sanity check - table expiry timer
     if (PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS > 2000) {
         spdlog::error(
-            "PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS must be shorter than 2 "
-            "seconds");
+            "PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS must be < 2 seconds");
         exit(EXIT_FAILURE);
     }
 
@@ -143,17 +145,17 @@ int main() {
 
         /* 2. Terminate threads which are not in pinglist. */
         // python - check only server because a client must always be running
-        if (process_py_server.pid > 0 &&
-            process_py_server.host != controller_host) {
+        if (process_py_ctrl.pid > 0 &&
+            process_py_ctrl.host != controller_host) {
             spdlog::info("IP {} is no more controller. Exit the python thread",
-                         process_py_server.host);
-            int result = kill(process_py_server.pid, SIGTERM);
+                         process_py_ctrl.host);
+            int result = kill(process_py_ctrl.pid, SIGTERM);
             if (result != 0) {
                 spdlog::error("Failed to send signal to PID {}: {}",
-                              process_py_server.pid, strerror(errno));
+                              process_py_ctrl.pid, strerror(errno));
             }
-            process_py_server = {0};
-            process_py_server.host = "null";
+            process_py_ctrl = {0};
+            process_py_ctrl.host = "null";
         }
 
         // cpp programs running on this node
@@ -186,15 +188,15 @@ int main() {
                                       running_cpp_programs);
 
         /* 3. Start new threads which are added to pinglist */
-        // Start Python server
+        // Start Python controller
         if (local_ips.find(controller_host) != local_ips.end()) {
-            start_python_process(process_py_server, "pingweave_server.py",
-                                 "py_server", controller_host);
+            start_python_process(process_py_ctrl, alias_ctrl_py, "py_ctrl",
+                                 controller_host);
         }
 
-        // Start Python client
-        start_python_process(process_py_client, "pingweave_client.py",
-                             "py_client", "localhost");
+        // Start Python agent
+        start_python_process(process_py_agent, alias_agent_py, "py_agent",
+                             "localhost");
 
         // cpp programs
         start_cpp_programs(myaddr_roce, alias_roce_server, "roce", rdma_server,
@@ -276,8 +278,8 @@ void signal_handler(int sig) {
     for (int i = 0; i < processes_cpp_programs.size(); ++i) {
         kill(processes_cpp_programs[i].pid, SIGTERM);
     }
-    kill(process_py_client.pid, SIGTERM);
-    kill(process_py_server.pid, SIGTERM);
+    kill(process_py_agent.pid, SIGTERM);
+    kill(process_py_ctrl.pid, SIGTERM);
     exit(EXIT_SUCCESS);
 }
 
@@ -294,17 +296,17 @@ void sigchld_handler(int sig) {
         spdlog::info("[sigchld] Child process (PID: {}) terminated.", pid);
 
         // If accidentally killed, handle the status and make logs
-        if (process_py_client.pid == pid) {
-            spdlog::info("-> process name: {}", process_py_client.name);
-            alarm_msg += process_py_client.host + ":" + process_py_client.name;
-            process_py_client = {0};  // renew
-            process_py_client.host = "null";
+        if (process_py_agent.pid == pid) {
+            spdlog::info("-> process name: {}", process_py_agent.name);
+            alarm_msg += process_py_agent.host + ":" + process_py_agent.name;
+            process_py_agent = {0};  // renew
+            process_py_agent.host = "null";
         }
-        if (process_py_server.pid == pid) {
-            spdlog::info("-> process name: {}", process_py_server.name);
-            alarm_msg += process_py_server.host + ":" + process_py_server.name;
-            process_py_server = {0};  // renew
-            process_py_server.host = "null";
+        if (process_py_ctrl.pid == pid) {
+            spdlog::info("-> process name: {}", process_py_ctrl.name);
+            alarm_msg += process_py_ctrl.host + ":" + process_py_ctrl.name;
+            process_py_ctrl = {0};  // renew
+            process_py_ctrl.host = "null";
         }
         for (auto it = processes_cpp_programs.begin();
              it != processes_cpp_programs.end(); ++it) {

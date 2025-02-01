@@ -1,24 +1,21 @@
 import os
-import sys
-import signal
 import configparser
 import asyncio
 import time
 import socket
 import html
 import psutil
-import multiprocessing
 import copy
 from datetime import datetime
 from setproctitle import setproctitle
-import re
 
-from logger import initialize_pingweave_logger
 import yaml  # python3 -m pip install pyyaml
 from aiohttp import web  # requires python >= 3.7
 from macro import *
 
-logger = initialize_pingweave_logger(socket.gethostname(), "webserver", 10, False)
+from logger import initialize_pingweave_logger
+
+logger = initialize_pingweave_logger(socket.gethostname(), "ctrl_webserver", 10, False)
 
 # Variables to save pinglist
 pinglist_in_memory = {}
@@ -77,7 +74,7 @@ def load_config_ini():
 
         # Update variables
         control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["port_control"])
+        control_port = int(config["controller"]["control_port"])
 
         interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
         interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
@@ -114,7 +111,6 @@ async def read_pinglist():
 
 
 async def read_pinglist_periodically():
-    load_config_ini()
     try:
         while True:
             await read_pinglist()
@@ -145,7 +141,7 @@ async def get_address_store(request):
             keys_old_entries = [
                 key
                 for key, value in address_store.items()
-                if value[5] + 300 < current_time # comparing utime
+                if value[5] + 300 < current_time  # comparing utime
             ]
             for key in keys_old_entries:
                 logger.info(f"(EXPIRED) Remove old address information: {key}")
@@ -164,11 +160,11 @@ async def post_address(request):
     try:
         data = await request.json()
         ip_address = data.get("ip_address")
-        gid = data.get("gid") # GID of RNIC
-        lid = data.get("lid") # LID of RNIC
-        qpn = data.get("qpn") # QP number
-        dtime = data.get("dtime") # the time that QP is generated at end-host
-        utime = time.time() # the time that server received this post
+        gid = data.get("gid")  # GID of RNIC
+        lid = data.get("lid")  # LID of RNIC
+        qpn = data.get("qpn")  # QP number
+        dtime = data.get("dtime")  # the time that QP is generated at end-host
+        utime = time.time()  # the time that server received this post
 
         if all([ip_address, gid, lid, qpn, dtime]):
             async with address_store_lock:
@@ -188,7 +184,9 @@ async def post_address(request):
                     logger.critical(
                         f"Too many entries in address_store: {len(address_store)}"
                     )
-                    logger.critical("Cleaning up address_store. Check your configuration.")
+                    logger.critical(
+                        "Cleaning up address_store. Check your configuration."
+                    )
                     address_store.clear()
             return web.Response(text="Address updated", status=200)
         else:
@@ -197,6 +195,7 @@ async def post_address(request):
     except Exception as e:
         logger.error(f"Error processing POST from {client_ip}: {e}")
         return web.Response(text="Internal webserver error", status=500)
+
 
 async def index(request):
     files = os.listdir(HTML_DIR)
@@ -487,24 +486,19 @@ async def index(request):
 
     return web.Response(text=content, content_type="text/html")
 
+
 async def pingweave_webserver():
     load_config_ini()
 
     try:
         while True:
-            if not check_ip_active(control_host):
-                logger.error(
-                    f"No active interface with Control IP {control_host}. Sleeping for 1 minute..."
-                )
-                await asyncio.sleep(60)
-                load_config_ini()
-                continue
-
             try:
                 app = web.Application()
                 app.router.add_get("/", index)  # indexing for html files
                 app.router.add_static("/", HTML_DIR)  # static route for html files
-                app.router.add_static("/summary", SUMMARY_DIR)  # static route for images
+                app.router.add_static(
+                    "/summary", SUMMARY_DIR
+                )  # static route for images
                 app.router.add_static("/bootstrap", BOOTSTRAP_DIR)  # for bootstrap
                 app.router.add_get("/pinglist", get_pinglist)
                 app.router.add_get("/address_store", get_address_store)
@@ -538,7 +532,7 @@ async def pingweave_webserver():
 
 
 def run_pingweave_webserver():
-    setproctitle("pingweave_webserver.py")
+    setproctitle("pingweave_ctrl_webserver.py")
     try:
         asyncio.run(pingweave_webserver())
     except KeyboardInterrupt:

@@ -11,6 +11,7 @@
 
 // spdlog
 const int LOG_FILE_SIZE = 30 * 1024 * 1024;  // 30 MB
+const int LOG_FILE_SIZE_SMALL = 3 * 1024 * 1024;  // 3 MB
 const int LOG_FILE_EXTRA_NUM = 0;            // extra rotate-log files
 const std::string LOG_FORMAT = "[%Y-%m-%d %H:%M:%S.%f][%l] %v";
 const std::string LOG_RESULT_FORMAT = "%v";

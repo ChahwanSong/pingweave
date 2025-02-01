@@ -12,6 +12,11 @@ HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
 SUMMARY_DIR = os.path.join(SCRIPT_DIR, "../summary")
 WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
 BOOTSTRAP_DIR = os.path.join(SCRIPT_DIR, "../libs/bootstrap")
+SHMEM_DIR = os.path.abspath("/dev/shm")
 
 # filter out in plotting if a data is too old
 INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 300
+
+# Match C++ constants for Inter-Process Communication (IPC)
+IPC_MESSAGE_SIZE = 2097152  # 2MB
+IPC_BUFFER_SIZE = 32  # 32 messages

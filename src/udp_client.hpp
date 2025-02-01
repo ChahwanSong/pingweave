@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ipc_producer.hpp"
 #include "tcpudp_common.hpp"
 #include "tcpudp_ping_info.hpp"
 #include "tcpudp_scheduler.hpp"
@@ -81,8 +82,8 @@ void udp_client_result_thread(const std::string& ipv4,
                               TcpUdpClientQueue* client_queue,
                               std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
-    if (!get_int_param_from_ini(report_interval_ms,
-                                "interval_report_ping_result_millisec")) {
+    if (get_int_param_from_ini(report_interval_ms,
+                               "interval_report_ping_result_millisec")) {
         logger->error(
             "Failed to load report_interval parameter from pingwewave.ini. Use "
             "default - 10 seconds");
@@ -106,6 +107,9 @@ void udp_client_result_thread(const std::string& ipv4,
             "Exit the result thread - failed to load pingweave.ini file");
         throw;  // Propagate exception
     }
+
+    // IPC - producer queue
+    ProducerQueue ipc_producer(protocol, ipv4);
 
     // timer for report
     auto last_report_time = get_current_timestamp_steady_clock();
@@ -159,15 +163,23 @@ void udp_client_result_thread(const std::string& ipv4,
 
                     auto result = convert_tcpudp_result_to_str(
                         ipv4, uint2ip(dstip), result_info, network_stat);
-                    logger->info(result);         // logging
-                    agg_result += result + "\n";  // aggregate logs
+
+                    // logging
+                    logger->info(result);
+
+                    // aggregate the results to one big string (unused now)
+                    agg_result += result + "\n";
                 }
 
-                // send to collector
+                // result sending to agent_sender
+                ipc_producer.writeMessage(agg_result);
+#if (0)
+                // send to collector (with http)
                 std::thread t(message_to_http_server, agg_result,
                               controller_host, controller_port,
                               "/result_" + protocol, logger);
                 t.detach();
+#endif
 
                 // clear the history
                 dstip2result.clear();
@@ -187,8 +199,8 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     const std::string client_logname = protocol + "_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
-    if (get_log_config_from_ini(log_level_client,
-                                "logger_cpp_process_udp_client")) {
+    if (!get_log_config_from_ini(log_level_client,
+                                 "logger_cpp_process_udp_client")) {
         client_logger =
             initialize_logger(client_logname, DIR_LOG_PATH, log_level_client,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
@@ -202,8 +214,8 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     const std::string result_logname = protocol + "_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
-    if (get_log_config_from_ini(log_level_result,
-                                "logger_cpp_process_udp_result")) {
+    if (!get_log_config_from_ini(log_level_result,
+                                 "logger_cpp_process_udp_result")) {
         result_logger =
             initialize_logger(result_logname, DIR_RESULT_PATH, log_level_result,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
@@ -220,8 +232,8 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     const std::string ping_table_logname = protocol + "_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
-    if (get_log_config_from_ini(log_level_ping_table,
-                                "logger_cpp_process_udp_ping_table")) {
+    if (!get_log_config_from_ini(log_level_ping_table,
+                                 "logger_cpp_process_udp_ping_table")) {
         ping_table_logger = initialize_logger(
             ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
             LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);

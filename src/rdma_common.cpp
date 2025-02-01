@@ -184,25 +184,27 @@ int get_traffic_class(struct rdma_context *ctx,
                       std::shared_ptr<spdlog::logger> logger) {
     // get traffic class value from pingweave.ini
     if (ctx->protocol == "ib") {
-        if (!get_int_param_from_ini(ctx->traffic_class, "traffic_class_ib")) {
+        if (get_int_param_from_ini(ctx->traffic_class, "traffic_class_ib")) {
             logger->error(
-                "Failed to get a traffic class for IB from pingweave.ini. Use a "
+                "Failed to get a traffic class for IB from pingweave.ini. Use "
+                "a "
                 "default class: 0.");
             ctx->traffic_class = 0;
             return false;
         }
     } else if (ctx->protocol == "roce") {
-        if (!get_int_param_from_ini(ctx->traffic_class,
-                                    "traffic_class_roce")) {
+        if (get_int_param_from_ini(ctx->traffic_class, "traffic_class_roce")) {
             logger->error(
-                "Failed to get a traffic class for RoCE from pingweave.ini. Use a "
+                "Failed to get a traffic class for RoCE from pingweave.ini. "
+                "Use a "
                 "default class: 0.");
             ctx->traffic_class = 0;
             return false;
         }
     } else {
         logger->error("Invalid protocol type: {}", ctx->protocol);
-        throw std::runtime_error("Invalid protocol type - must be either ib or roce");
+        throw std::runtime_error(
+            "Invalid protocol type - must be either ib or roce");
     }
 
     // success
@@ -471,11 +473,12 @@ int prepare_ctx(struct rdma_context *ctx,
     return false;
 }
 
-int make_ctx(struct rdma_context *ctx, const std::string &ipv4, const std::string& protocol,
-             const int &is_rx, std::shared_ptr<spdlog::logger> logger) {
-    ctx->ipv4 = ipv4; // ipv4 address
-    ctx->is_rx = is_rx; // rx or tx
-    ctx->protocol = protocol; // ib or roce
+int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
+             const std::string &protocol, const int &is_rx,
+             std::shared_ptr<spdlog::logger> logger) {
+    ctx->ipv4 = ipv4;          // ipv4 address
+    ctx->is_rx = is_rx;        // rx or tx
+    ctx->protocol = protocol;  // ib or roce
 
     if (get_context_by_ip(ctx, logger)) {
         return true;  // propagate error

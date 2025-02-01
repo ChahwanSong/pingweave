@@ -23,6 +23,7 @@ from macro import (
 )
 from logger import initialize_pingweave_logger
 
+logger = initialize_pingweave_logger(socket.gethostname(), "ctrl_plotter", 5, False)
 
 # ======================== #
 #      Global Constants    #
@@ -40,11 +41,9 @@ RDMA_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~20%", "~50%", "100%"]
 
 COLOR_SCALE = ["black", "purple", "green", "yellow", "orange", "red"]
 
-logger = initialize_pingweave_logger(socket.gethostname(), "plotter", 5, False)
-
 # These will be read from the config INI
 control_host = None
-collect_port = None
+collect_port_http = None
 interval_report_ping_result_millisec = None
 
 # Variables to store pinglist data
@@ -59,7 +58,9 @@ config = configparser.ConfigParser()
 
 try:
     SOCKET_PATH = "/var/run/redis/redis-server.sock"
-    redis_server = redis.StrictRedis(unix_socket_path=SOCKET_PATH, decode_responses=True)
+    redis_server = redis.StrictRedis(
+        unix_socket_path=SOCKET_PATH, decode_responses=True
+    )
     logger.info(f"Redis server running - {redis_server.ping()}")
     assert redis_server.ping()
 except redis.exceptions.ConnectionError as e:
@@ -79,16 +80,17 @@ except Exception as e:
 #     Config and Pinglist  #
 # ======================== #
 
+
 def load_config_ini() -> None:
     """
     Loads configuration from the CONFIG_PATH file and populates
-    global variables: control_host, collect_port, interval_report_ping_result_millisec.
+    global variables: control_host, collect_port_http, interval_report_ping_result_millisec.
     """
-    global control_host, collect_port, interval_report_ping_result_millisec
+    global control_host, collect_port_http, interval_report_ping_result_millisec
     try:
         config.read(CONFIG_PATH)
         control_host = config["controller"]["host"]
-        collect_port = int(config["controller"]["port_collect"])
+        collect_port_http = int(config["controller"]["collect_port_http"])
         interval_report_ping_result_millisec = int(
             config["param"]["interval_report_ping_result_millisec"]
         )
@@ -96,7 +98,7 @@ def load_config_ini() -> None:
     except Exception as e:
         logger.error(f"Error reading configuration: {e}")
         control_host = None
-        collect_port = None
+        collect_port_http = None
 
 
 def read_pinglist() -> None:
@@ -121,10 +123,9 @@ def read_pinglist() -> None:
 #    Directory Management  #
 # ======================== #
 
+
 def clear_directory_conditional(
-    directory_path: str,
-    except_files: list[str],
-    file_format: str = "html"
+    directory_path: str, except_files: list[str], file_format: str = "html"
 ) -> None:
     """
     Removes files (or directories) within `directory_path` except those whose
@@ -169,6 +170,7 @@ def clear_directory_conditional(
 # ======================== #
 #       Value Mappers      #
 # ======================== #
+
 
 def map_value_to_color_index_ping_delay(value: float, steps: list[int]) -> int:
     """
@@ -218,24 +220,75 @@ def map_value_to_color_index_ratio(value: float, steps: list[float]) -> int:
 
 PLOT_PARAMS = {
     "tcpudp": [
-        ("network_mean", TCPUDP_DELAY_STEPS, TCPUDP_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("network_p50", TCPUDP_DELAY_STEPS, TCPUDP_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("network_p99", TCPUDP_DELAY_STEPS, TCPUDP_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("failure_ratio", TCPUDP_RATIO_STEPS, TCPUDP_RATIO_TICK_STEPS, map_value_to_color_index_ratio),
-        ("weird_ratio", TCPUDP_RATIO_STEPS, TCPUDP_RATIO_TICK_STEPS, map_value_to_color_index_ratio),
+        (
+            "network_mean",
+            TCPUDP_DELAY_STEPS,
+            TCPUDP_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "network_p50",
+            TCPUDP_DELAY_STEPS,
+            TCPUDP_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "network_p99",
+            TCPUDP_DELAY_STEPS,
+            TCPUDP_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "failure_ratio",
+            TCPUDP_RATIO_STEPS,
+            TCPUDP_RATIO_TICK_STEPS,
+            map_value_to_color_index_ratio,
+        ),
+        (
+            "weird_ratio",
+            TCPUDP_RATIO_STEPS,
+            TCPUDP_RATIO_TICK_STEPS,
+            map_value_to_color_index_ratio,
+        ),
     ],
     "rdma": [
-        ("network_mean", RDMA_DELAY_STEPS, RDMA_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("network_p50", RDMA_DELAY_STEPS, RDMA_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("network_p99", RDMA_DELAY_STEPS, RDMA_DELAY_TICK_STEPS, map_value_to_color_index_ping_delay),
-        ("failure_ratio", RDMA_RATIO_STEPS, RDMA_RATIO_TICK_STEPS, map_value_to_color_index_ratio),
-        ("weird_ratio", RDMA_RATIO_STEPS, RDMA_RATIO_TICK_STEPS, map_value_to_color_index_ratio),
+        (
+            "network_mean",
+            RDMA_DELAY_STEPS,
+            RDMA_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "network_p50",
+            RDMA_DELAY_STEPS,
+            RDMA_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "network_p99",
+            RDMA_DELAY_STEPS,
+            RDMA_DELAY_TICK_STEPS,
+            map_value_to_color_index_ping_delay,
+        ),
+        (
+            "failure_ratio",
+            RDMA_RATIO_STEPS,
+            RDMA_RATIO_TICK_STEPS,
+            map_value_to_color_index_ratio,
+        ),
+        (
+            "weird_ratio",
+            RDMA_RATIO_STEPS,
+            RDMA_RATIO_TICK_STEPS,
+            map_value_to_color_index_ratio,
+        ),
     ],
 }
 
 # ======================== #
 #      Plotting Helpers    #
 # ======================== #
+
 
 def plot_heatmap_value(
     records: list[dict],
@@ -244,18 +297,20 @@ def plot_heatmap_value(
     steps: list,
     tick_steps: list[str],
     map_func,
-    outname: str
+    outname: str,
 ) -> str:
     """
     Creates a heatmap Plotly figure from the records (list of dicts) and saves
     both HTML and PNG files to the specified directories. Returns the path
     to the HTML file on success; returns an empty string on failure.
     """
-    now_plot_time = time.time() # start time                    
+    now_plot_time = time.time()  # start time
     try:
         if len(tick_steps) != len(COLOR_SCALE):
-            msg = (f"Length of tick_steps must match length of COLOR_SCALE: "
-                   f"{len(tick_steps)} vs {len(COLOR_SCALE)}")
+            msg = (
+                f"Length of tick_steps must match length of COLOR_SCALE: "
+                f"{len(tick_steps)} vs {len(COLOR_SCALE)}"
+            )
             logger.error(msg)
             raise RuntimeError(msg)
 
@@ -301,7 +356,7 @@ def plot_heatmap_value(
         # Vectorize color mapping
         vectorized_map_func = np.vectorize(lambda x: map_func(x, steps))
         z_colors = vectorized_map_func(z_values)
-        
+
         num_x = len(pivot_table.columns)
         num_y = len(pivot_table.index)
 
@@ -354,16 +409,18 @@ def plot_heatmap_value(
 
         # Logging the HTML generating time
         elapsed_time = time.time() - now_plot_time
-        logger.info(f"{outname}.html - elapsed time: {elapsed_time} seconds")
+        logger.debug(f"{outname}.html - elapsed time: {elapsed_time} seconds")
 
-        # Save a summary 
+        # Save a summary
         counts = [0] * len(tick_steps)
         for row in z_colors:
             for val in row:
                 counts[val] += 1
-        summary_lines = [f"{tick_steps[i]}: {counts[i]}" for i in range(len(tick_steps))]
+        summary_lines = [
+            f"{tick_steps[i]}: {counts[i]}" for i in range(len(tick_steps))
+        ] + [f"Summarized at {current_time}"]
         summary = "\n".join(summary_lines)
-        
+
         # Save to .summary
         summary_path = os.path.join(SUMMARY_DIR, f"{outname}.summary")
         with open(summary_path, "w") as file:
@@ -375,11 +432,15 @@ def plot_heatmap_value(
         logger.error(f"plot_heatmap_value exception: {e}")
         return ""
 
+
 # ======================== #
 #     Data Calculations    #
 # ======================== #
 
-def calculate_ratios(n_success: int, n_failure: int, n_weird: int) -> tuple[float, float]:
+
+def calculate_ratios(
+    n_success: int, n_failure: int, n_weird: int
+) -> tuple[float, float]:
     """
     Given success, failure, and weird counts, returns a tuple of (failure_ratio, weird_ratio).
     If total is zero, returns -1 for the ratio.
@@ -462,7 +523,7 @@ def prepare_record(key: str, value: list[str], plot_type: str) -> dict:
         }
 
     # RDMA
-    # indexes: 
+    # indexes:
     #   [5=_, 6=client_mean, 7=_, 8=client_p50, 9=_, 10=client_p99,
     #    11=_, 12=network_mean, 13=_, 14=network_p50, 15=_, 16=network_p99,
     #    17=_, 18=server_mean, 19=_, 20=server_p50, 21=_, 22=server_p99]
@@ -492,7 +553,7 @@ def prepare_record(key: str, value: list[str], plot_type: str) -> dict:
 def plot_heatmap(
     data: dict[str, list[str]],
     category_group_name: str = "group",
-    plot_type: str = "tcpudp"
+    plot_type: str = "tcpudp",
 ) -> list[str]:
     """
     Creates multiple heatmaps based on the given plot_type (tcpudp or rdma).
@@ -531,7 +592,9 @@ def plot_heatmap(
     return output_files
 
 
-def process_category_group(category: str, group: str, group_data: dict[str, list[str]]) -> list[str]:
+def process_category_group(
+    category: str, group: str, group_data: dict[str, list[str]]
+) -> list[str]:
     """
     Process a single category and group combination, generating the relevant heatmap.
     Returns a list of the resulting plot files created (without extension).
@@ -546,6 +609,7 @@ def process_category_group(category: str, group: str, group_data: dict[str, list
 # ======================== #
 #    Main Async Function   #
 # ======================== #
+
 
 async def pingweave_plotter() -> None:
     """
@@ -563,7 +627,9 @@ async def pingweave_plotter() -> None:
                 interval_seconds = int(interval_report_ping_result_millisec / 1000)
 
                 # Plot the graph every X seconds
-                if (last_plot_time + interval_seconds < now_plot_time) and (redis_server is not None):
+                if (last_plot_time + interval_seconds < now_plot_time) and (
+                    redis_server is not None
+                ):
                     last_plot_time = now_plot_time
 
                     # Step 1: Load pinglist into memory
@@ -577,7 +643,9 @@ async def pingweave_plotter() -> None:
                         for group, ip_list in cat_data.items():
                             # Make a template for each possible src-dst combination
                             records[proto][group] = {
-                                f"{src},{dst}": None for src in ip_list for dst in ip_list
+                                f"{src},{dst}": None
+                                for src in ip_list
+                                for dst in ip_list
                             }
 
                             # Build IP -> groups mapping
@@ -600,12 +668,18 @@ async def pingweave_plotter() -> None:
                             value_splits = value.split(",")
                             # Filter out old data
                             try:
-                                measure_time = datetime.strptime(value_splits[1][:26], "%Y-%m-%d %H:%M:%S.%f")
+                                measure_time = datetime.strptime(
+                                    value_splits[1][:26], "%Y-%m-%d %H:%M:%S.%f"
+                                )
                             except ValueError:
-                                logger.debug(f"Invalid datetime format in key {key}. Skip.")
+                                logger.debug(
+                                    f"Invalid datetime format in key {key}. Skip."
+                                )
                                 continue
 
-                            time_diff = abs((current_time - measure_time).total_seconds())
+                            time_diff = abs(
+                                (current_time - measure_time).total_seconds()
+                            )
                             if time_diff > INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC:
                                 logger.debug(
                                     f"Ignore old data: {key} | Time: {measure_time} | T_Diff: {time_diff}"
@@ -629,7 +703,7 @@ async def pingweave_plotter() -> None:
                                             f"{record_key} is not in records[{proto}][{group}]"
                                         )
                                     records[proto][group][record_key] = value_splits
-                    
+
                     # Step 4: Generate plots (concurrently for each category and group)
                     new_file_list = []
                     with ThreadPoolExecutor() as executor:
@@ -638,7 +712,10 @@ async def pingweave_plotter() -> None:
                             for group, group_data in data.items():
                                 futures.append(
                                     executor.submit(
-                                        process_category_group, category, group, group_data
+                                        process_category_group,
+                                        category,
+                                        group,
+                                        group_data,
                                     )
                                 )
 
@@ -650,10 +727,7 @@ async def pingweave_plotter() -> None:
                     clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
 
                     elapsed_time = time.time() - now_plot_time
-                    logger.info(
-                        f"Pingweave plotter is running on {control_host}:{collect_port} | "
-                        f"Total elapsed time: {elapsed_time:.2f} seconds"
-                    )
+                    logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds")
                 else:
                     await asyncio.sleep(1)
             except KeyError as e:
@@ -676,7 +750,7 @@ def run_pingweave_plotter() -> None:
     Entry point for the plotter script. Sets process title, runs the async plotter,
     and handles KeyboardInterrupt gracefully.
     """
-    setproctitle("pingweave_plotter.py")
+    setproctitle("pingweave_ctrl_plotter.py")
     try:
         asyncio.run(pingweave_plotter())
     except KeyboardInterrupt:

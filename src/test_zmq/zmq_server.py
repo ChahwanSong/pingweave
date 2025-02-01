@@ -24,6 +24,8 @@ def worker_routine(worker_url, worker_id):
             print(f"[Worker {worker_id}] Unexpected frames: {frames}")
             continue
 
+        print(f"middle frame: {empty_frame}")
+
         # 클라이언트 ID는 사람이 읽기 어려울 수 있으므로 hex로 변환(선택)
         client_id_str = client_id.decode(
             "utf-8", errors="replace"

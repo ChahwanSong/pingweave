@@ -183,7 +183,7 @@ int get_controller_info_from_ini(std::string &ip, int &port) {
         return true;
     }
 
-    port = parser.getInt("controller", "port_collect");
+    port = parser.getInt("controller", "collect_port_http");
     if (port < 0) {
         spdlog::error("pingweave.ini gives an erratic controller port.");
         return true;
@@ -218,34 +218,34 @@ int get_int_param_from_ini(int &ret, const std::string &key) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return false;
+        return true;
     }
 
     try {
         ret = get_int_value_from_ini(parser, "param", key);
     } catch (const std::runtime_error &) {
-        return false;
+        return true;
     }
 
     // success
-    return true;
+    return false;
 }
 
 int get_str_param_from_ini(std::string &ret, const std::string &key) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return false;
+        return true;
     }
 
     try {
         ret = get_str_value_from_ini(parser, "param", key);
     } catch (const std::runtime_error &) {
-        return false;
+        return true;
     }
 
     // success
-    return true;
+    return false;
 }
 
 int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
@@ -253,7 +253,7 @@ int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return false;
+        return true;
     }
 
     try {
@@ -263,14 +263,14 @@ int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
             log_level = it->second;
         } else {
             spdlog::error("Unknown log level from pingweave.ini: {}", key);
-            return false;
+            return true;
         }
     } catch (const std::runtime_error &) {
-        return false;
+        return true;
     }
 
     // success
-    return true;
+    return false;
 }
 
 void delete_files_in_directory(const std::string &directoryPath) {
@@ -361,7 +361,7 @@ uint64_t convert_clock_to_ns(std::chrono::steady_clock::time_point val) {
     auto epoch_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                         val.time_since_epoch())
                         .count();
-    return static_cast<uint64_t>(epoch_ns);    
+    return static_cast<uint64_t>(epoch_ns);
 }
 
 // Get current time in 64-bit nanoseconds
@@ -393,8 +393,8 @@ std::string get_current_timestamp_system_str() {
     return std::string(time_buffer);
 }
 
-
-// Convert 64-bit nanoseconds timestamp to a human-readable string (only system clock)
+// Convert 64-bit nanoseconds timestamp to a human-readable string (only system
+// clock)
 std::string timestamp_ns_to_string(uint64_t timestamp_ns) {
     // Convert nanoseconds to seconds and nanoseconds part
     auto seconds = timestamp_ns / 1'000'000'000LL;
@@ -541,7 +541,7 @@ int message_to_http_server(std::string message, std::string controller_host,
     }
 
     if (send_message_to_http_server(controller_host, controller_port, message,
-                                req_api, logger)) {
+                                    req_api, logger)) {
         logger->error("Failed to post - api: {}, msg: {}.", req_api, message);
         return true;  // failed
     }

@@ -60,6 +60,10 @@ const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 // Consecutive failure counting
 const static int THRESHOLD_CONSECUTIVE_FAILURE = 5;
 
+// IPC (inter-process communication) - The size of message and number of slots
+const static int IPC_MESSAGE_SIZE = 2097152;  // 2MB
+const static int IPC_BUFFER_SIZE = 32;        // 32 messages
+
 // get pingweave/src directory
 inline std::string get_src_dir() {
 #ifndef SOURCE_DIR

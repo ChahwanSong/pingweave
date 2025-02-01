@@ -26,7 +26,7 @@ def main():
 
     for i in range(num_messages):
         # 전송할 메시지(UTF-8 인코딩)
-        msg_text = f"Hello {i}"
+        msg_text = f"Hello {i}" * 1000
         msg_bytes = msg_text.encode("utf-8")
 
         # 전송 직전 시간 기록
@@ -37,7 +37,7 @@ def main():
         #  - 그러나 "proxy" 환경에서 ROUTER는 클라이언트 ID를 별도 프레임으로 유지해준다.
         #  - 관례상, "빈 프레임" + "메시지" 형태로 보내면,
         #    서버의 워커에서 [클라이언트ID, 빈프레임, 메시지] 로 받게 된다.
-        socket.send_multipart([b"", msg_bytes])
+        socket.send_multipart([b"HELLO", msg_bytes])
         print(f"[Client] Sent: {msg_text}")
 
         # 응답 대기 (5초 타임아웃)

@@ -13,8 +13,8 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
     const std::string server_logname = protocol + "_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
-    if (get_log_config_from_ini(log_level_server,
-                                "logger_cpp_process_tcp_server")) {
+    if (!get_log_config_from_ini(log_level_server,
+                                 "logger_cpp_process_tcp_server")) {
         server_logger =
             initialize_logger(server_logname, DIR_LOG_PATH, log_level_server,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
@@ -41,12 +41,12 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
     sockaddr_in newSocketInfo;
     socklen_t newSocketInfoLength = sizeof(newSocketInfo);
     int newSockfd;
-    
+
     while (true) {
         server_logger->debug("Waiting a new TCP connection...");
         newSockfd = accept(*ctx_server.sock, (sockaddr*)&newSocketInfo,
                            &newSocketInfoLength);
-        
+
         std::thread t(receive_tcp_message, newSockfd, server_logger);
         t.detach();
     }
