@@ -55,7 +55,8 @@ typedef moodycamel::BlockingReaderWriterQueue<struct tcpudp_result_msg_t>
     TcpUdpClientQueue;
 typedef moodycamel::BlockingReaderWriterQueue<struct rdma_result_msg_t>
     RdmaClientQueue;
-typedef moodycamel::ReaderWriterQueue<union rdma_pingmsg_t> RdmaServerQueue;
+typedef moodycamel::BlockingReaderWriterQueue<union rdma_pingmsg_t>
+    RdmaServerQueue;
 
 std::set<std::string> get_all_local_ips();
 int get_my_addr_from_pinglist(const std::string &pinglist_filename,

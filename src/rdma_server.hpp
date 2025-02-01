@@ -37,6 +37,7 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
 
                 wc.opcode = ibv_wc_read_opcode(ctx_rx->cq_s.cq_ex);
                 wc.wr_id = ctx_rx->cq_s.cq_ex->wr_id;
+                cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
 
                 if (wc.opcode == IBV_WC_RECV) {
                     logger->debug("[CQE] RECV (wr_id: {})", wc.wr_id);
@@ -45,8 +46,6 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     auto buf = ctx_rx->buf[wc.wr_id];
                     std::memcpy(&ping_msg, buf.addr + GRH_SIZE,
                                 sizeof(rdma_pingmsg_t));
-                    cqe_time = ibv_wc_read_completion_ts(ctx_rx->cq_s.cq_ex);
-
                     ping_msg.x.time = cqe_time;
 
                     // Parse GRH header (for debugging)
@@ -214,116 +213,141 @@ int server_process_pong_cqe(struct rdma_context* ctx_tx,
     return false;
 }
 
-void process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
-                    std::shared_ptr<spdlog::logger> logger) {
-    struct ibv_wc wc = {};
+void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
+                           std::shared_ptr<spdlog::logger> logger) {
     uint64_t cqe_time = 0;
+    struct ibv_wc wc = {};
     int ret = 0;
+    int num_cqes = 0;
 
-    /**
-     * IMPORTANT: Use non-blocking polling.
-     * Otherwise, scheduling the next PONG to send will be blocked.
-     */
-    if (ctx_tx->rnic_hw_ts) {
-        // Use extended CQ polling for hardware timestamping
-        struct ibv_poll_cq_attr attr = {};
-        ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
-        bool has_events = false;
+    try {
+        if (ctx_tx->rnic_hw_ts) {
+            // Use extended CQ polling for hardware timestamping
+            struct ibv_poll_cq_attr attr = {};
+            bool has_events = false;
+            ret = ibv_start_poll(ctx_tx->cq_s.cq_ex, &attr);
 
-        while (!ret) {
-            has_events = true;
+            while (!ret) {
+                ++num_cqes;
+                logger->trace("CQ Event loop {}", num_cqes);
+                has_events = true;
 
-            // Extract WC information
-            wc.status = ctx_tx->cq_s.cq_ex->status;
-            wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
-            wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
-            cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
+                // Extract WC information
+                wc.status = ctx_tx->cq_s.cq_ex->status;
 
-            // if failure
-            if (wc.status != IBV_WC_SUCCESS) {
-                logger->error("CQE TX error: {}", ibv_wc_status_str(wc.status));
-                ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
-                continue;
-            }
-
-            if (wc.opcode == IBV_WC_SEND) {
-                // PONG ACK's CQE -> ignore
-                if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
-                    logger->debug("[CQE] CQE of ACK. cqe_time: {}. Do nothing.",
-                                  cqe_time);
+                // if failure
+                if (wc.status != IBV_WC_SUCCESS) {
+                    logger->error("CQE TX error: {}",
+                                  ibv_wc_status_str(wc.status));
                     ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
                     continue;
                 }
 
-                // PONG's CQE ('wr_id' is 'pingid')
-                if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
-                                            logger)) {
-                    throw std::runtime_error(
-                        "tx cqe - Failed to process PONG CQE");
+                wc.opcode = ibv_wc_read_opcode(ctx_tx->cq_s.cq_ex);
+                wc.wr_id = ctx_tx->cq_s.cq_ex->wr_id;
+                cqe_time = ibv_wc_read_completion_ts(ctx_tx->cq_s.cq_ex);
+
+                if (wc.opcode == IBV_WC_SEND) {
+                    logger->debug("[CQE] SEND (wr_id: {})", wc.wr_id);
+
+                    // PONG ACK's CQE -> ignore
+                    if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
+                        logger->debug("[CQE] CQE of PONG ACK. cqe_time: {}.",
+                                      cqe_time);
+                        ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
+                        continue;
+                    }
+
+                    // PONG's CQE ('wr_id' is the 'pingid')
+                    if (server_process_pong_cqe(ctx_tx, wc, cqe_time,
+                                                ping_table, logger)) {
+                        throw std::runtime_error(
+                            "tx cqe - Failed to process PONG CQE");
+                    }
+
+                } else {
+                    logger->error("Unexpected opcode: {}",
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("tx cqe - Unexpected opcode");
                 }
 
+                // Poll next event
+                ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
+            }
+
+            if (has_events) {
+                ibv_end_poll(ctx_tx->cq_s.cq_ex);
             } else {
-                logger->error("Unexpected opcode: {}",
-                              static_cast<int>(wc.opcode));
-                throw std::runtime_error("tx cqe - Unexpected opcode");
+                logger->error("TX: CQE poll receives nothing");
+                throw std::runtime_error("tx cqe - Failed during CQ polling");
+                // std::this_thread::sleep_for(
+                //     std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
+                // return;
             }
-
-            // Poll next event
-            ret = ibv_next_poll(ctx_tx->cq_s.cq_ex);
-        }
-        if (has_events) {
-            ibv_end_poll(ctx_tx->cq_s.cq_ex);
         } else {
-            // nothing to poll. add a small jittering.
-            std::this_thread::sleep_for(
-                std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
-            return;
-        }
-    } else {
-        struct ibv_wc wc_array[BATCH_CQE];
-        int num_cqes = ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
+            struct ibv_wc wc_array[BATCH_CQE];
+            num_cqes = ibv_poll_cq(pingweave_cq(ctx_tx), BATCH_CQE, wc_array);
 
-        if (num_cqes < 0) {
-            logger->error("Failed to poll CQ");
-            throw std::runtime_error("tx cqe - Failed to poll CQ");
-        } else if (num_cqes == 0) {  // no completion
-            std::this_thread::sleep_for(
-                std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
-            return;
-        }
-
-        for (int i = 0; i < num_cqes; ++i) {
-            struct ibv_wc& wc = wc_array[i];
-
-            // if failure
-            if (wc.status != IBV_WC_SUCCESS) {
-                logger->error("CQE TX error: {}", ibv_wc_status_str(wc.status));
-                continue;
+            if (num_cqes < 0) {
+                logger->error("TX: Failed to poll CQ");
+                throw std::runtime_error("tx cqe - Failed to poll CQ");
+            } else if (num_cqes == 0) {  // no completion
+                logger->error("TX: CQE poll receives nothing");
+                throw std::runtime_error("tx cqe - Failed during CQ polling");
+                // std::this_thread::sleep_for(
+                //     std::chrono::microseconds(SMALL_JITTERING_MICROSEC));
+                // return;
             }
 
-            if (wc.opcode == IBV_WC_SEND) {
-                // get CQE time
-                cqe_time = get_current_timestamp_steady_ns();
+            for (int i = 0; i < num_cqes; ++i) {
+                struct ibv_wc& wc = wc_array[i];
 
-                // PONG ACK's CQE -> ignore
-                if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
-                    logger->debug("[CQE] CQE of ACK. Do nothing.");
+                // if failure
+                if (wc.status != IBV_WC_SUCCESS) {
+                    logger->error("CQE TX error: {}",
+                                  ibv_wc_status_str(wc.status));
                     continue;
                 }
 
-                // PONG's CQE ('wr_id' is 'pingid')
-                if (server_process_pong_cqe(ctx_tx, wc, cqe_time, ping_table,
-                                            logger)) {
-                    throw std::runtime_error(
-                        "tx cqe - Failed to process PONG CQE");
-                }
+                if (wc.opcode == IBV_WC_SEND) {
+                    logger->debug("[CQE] SEND (wr_id: {})", wc.wr_id);
 
-            } else {
-                logger->error("Unexpected opcode: {}",
-                              static_cast<int>(wc.opcode));
-                throw std::runtime_error("tx cqe - Unexpected opcode");
+                    // get CQE time
+                    cqe_time = get_current_timestamp_steady_ns();
+
+                    // PONG ACK's CQE -> ignore
+                    if (wc.wr_id == PINGWEAVE_WRID_PONG_ACK) {
+                        logger->debug("[CQE] CQE of PONG ACK. Do nothing.");
+                        continue;
+                    }
+
+                    // PONG's CQE ('wr_id' is 'pingid')
+                    if (server_process_pong_cqe(ctx_tx, wc, cqe_time,
+                                                ping_table, logger)) {
+                        throw std::runtime_error(
+                            "tx cqe - Failed to process PONG CQE");
+                    }
+
+                } else {
+                    logger->error("Unexpected opcode: {}",
+                                  static_cast<int>(wc.opcode));
+                    throw std::runtime_error("tx cqe - Unexpected opcode");
+                }
             }
         }
+
+        // Acknowledge the CQ event
+        ibv_ack_cq_events(pingweave_cq(ctx_tx), num_cqes);
+
+        // Re-register for CQ event notifications
+        if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
+            logger->error("Couldn't register CQE notification");
+            throw std::runtime_error(
+                "tx cqe - Failed to post cqe request notification.");
+        }
+    } catch (const std::exception& e) {
+        logger->error("TX CQE handler exits unexpectedly: {}", e.what());
+        throw;  // Propagate exception
     }
 }
 
@@ -368,6 +392,36 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     }
 }
 
+void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
+                               PingMsgMap* ping_table,
+                               std::shared_ptr<spdlog::logger> logger) {
+    // TX cQE thread loop - handle messages
+    logger->info("Running TX CQE thread (Thread ID: {})...", get_thread_id());
+
+    /** IMPORTANT: Use event-driven polling to reduce CPU overhead */
+    // Register for CQ event notifications
+    if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
+        logger->error("Couldn't register CQE notification");
+        throw std::runtime_error(
+            "tx thread -  Couldn't register CQE notification");
+    }
+
+    try {
+        while (true) {
+            // Wait for the next CQE
+            if (wait_for_cq_event(ctx_tx, logger)) {
+                throw std::runtime_error(
+                    "tx thread -  Failed during CQ event waiting");
+            }
+            // Process TX CQEs
+            server_process_tx_cqe(ctx_tx, ping_table, logger);
+        }
+    } catch (const std::exception& e) {
+        logger->error("Exception in TX CQE thread: {}", e.what());
+        throw;  // Propagate exception
+    }
+}
+
 void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                            RdmaServerQueue* server_queue,
                            PingMsgMap* ping_table,
@@ -386,7 +440,9 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
     try {
         while (true) {
             // Receive and process PING message from internal queue
-            if (server_queue->try_dequeue(ping_msg)) {
+            if (server_queue->wait_dequeue_timed(
+                    ping_msg,
+                    std::chrono::milliseconds(WAIT_DEQUEUE_TIME_MS))) {
                 logger->debug(
                     "Internal queue received a ping_msg - pingid: {}, qpn: "
                     "{}, gid: {}, lid: {}, ping arrival cqe_time: {}",
@@ -425,10 +481,6 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                         "tx thread - SEND PONG post failed");
                 }
             }
-
-            /** NOTE: Server's TX loop must be non-blocking. */
-            // Process TX CQEs
-            process_tx_cqe(ctx_tx, ping_table, logger);
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
@@ -443,7 +495,7 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
     if (!get_log_config_from_ini(log_level_server,
-                                "logger_cpp_process_rdma_server")) {
+                                 "logger_cpp_process_rdma_server")) {
         server_logger =
             initialize_logger(server_logname, DIR_LOG_PATH, log_level_server,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
@@ -476,6 +528,10 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
     std::thread rx_thread(rdma_server_rx_thread, &ctx_rx, ipv4, &server_queue,
                           server_logger);
 
+    // Start TX CQE thread
+    std::thread tx_cqe_thread(rdma_server_tx_cqe_thread, &ctx_tx, &ping_table,
+                              server_logger);
+
     // Start TX thread
     std::thread tx_thread(rdma_server_tx_thread, &ctx_tx, ipv4, &server_queue,
                           &ping_table, server_logger);
@@ -483,6 +539,10 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
     // termination
     if (rx_thread.joinable()) {
         rx_thread.join();
+    }
+
+    if (tx_cqe_thread.joinable()) {
+        tx_cqe_thread.join();
     }
 
     if (tx_thread.joinable()) {

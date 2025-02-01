@@ -485,7 +485,7 @@ void rdma_client_result_thread(const std::string& ipv4,
     /** RESULT: (dstip, #success, #failure, mean, max, p50, p95, p99) */
     try {
         while (true) {
-            // fully-blocking with timeout (default: 10 milliseconds)
+            // fully-blocking with timeout
             if (client_queue->wait_dequeue_timed(
                     result_msg,
                     std::chrono::milliseconds(WAIT_DEQUEUE_TIME_MS))) {
@@ -549,14 +549,6 @@ void rdma_client_result_thread(const std::string& ipv4,
 
                 // result sending to agent_sender
                 ipc_producer.writeMessage(agg_result);
-
-#if (0)
-                // send to collector (with http)
-                std::thread t(message_to_http_server, agg_result,
-                              controller_host, controller_port,
-                              "/result_" + protocol, logger);
-                t.detach();
-#endif
 
                 // clear the history
                 dstip2result.clear();

@@ -155,7 +155,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
                         reply_frames = zmq_socket.recv_multipart(zmq.NOBLOCK)
                         reply_server = reply_frames[0].decode("utf-8", errors="replace")
                         reply_text = reply_frames[-1].decode("utf-8", errors="replace")
-                        logger.info(f"ZMQ Response from {reply_server}: {reply_text}")
+                        logger.debug(f"ZMQ Response from {reply_server}: {reply_text}")
                     else:
                         # ZMQ timeout
                         logger.warning("ZMQ Timed out waiting for reply")
@@ -199,8 +199,8 @@ def thread_process_messages(protocol, ipv4, stop_event):
                         logger.error(f"Unknown protocol: {ipv4}:{protocol}. Exit.")
                         return
 
-                    logger.info(
-                        f"[{protocol}:{ipv4}] Latency to report: {send_latency}"
+                    logger.debug(
+                        f"[{protocol}:{ipv4}] Latency to report: {send_latency} us"
                     )
 
             else:
