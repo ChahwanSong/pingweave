@@ -218,8 +218,7 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                         wc.wr_id, cqe_time);
                     if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
                         logger->warn(
-                            "Failed to update send completion time for ping ID "
-                            "{}.",
+                            "Failed to update send completion time for ping ID {}.",
                             wc.wr_id);
                     }
                 } else {

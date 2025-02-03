@@ -318,7 +318,7 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
         std::string actual_ip = std::string(local_ip);
         if (actual_ip != src_ip) {  // logging
             logger->warn(
-                "The target src IP and actual IP used is different: {}, {}",
+                "Target srcIP is different with the actually used IP: {} vs {}",
                 src_ip, actual_ip);
         }
 
@@ -341,23 +341,6 @@ int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger) {
         logger->warn("Failed to accept a new TCP connection.");
         return true;
     }
-
-    // // Instead of waiting FIN, use a timeout.
-    // // This is to avoid indefinite waiting and resource starvation.
-    // std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    // // Wait the server-side FIN packet
-    // char buffer[64];
-    // ssize_t bytes_received;
-    // while ((bytes_received = recv(sockfd, buffer, 64, 0)) > 0) {
-    //     // In this scenario, the server does not send any data
-    //     // So, this loop should exit when read returns 0 (connection closed)
-    // }
-    // if (bytes_received == 0) {
-    //     logger->debug("Connection closed by server (FIN received)");
-    // } else if (bytes_received < 0) {
-    //     logger->error("recv loop failed");
-    // }
 
     /* server makes passive-close (i.e., after FIN from client) */
     close(sockfd);
