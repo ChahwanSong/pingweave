@@ -16,15 +16,16 @@ print_help() {
     echo ""
     echo "Options:"
     echo "  -h, --help       Show this help message and exit"
-    echo "  -c               Install Python requirements from requirements.txt"
     echo "  -d               Stop and remove pingweave.service"
+    echo "  -c               Controller installation"
     echo "  -p               Copy pip.conf to ~/.pip"
     echo ""
     echo "If no options are provided, the script will perform the following steps:"
-    echo "  1. Check system prerequisites (systemd and Python >= 3.6)."
-    echo "  2. Verify RDMA Core installation and install it if necessary."
-    echo "  3. Navigate to the source directory, clean up, and build the project using make."
-    echo "  4. Install and start the pingweave service."
+    echo "  1. Check system prerequisites (systemd and Python >= 3.6), NTP, systemd, etc."
+    echo "  2. Install python packages in /scripts/requirements_*.txt."
+    echo "  3. Verify RDMA Core installation and install it if necessary."
+    echo "  4. Navigate to the source directory, clean up, and build the project using make."
+    echo "  5. Install and start the pingweave service."
 }
 
 # Report selected option or lack of options
@@ -82,8 +83,6 @@ cecho "GREEN" "Systemd is running."
 
 # (2) chronyd (NTP) systemd
 CHRONYD_SERVICE="chronyd.service"
-
-# 상태 확인
 cecho "YELLOW" "Checking if $CHRONYD_SERVICE (NTP) is running..."
 if systemctl is-active --quiet "$CHRONYD_SERVICE"; then
     cecho "GREEN" "$CHRONYD_SERVICE is already running. Just restart it."
@@ -122,17 +121,25 @@ fi
 VERSION_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
 VERSION_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
 
-if [[ $VERSION_MAJOR -ne 3 || $VERSION_MINOR -lt 6 ]]; then
-    cecho "RED" "Error: Python version is less than 3.6. Found: $PYTHON_VERSION"
-    exit 1
+if [[ " $@ " == *" -c "* ]]; then
+    if [[ $VERSION_MAJOR -ne 3 || $VERSION_MINOR -lt 7 ]]; then
+        cecho "RED" "Error: Controller's python version is less than 3.7. Found: $PYTHON_VERSION"
+        exit 1
+    else
+        cecho "GREEN" "Python version is 3.7 or higher: $PYTHON_VERSION"
+    fi
 else
-    cecho "GREEN" "Python version is 3.6 or higher: $PYTHON_VERSION"
+    if [[ $VERSION_MAJOR -ne 3 || $VERSION_MINOR -lt 6 ]]; then
+        cecho "RED" "Error: Agent's python version is less than 3.6. Found: $PYTHON_VERSION"
+        exit 1
+    else
+        cecho "GREEN" "Python version is 3.6 or higher: $PYTHON_VERSION"
+    fi
 fi
 
 
 ######### python package installation ########
-
-if [[ "$1" == "-c" ]]; then
+if [[ " $@ " == *" -c "* ]]; then
     # controller
     REQUIREMENTS_TXT="requirements_controller.txt"
 else

@@ -9,10 +9,7 @@ GCC_VERSION := $(shell $(CXX) -dumpversion | cut -f1 -d.)
 # 공통 컴파일러 플래그
 CXXFLAGS = -std=c++17 -I ../libs -I /usr/include/yaml-cpp -O2 -pthread -DSOURCE_DIR=\"$(SOURCE_DIR)\"
 
-LDFLAGS = -libverbs -lpthread
-
-# 공통 라이브러리
-LDLIBS =
+LDFLAGS = -libverbs -lpthread -lrt
 
 # 출력 파일 디렉토리
 BIN_DIR = ../bin
