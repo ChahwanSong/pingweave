@@ -1,6 +1,6 @@
 import logging
 import ctypes
-from macro import IPC_MESSAGE_SIZE, IPC_BUFFER_SIZE
+from macro import IPC_MESSAGE_SIZE, IPC_BUFFER_SIZE, SHMEM_DIR
 
 import mmap
 import os
@@ -19,11 +19,11 @@ class SharedData(ctypes.Structure):
 class ConsumerQueue:
     def __init__(self, prefix: str, shm_name: str):
         """
-        Initialize and map the existing shared memory (file in /dev/shm, for example).
+        Initialize and map the existing shared memory (file in SHMEM_DIR, for example).
         """
         self.prefix = prefix
         self.shm_name = shm_name
-        self.file_path = f"/dev/shm/{self.prefix}_{self.shm_name}"
+        self.file_path = f"{SHMEM_DIR}/{self.prefix}_{self.shm_name}"
         self.mapfile = None
         self.shared_data = None
 
@@ -52,7 +52,7 @@ class ConsumerQueue:
     def load_memory(self):
         """
         Maps the shared memory file. This must match the producer's file path.
-        Producer가 동일한 /dev/shm/<prefix>_<shm_name> 파일을 생성해둬야 함.
+        Producer가 동일한 SHMEM_DIR/<prefix>_<shm_name> 파일을 생성해둬야 함.
         """
         if not os.path.exists(self.file_path):
             logging.error(
@@ -117,6 +117,11 @@ class ConsumerQueue:
                 logging.warning(f"Shared memory close issue: {e}")
             self.mapfile = None
             self.shared_data = None
+
+
+###########################################################################
+### For python >= 3.8, it supports a simple shared_memory implementation
+###########################################################################
 
 # from multiprocessing import shared_memory, resource_tracker
 # class ConsumerQueue:

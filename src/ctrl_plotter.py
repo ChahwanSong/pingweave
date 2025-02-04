@@ -735,7 +735,6 @@ async def pingweave_plotter() -> None:
                     # Step 5: Cleanup stale HTML/SUMMARY files
                     clear_directory_conditional(HTML_DIR, new_file_list, "html")
                     clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
-                    print("CLEAR")
                     elapsed_time = time.time() - now_plot_time
                     logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds")
                 else:
