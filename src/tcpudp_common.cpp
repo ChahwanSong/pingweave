@@ -4,12 +4,30 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
              const uint16_t &port, std::shared_ptr<spdlog::logger> logger) {
     ctx->ipv4 = ipv4;
 
+    // get the polling parameter
+    get_int_param_from_ini(ctx->poll_interval_us,
+                           "interval_poll_event_udp_microsec");
+
     // create socket
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         logger->error("Failed to create UDP socket");
         return true;
     }
+
+    // (optional) non-blocking I/O
+    if (ctx->poll_interval_us > 0) {
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags == -1) {
+            logger->error("make_ctx: socket fcntl(F_GETFL) failed");
+            return true;
+        }
+        if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+            logger->error("make_ctx: socket fcntl(F_SETFL) failed");
+            return true;
+        }
+    }
+
     ctx->sock = udp_socket(new int(fd));
 
     // bind socket
@@ -91,6 +109,7 @@ int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
     auto sent =
         sendto(*ctx_tx->sock, msg.raw, sizeof(tcpudp_pingmsg_t), 0,
                reinterpret_cast<struct sockaddr *>(&dest), sizeof(dest));
+
     if (sent < 0) {
         logger->error("Failed to send msg {} to {}", msg.x.pingid, dst_ip);
         return true;
@@ -108,7 +127,7 @@ int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
 }
 
 int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
-                        std::string &sender,
+                        std::string &sender, uint64_t &steady_ts,
                         std::shared_ptr<spdlog::logger> logger) {
     // clear a buffer
     memset(ctx_rx->buffer, 0, sizeof(tcpudp_pingmsg_t));
@@ -117,9 +136,36 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
     // receive message
     sockaddr_in sender_addr{};
     socklen_t addr_len = sizeof(sender_addr);
-    auto received =
-        recvfrom(*ctx_rx->sock, ctx_rx->buffer, sizeof(tcpudp_pingmsg_t), 0,
-                 reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
+    int received = -1;
+
+    if (ctx_rx->poll_interval_us > 0) {
+        // non-blocking
+        while (true) {
+            received = recvfrom(
+                *ctx_rx->sock, ctx_rx->buffer, sizeof(tcpudp_pingmsg_t), 0,
+                reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
+            if (received < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // retry after a short interval
+                    std::this_thread::sleep_for(
+                        std::chrono::microseconds(ctx_rx->poll_interval_us));
+                    continue;
+                } else {
+                    logger->error("recvfrom() failed: {}", strerror(errno));
+                    return true;
+                }
+            }
+            // successful, exit the loop
+            break;
+        }
+    } else {
+        received = recvfrom(
+            *ctx_rx->sock, ctx_rx->buffer, sizeof(tcpudp_pingmsg_t), 0,
+            reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
+    }
+
+    // get recv time
+    steady_ts = get_current_timestamp_steady_ns();
 
     // sanity check
     if (received < 0) {
@@ -147,6 +193,7 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
         logger->error("PingID must not be zero.");
         return true;
     }
+
     // memorize for PONG to sender
     pingid = ping_msg.x.pingid;
 

@@ -21,7 +21,7 @@ int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
                      std::shared_ptr<spdlog::logger> logger);
 
 int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
-                        std::string &sender_ip,
+                        std::string &sender_ip, uint64_t& steady_ts,
                         std::shared_ptr<spdlog::logger> logger);
 
 int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,

@@ -40,6 +40,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#include <fcntl.h>
 
 #include "format.hpp"
 #include "ini.hpp"

@@ -37,27 +37,14 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
         log_bound_address(*ctx_server.sock, server_logger);
     }
 
-    int consecutive_failures = 0;  // 연속 실패 횟수 추적
-
     while (true) {
         uint64_t pingid = 0;
+        uint64_t dummy_ts;
         std::string addr_msg_from;
-        if (receive_udp_message(&ctx_server, pingid, addr_msg_from,
+        if (receive_udp_message(&ctx_server, pingid, addr_msg_from, dummy_ts,
                                 server_logger)) {
             // receive_message 실패 시 처리
-            consecutive_failures++;
-            server_logger->warn("receive_message failed ({} times)",
-                                consecutive_failures);
-
-            // wait 1 second if 5 consecutive failures
-            if (consecutive_failures >= THRESHOLD_CONSECUTIVE_FAILURE) {
-                server_logger->error(
-                    "Too many ({}) consecutive receive failures. Sleep 1s.",
-                    consecutive_failures);
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                consecutive_failures = 0;
-            }
-
+            server_logger->warn("receive_message failed");
             continue;
         }
 

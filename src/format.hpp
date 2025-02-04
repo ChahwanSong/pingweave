@@ -82,6 +82,9 @@ struct udp_context {
     /* socket */
     udp_socket sock;
 
+    /* polling interval */
+    int poll_interval_us;
+
     /* buffer */
     char buffer[sizeof(tcpudp_pingmsg_t)];
 
