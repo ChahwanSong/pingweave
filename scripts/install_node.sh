@@ -149,6 +149,17 @@ fi
 
 cecho "YELLOW" "Installing Python requirements from $REQUIREMENTS_TXT..."
 
+
+if python3 -c "import pip" &>/dev/null; then
+    cecho "GREEN" "python3 pip module is already installed."
+else
+    cecho "YELLOW" "pip module is not installed. Install python3-pip package..."
+    if ! sudo dnf install -y python3-pip; then
+        cecho "RED" "Error: Failed to install python3-pip package."
+        exit 1
+    fi
+fi
+
 REQUIREMENTS_FILE="$SCRIPT_DIR/$REQUIREMENTS_TXT"
 if [[ -f "$REQUIREMENTS_FILE" ]]; then
     python3 -m pip install -r "$REQUIREMENTS_FILE" || {

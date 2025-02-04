@@ -559,6 +559,11 @@ def plot_heatmap(
     Creates multiple heatmaps based on the given plot_type (tcpudp or rdma).
     Returns a list of output HTML file names (without path).
     """
+
+    # if no ip list in pinglist.yaml, return the empty list
+    if not data:
+        return []
+    
     records = [prepare_record(k, v, plot_type) for k, v in data.items()]
     output_files = []
 
@@ -619,6 +624,7 @@ async def pingweave_plotter() -> None:
     load_config_ini()
     last_plot_time = int(time.time())
     pinglist_protocol = ["udp", "tcp", "roce", "ib"]
+    new_file_list = []
 
     try:
         while True:
@@ -641,6 +647,10 @@ async def pingweave_plotter() -> None:
 
                     for proto, cat_data in pinglist_in_memory.items():
                         for group, ip_list in cat_data.items():
+                            # if empty list, ignore
+                            if not ip_list:
+                                break 
+                            
                             # Make a template for each possible src-dst combination
                             records[proto][group] = {
                                 f"{src},{dst}": None
@@ -703,7 +713,7 @@ async def pingweave_plotter() -> None:
                                             f"{record_key} is not in records[{proto}][{group}]"
                                         )
                                     records[proto][group][record_key] = value_splits
-
+                    
                     # Step 4: Generate plots (concurrently for each category and group)
                     new_file_list = []
                     with ThreadPoolExecutor() as executor:
@@ -721,11 +731,11 @@ async def pingweave_plotter() -> None:
 
                         for future in futures:
                             new_file_list.extend(future.result())
-
+                    
                     # Step 5: Cleanup stale HTML/SUMMARY files
                     clear_directory_conditional(HTML_DIR, new_file_list, "html")
                     clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
-
+                    print("CLEAR")
                     elapsed_time = time.time() - now_plot_time
                     logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds")
                 else:
@@ -738,6 +748,10 @@ async def pingweave_plotter() -> None:
                 logger.error(f"Plotter - IndexError occurred: {e}")
             except Exception as e:
                 logger.error(f"Plotter - Unhandled exception: {e}")
+            finally:
+                clear_directory_conditional(HTML_DIR, new_file_list, "html")
+                clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
+
 
     except KeyboardInterrupt:
         logger.info("pingweave_plotter received KeyboardInterrupt. Exiting.")
