@@ -158,16 +158,14 @@ int main(int argc, char** argv) {
     }
 
     // Main program logic based on arguments
+    std::string py_ctrl_path = get_src_dir() + "/" + "pingweave_agent.py";
+    start_process(
+        [&] {
+            execlp("python3", "python3", py_ctrl_path.c_str(),
+                    (char*)nullptr);
+        },
+        "py_agent");
     if (is_server) {
-        // run pingweave_ctrl.py
-        std::string py_ctrl_path = get_src_dir() + "/" + "pingweave_ctrl.py";
-        start_process(
-            [&] {
-                execlp("python3", "python3", py_ctrl_path.c_str(),
-                       (char*)nullptr);
-            },
-            "py_ctrl");
-
         if (use_roce) {
             std::cout << "Starting RoCEv2 server...\n";
             rdma_server(ipv4_address, "roce");
@@ -182,15 +180,6 @@ int main(int argc, char** argv) {
             tcp_server(ipv4_address, "tcp");
         }
     } else if (is_client) {
-        // run pingweave_agent.py
-        std::string py_agent_path = get_src_dir() + "/" + "pingweave_agent.py";
-        start_process(
-            [&] {
-                execlp("python3", "python3", py_agent_path.c_str(),
-                       (char*)nullptr);
-            },
-            "py_agent");
-
         if (use_roce) {
             std::cout << "Starting RoCEv2 client...\n";
             rdma_client(ipv4_address, "roce");
