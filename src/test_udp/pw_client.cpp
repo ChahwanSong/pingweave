@@ -93,6 +93,8 @@ void udp_client_result_thread(TcpUdpClientQueue* client_queue,
                               timestamp_ns_to_string(result_msg.time_ping_send),
                               uint2ip(result_msg.dstip), result_msg.pingid,
                               result_msg.network_delay, result_msg.result);
+            } else {
+                continue;
             }
 
             auto rtt_ms = result_msg.network_delay / 1000000.0;
