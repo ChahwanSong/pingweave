@@ -102,11 +102,11 @@ void udp_client_result_thread(TcpUdpClientQueue* client_queue,
             max_rtt = max_rtt > rtt_ms ? max_rtt : rtt_ms;
 
             if (rtt_ms >= 1) {
-                spdlog::info("RTT: {} ms", rtt_ms);
+                spdlog::warn("RTT: {} ms", rtt_ms);
             }
 
             if (n % (1000 / ping_interval_ms) == 0 && n > 0) {
-                spdlog::critical("Max RTT: {} ms over {} trials...", max_rtt,
+                spdlog::info("Max RTT: {} ms over {} trials...", max_rtt,
                                  n);
                 max_rtt = 0;
                 n = 0;
