@@ -50,7 +50,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
     }
 }
 
-void udp_client_rx_thread(struct udp_context* ctx_rx, const std::string& ipv4,
+void udp_client_rx_thread(struct udp_context* ctx_rx,
                           TcpUdpPinginfoMap* ping_table,
                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
@@ -254,7 +254,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
                               &client_queue, result_logger);
 
     // Start the RX thread
-    std::thread rx_thread(udp_client_rx_thread, &ctx_rx, ipv4, &ping_table,
+    std::thread rx_thread(udp_client_rx_thread, &ctx_rx, &ping_table,
                           client_logger);
 
     // Start the TX thread
@@ -262,11 +262,15 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
                           client_logger);
 
     // termination
+    if (result_thread.joinable()) {
+        result_thread.join();
+    }
+
     if (tx_thread.joinable()) {
         tx_thread.join();
     }
 
-    if (result_thread.joinable()) {
-        result_thread.join();
+    if (rx_thread.joinable()) {
+        rx_thread.join();
     }
 }

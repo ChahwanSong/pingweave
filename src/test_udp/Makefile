@@ -3,7 +3,7 @@ SOURCE_DIR := $(shell realpath ../)
 
 CXX := g++
 CXXFLAGS := -std=c++17 -O2 -pthread -I $(SOURCE_DIR)/../libs -I $(SOURCE_DIR) -I /usr/include/yaml-cpp -DSOURCE_DIR=\"$(SOURCE_DIR)\"
-LDFLAGS := -libverbs -lpthread -lrt -lfmt
+LDFLAGS := -libverbs -lpthread -lrt
 
 # 공통 오브젝트 파일
 COMMON_OBJ := $(SOURCE_DIR)/common.o $(SOURCE_DIR)/tcpudp_common.o
