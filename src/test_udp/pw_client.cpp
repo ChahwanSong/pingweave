@@ -41,7 +41,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx,
             continue;
         }
 
-        usleep(ping_interval_ms);  // 0.001초마다 반복
+        usleep(ping_interval_ms * 1000);  // 0.001초마다 반복
     }
 }
 

@@ -10,20 +10,22 @@
 
 // ./server 10.200.200.3 7227
 
-
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        std::cout << "Usage: " << argv[0] << " <서버_IP> <서버_RX_PORT>\n" << std::endl;
+    if (argc != 4) {
+        std::cout << "Usage: " << argv[0]
+                  << " <서버_IP> <서버_RX_PORT> <클라이언트_RX_PORT>\n"
+                  << std::endl;
         return 1;
     }
     const char *server_ip = argv[1];
-    const int server_port = std::stoi(argv[2]);
+    const int server_rx_port = std::stoi(argv[2]);
+    const int client_rx_port = std::stoi(argv[3]);
 
-    spdlog::info("Start server on {}:{}", server_ip, server_port);
+    spdlog::info("Start server on {}:{}", server_ip, server_rx_port);
 
     // Initialize UDP context
     udp_context ctx_server;
-    if (make_ctx(&ctx_server, server_ip, server_port,
+    if (make_ctx(&ctx_server, server_ip, server_rx_port,
                  spdlog::default_logger())) {
         spdlog::error("Failed to create TX context for IP: {}", server_ip);
         throw std::runtime_error("Failed to create UDP context at server");
@@ -40,8 +42,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        if (send_udp_message(&ctx_server, addr_msg_from,
-                             PINGWEAVE_UDP_PORT_CLIENT, pingid,
+        if (send_udp_message(&ctx_server, addr_msg_from, client_rx_port, pingid,
                              spdlog::default_logger())) {
             // somethign wrong
             spdlog::warn("Failed to send response to {}", addr_msg_from);
