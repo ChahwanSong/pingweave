@@ -56,10 +56,9 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
 
 // Initialize TX/RX context for UDP
 int initialize_contexts(struct udp_context &ctx_tx, struct udp_context &ctx_rx,
-                        const std::string &ipv4,
+                        const std::string &ipv4, const uint16_t& rx_port,
                         std::shared_ptr<spdlog::logger> logger) {
     uint16_t tx_port = 0;
-    uint16_t rx_port = PINGWEAVE_UDP_PORT_CLIENT;
     if (make_ctx(&ctx_tx, ipv4, tx_port, logger)) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
         return true;
@@ -146,9 +145,9 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
                 reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
             if (received < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // retry after a short interval
-                    std::this_thread::sleep_for(
-                        std::chrono::microseconds(ctx_rx->poll_interval_us));
+                    // // retry after a short interval
+                    // std::this_thread::sleep_for(
+                    //     std::chrono::microseconds(ctx_rx->poll_interval_us));
                     continue;
                 } else {
                     logger->error("recvfrom() failed: {}", strerror(errno));

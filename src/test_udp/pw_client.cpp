@@ -12,11 +12,10 @@
 
 // ./client 10.200.200.3 10.200.200.2 7227
 
-#define PING_INTERVAL_US (1000)
-
 void udp_client_tx_thread(struct udp_context* ctx_tx,
                           const std::string& server_ip,
                           const uint64_t& server_port,
+                          const int& ping_interval_ms,
                           TcpUdpPinginfoMap* ping_table,
                           std::shared_ptr<spdlog::logger> logger) {
     logger->info("[TX] Running (Thread ID: {})...", get_thread_id());
@@ -42,7 +41,7 @@ void udp_client_tx_thread(struct udp_context* ctx_tx,
             continue;
         }
 
-        usleep(PING_INTERVAL_US);  // 0.001초마다 반복
+        usleep(ping_interval_ms);  // 0.001초마다 반복
     }
 }
 
@@ -75,6 +74,7 @@ void udp_client_rx_thread(struct udp_context* ctx_rx,
 }
 
 void udp_client_result_thread(TcpUdpClientQueue* client_queue,
+                              const int& ping_interval_ms,
                               std::shared_ptr<spdlog::logger> logger) {
     // msg from RX Thread
     struct tcpudp_result_msg_t result_msg;
@@ -103,12 +103,12 @@ void udp_client_result_thread(TcpUdpClientQueue* client_queue,
                 spdlog::info("RTT: {} ms", rtt_ms);
             }
 
-            if (n % (1000000/PING_INTERVAL_US) == 0 && n > 0) {
-                spdlog::info("Max RTT: {} ms over {} trials...", max_rtt, n);
+            if (n % (1000 / ping_interval_ms) == 0 && n > 0) {
+                spdlog::critical("Max RTT: {} ms over {} trials...", max_rtt,
+                                 n);
                 max_rtt = 0;
                 n = 0;
             }
-
         }
     } catch (const std::exception& e) {
         logger->error("Exception in result_thread: {}", e.what());
@@ -117,19 +117,22 @@ void udp_client_result_thread(TcpUdpClientQueue* client_queue,
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 4) {
+    if (argc != 6) {
         std::cerr << "Usage: " << argv[0]
-                  << " <서버_IP> <클라이언트_IP> <서버_PORT> \n";
+                  << " <서버_IP> <클라이언트_IP> <서버_RX_PORT> <클라이언트_RX_PORT> <핑 간격 "
+                     "milliseconds>\n";
         return 1;
     }
 
     const char* server_ip = argv[1];
     const char* client_ip = argv[2];
-    const int server_port = std::stoi(argv[3]);
+    const int server_rx_port = std::stoi(argv[3]);
+    const int client_rx_port = std::stoi(argv[4]);
+    const int ping_interval_ms = std::stoi(argv[5]);
 
     // Initialize UDP contexts
     udp_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, client_ip,
+    if (initialize_contexts(ctx_tx, ctx_rx, client_ip, client_rx_port,
                             spdlog::default_logger())) {
         throw std::runtime_error("Failed to initialize UDP contexts.");
     }
@@ -140,14 +143,15 @@ int main(int argc, char* argv[]) {
 
     // Start the RX thread
     std::thread result_thread(udp_client_result_thread, &client_queue,
-                              spdlog::default_logger());
+                              ping_interval_ms, spdlog::default_logger());
 
     std::thread rx_thread(udp_client_rx_thread, &ctx_rx, &ping_table,
                           spdlog::default_logger());
 
     // Start the TX thread
-    std::thread tx_thread(udp_client_tx_thread, &ctx_tx, server_ip, server_port,
-                          &ping_table, spdlog::default_logger());
+    std::thread tx_thread(udp_client_tx_thread, &ctx_tx, server_ip, server_rx_port,
+                          ping_interval_ms, &ping_table,
+                          spdlog::default_logger());
 
     // termination
     if (result_thread.joinable()) {
@@ -161,49 +165,4 @@ int main(int argc, char* argv[]) {
     if (rx_thread.joinable()) {
         rx_thread.join();
     }
-
-    // // simple version
-    // uint64_t pingid = 0;
-    // int n = 0;
-    // double max_rtt = 0;
-    // while (true) {
-    //     auto start_time = std::chrono::high_resolution_clock::now();
-
-    //     // send
-    //     if (send_udp_message(&ctx_tx, server_ip, server_port, ++pingid,
-    //                          spdlog::default_logger())) {
-    //         // somethign wrong
-    //         spdlog::warn("Failed to send response to {}", server_ip);
-    //         continue;
-    //     }
-
-    //     // recv
-    //     std::string sender;
-    //     uint64_t recv_time_steady;
-    //     if (receive_udp_message(&ctx_rx, pingid, sender, recv_time_steady,
-    //                             spdlog::default_logger())) {
-    //         // receive_message 실패 시 처리
-    //         spdlog::warn("receive_message failed");
-    //         continue;
-    //     }
-
-    //     auto end_time = std::chrono::high_resolution_clock::now();
-    //     std::chrono::duration<double, std::milli> rtt = end_time -
-    //     start_time;
-
-    //     n++;
-    //     max_rtt = max_rtt > rtt.count() ? max_rtt : rtt.count();
-
-    //     if (rtt.count() >= 1) {
-    //         spdlog::info("RTT: {} ms", rtt.count());
-    //     }
-
-    //     if (n % (1000000/PING_INTERVAL_US) == 0 && n > 0) {
-    //         spdlog::info("Max RTT: {} ms over {} trials...", max_rtt, n);
-    //         max_rtt = 0;
-    //         n = 0;
-    //     }
-
-    //     usleep(PING_INTERVAL_US);  // 0.001초마다 반복
-    // }
 }

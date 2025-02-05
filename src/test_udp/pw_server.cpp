@@ -12,9 +12,12 @@
 
 
 int main(int argc, char *argv[]) {
-    const char *server_ip = (argc > 1) ? argv[1] : "0.0.0.0";
-    const int server_port =
-        (argc > 2) ? std::stoi(argv[2]) : PINGWEAVE_UDP_PORT_CLIENT;
+    if (argc != 3) {
+        std::cout << "Usage: " << argv[0] << " <서버_IP> <서버_RX_PORT>\n" << std::endl;
+        return 1;
+    }
+    const char *server_ip = argv[1];
+    const int server_port = std::stoi(argv[2]);
 
     spdlog::info("Start server on {}:{}", server_ip, server_port);
 

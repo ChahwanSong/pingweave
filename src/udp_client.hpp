@@ -243,7 +243,8 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
 
     // Initialize UDP contexts
     udp_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, client_logger)) {
+    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, PINGWEAVE_UDP_PORT_CLIENT,
+                            client_logger)) {
         throw std::runtime_error("Failed to initialize UDP contexts.");
     }
 

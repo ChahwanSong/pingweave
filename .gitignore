@@ -5,4 +5,5 @@ result
 download
 upload
 !redis/redis.tar.gz
+src/**/*.o
 src/__pycache__
