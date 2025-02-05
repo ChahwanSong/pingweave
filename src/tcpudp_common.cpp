@@ -145,9 +145,9 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
                 reinterpret_cast<struct sockaddr *>(&sender_addr), &addr_len);
             if (received < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // // retry after a short interval
-                    // std::this_thread::sleep_for(
-                    //     std::chrono::microseconds(ctx_rx->poll_interval_us));
+                    // retry after a short interval
+                    std::this_thread::sleep_for(
+                        std::chrono::microseconds(ctx_rx->poll_interval_us));
                     continue;
                 } else {
                     logger->error("recvfrom() failed: {}", strerror(errno));
