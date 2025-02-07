@@ -283,7 +283,7 @@ def delete_files_in_directory(directory_path, logger):
         else:
             try:
                 os.remove(file_path)
-                logger.debug("Deleted file: {}".format(file_path))
+                logger.info("Deleted file: {}".format(file_path))
             except Exception as e:
                 logger.error(
                     "Failed to remove file: {}. Error: {}".format(file_path, e)
@@ -314,7 +314,7 @@ def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
                         if ip in local_ips:
                             records[protocol].add(ip)
         else:
-            logger.error(f"Pinglist file not found at {pinglist_path}")
+            logger.warning(f"Pinglist file not found at {pinglist_path}. Use empty pinglist.")
         
         return records
     except Exception as e:

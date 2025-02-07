@@ -5,7 +5,7 @@ from macro import *
 
 # Create the logs directory if it doesn't exist
 logging_level = logging.INFO
-console_level = logging.INFO
+console_level = logging.WARNING
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)

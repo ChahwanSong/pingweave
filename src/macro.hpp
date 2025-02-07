@@ -30,8 +30,8 @@ const static int TX_DEPTH = 1;       // rdma
 const static int RX_DEPTH = 1;       // rdma
 const static int SERVICE_LEVEL = 0;  // by default 0 (lowest priority)
 const static int BATCH_CQE = 16;     // batch size for ibv_poll_cq()
-const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 const static int SMALL_JITTERING_MICROSEC = 10;  // in event polling for cqe
+const static uint32_t PINGWEAVE_REMOTE_QKEY = 0x72276001;  // remote qkey
 
 // Params for internal message queue btw threads
 const static int MSG_QUEUE_SIZE = (1 << 16);  // large enough

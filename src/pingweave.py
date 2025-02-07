@@ -96,9 +96,7 @@ def main():
                 # successfully load the pinglist.yaml
                 pinglist_yaml_load_retry_cntr = 0 # reset
                 for protocol, ip_list in myaddr.items():
-                    logger.debug(
-                        "Size of {} in pinglist.yaml: {}", protocol, len(ip_list)
-                    )
+                    logger.debug(f"In pinglist.yaml: {protocol} - {ip_list}" )
             else:
                 # failed to load the pinglist.yaml
                 if (
@@ -106,13 +104,15 @@ def main():
                     and pinglist_yaml_load_retry_cntr < 10
                 ):
                     logger.warning(
-                        "Loading a pinglist is failed. Retry count: {}/10",
-                        pinglist_yaml_load_retry_cntr,
+                        f"Failed to load pinglist - Retry count: {pinglist_yaml_load_retry_cntr}/10"
                     )
+                    pinglist_yaml_load_retry_cntr += 1
                     time.sleep(1)
                     continue
+                else:
+                    logger.wawrning(f"Failed to load a pinglist. Use empty pinglist.")
             
-            
+
             # 3) terminate processes which are no more in pinglist
             key_to_pop = []
             msgs_to_send = []

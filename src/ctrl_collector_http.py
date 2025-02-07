@@ -61,25 +61,25 @@ async def process_result_post(request: web.Request, protocol: str) -> web.Respon
 
                 # To avoid showing old data in redis, we catch the out-of-order POSTs
                 # by comparing the 'ts_end' and ignore the old arrivals.
-                prev_ts_end_raw = redis_server.get(key)
-                if prev_ts_end_raw:
-                    prev_ts_end = datetime.strptime(
-                        prev_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
+                curr_ts_end_raw = redis_server.get(key)
+                if curr_ts_end_raw:
+                    curr_ts_end = datetime.strptime(
+                        curr_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
                     )
                 else:
                     # no data
-                    prev_ts_end = datetime.min
+                    curr_ts_end = datetime.min
 
                 # compare with new post time
                 new_ts_end = datetime.strptime(data[3][:26], "%Y-%m-%d %H:%M:%S.%f")
-                if prev_ts_end < new_ts_end:
+                if curr_ts_end < new_ts_end:
                     try:
                         redis_server.set(key, value)
                     except redis.exceptions.ConnectionError:
                         logger.error("Redis server is down!")
                 else:
                     logger.info(
-                        f"{key} - out-of-order result arrival (prev: {prev_ts_end}, new: {new_ts_end})"
+                        f"{key} - out-of-order result arrival (prev: {curr_ts_end}, new: {new_ts_end})"
                     )
 
                 # TODO: Anyway, we keep all the data in database.

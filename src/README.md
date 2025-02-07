@@ -49,7 +49,8 @@
     - modulo 2^32 로 해결 
 - Memory leak issue (OOM)
     - RDMA 의 address_header를 destroy 해야 함. FIX 완료.
-
+- Long tail latency - recv() 가 느린 이슈 (tens of milliseconds)
+    - 
 
 
 ## Overhead

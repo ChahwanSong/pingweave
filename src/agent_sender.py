@@ -82,7 +82,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
                     timeout_ms = 3000
                     socks = dict(poller.poll(timeout_ms))
                     if zmq_socket in socks and socks[zmq_socket] == zmq.POLLIN:
-                        # receive a response
+                        # received a response
                         # format: [server ID, empty frame, response message]
                         reply_frames = zmq_socket.recv_multipart(zmq.NOBLOCK)
                         reply_server = reply_frames[0].decode("utf-8", errors="replace")
@@ -122,7 +122,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
             msgs = consumer.read_messages()
             if msgs:
                 for m in msgs:
-                    logger.debug(f"[{protocol}:{ipv4}] Consumer gets message: {m}")
+                    logger.info(f"[{protocol}:{ipv4}] Consumer gets message: {m}")
                     if protocol_to_report_result == "zmq":
                         send_latency = send_message_via_zmq(m, protocol, ipv4)
                     else:
@@ -134,7 +134,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
                             logger,
                         )
 
-                    logger.debug(
+                    logger.info(
                         f"[{protocol}:{ipv4}] Latency to report: {send_latency} us"
                     )
 

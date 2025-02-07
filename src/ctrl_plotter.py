@@ -192,13 +192,13 @@ def map_value_to_color_index_ratio(value: float, steps: list[float]) -> int:
 PLOT_PARAMS = {
     "tcpudp": [
         (
-            "network_mean",
+            "network_p50",
             TCPUDP_DELAY_STEPS,
             TCPUDP_DELAY_TICK_STEPS,
             map_value_to_color_index_ping_delay,
         ),
         (
-            "network_p50",
+            "network_p95",
             TCPUDP_DELAY_STEPS,
             TCPUDP_DELAY_TICK_STEPS,
             map_value_to_color_index_ping_delay,
@@ -224,13 +224,13 @@ PLOT_PARAMS = {
     ],
     "rdma": [
         (
-            "network_mean",
+            "network_p50",
             RDMA_DELAY_STEPS,
             RDMA_DELAY_TICK_STEPS,
             map_value_to_color_index_ping_delay,
         ),
         (
-            "network_p50",
+            "network_p95",
             RDMA_DELAY_STEPS,
             RDMA_DELAY_TICK_STEPS,
             map_value_to_color_index_ping_delay,
@@ -434,7 +434,9 @@ def prepare_default_record(src: str, dst: str, plot_type: str) -> dict:
         "destination": dst,
         "failure_ratio": -1,
         "weird_ratio": -1,
-        "network_mean": -1,
+        "network_p50": -1,
+        "network_p95": -1,
+        "network_p99": -1,
         "ping_start_time": "N/A",
         "ping_end_time": "N/A",
     }
@@ -442,23 +444,15 @@ def prepare_default_record(src: str, dst: str, plot_type: str) -> dict:
     if plot_type == "rdma":
         default_record.update(
             {
-                "client_mean": -1,
-                "server_mean": -1,
-                "network_p50": -1,
                 "client_p50": -1,
                 "server_p50": -1,
-                "network_p99": -1,
+                "client_p95": -1,
+                "server_p95": -1,
                 "client_p99": -1,
                 "server_p99": -1,
             }
         )
-    else:
-        default_record.update(
-            {
-                "network_p50": -1,
-                "network_p99": -1,
-            }
-        )
+
     return default_record
 
 
@@ -479,15 +473,15 @@ def prepare_record(key: str, value: list[str], plot_type: str) -> dict:
     failure_ratio, weird_ratio = calculate_ratios(n_success, n_failure, n_weird)
 
     if plot_type == "tcpudp":
-        # indexes: [5=_, 6=network_mean, 7=_, 8=network_p50, 9=_, 10=network_p99]
-        _, network_mean, _, network_p50, _, network_p99 = value[5:11]
+        # indexes: [5=_, 6=network_mean, 7=_, 8=network_p50, 9=netweork_p95, 10=network_p99]
+        _, _, _, network_p50, network_p95, network_p99 = value[5:11]
         return {
             "source": src,
             "destination": dst,
             "failure_ratio": failure_ratio,
             "weird_ratio": weird_ratio,
-            "network_mean": float(network_mean),
             "network_p50": float(network_p50),
+            "network_p95": float(network_p95),
             "network_p99": float(network_p99),
             "ping_start_time": ts_ping_start,
             "ping_end_time": ts_ping_end,
@@ -495,24 +489,24 @@ def prepare_record(key: str, value: list[str], plot_type: str) -> dict:
 
     # RDMA
     # indexes:
-    #   [5=_, 6=client_mean, 7=_, 8=client_p50, 9=_, 10=client_p99,
-    #    11=_, 12=network_mean, 13=_, 14=network_p50, 15=_, 16=network_p99,
-    #    17=_, 18=server_mean, 19=_, 20=server_p50, 21=_, 22=server_p99]
-    _, client_mean, _, client_p50, _, client_p99 = value[5:11]
-    _, network_mean, _, network_p50, _, network_p99 = value[11:17]
-    _, server_mean, _, server_p50, _, server_p99 = value[17:23]
+    #   [5=_, 6=client_mean, 7=_, 8=client_p50, 9=client_p95, 10=client_p99,
+    #    11=_, 12=network_mean, 13=_, 14=network_p50, 15=network_p95, 16=network_p99,
+    #    17=_, 18=server_mean, 19=_, 20=server_p50, 21=server_p95, 22=server_p99]
+    _, _, _, client_p50, client_p95, client_p99 = value[5:11]
+    _, _, _, network_p50, network_p95, network_p99 = value[11:17]
+    _, _, _, server_p50, server_p95, server_p99 = value[17:23]
 
     return {
         "source": src,
         "destination": dst,
         "failure_ratio": failure_ratio,
         "weird_ratio": weird_ratio,
-        "network_mean": float(network_mean),
-        "client_mean": float(client_mean),
-        "server_mean": float(server_mean),
         "network_p50": float(network_p50),
         "client_p50": float(client_p50),
         "server_p50": float(server_p50),
+        "network_p95": float(network_p95),
+        "client_p95": float(client_p95),
+        "server_p95": float(server_p95),
         "network_p99": float(network_p99),
         "client_p99": float(client_p99),
         "server_p99": float(server_p99),
