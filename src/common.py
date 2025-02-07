@@ -199,7 +199,7 @@ def kill_pingweave_except_main(logger):
     try:
         # Run the command and ensure it completes successfully
         subprocess.run(["pkill", "-f", "pingweave_"], check=False)
-        logger.info("Successfully terminated processes related to pingweave.")
+        logger.info("Successfully terminated existing processes...")
     except subprocess.CalledProcessError as error:
         logger.error("Error occurred while terminating processes:", error)
     except Exception as e:

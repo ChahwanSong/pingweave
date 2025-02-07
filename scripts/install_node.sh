@@ -234,15 +234,6 @@ make || {
 }
 cecho "GREEN" "Make completed successfully."
 
-# check the result binary file
-cecho "YELLOW" "Checking pingweave binary file exists..."
-PINGWEAVE_BINARY_PATH="/pingweave/bin/pingweave"
-if [ ! -f "$PINGWEAVE_BINARY_PATH" ]; then
-  cecho "RED" "Error: pingweave directory must be located at /pingwewave. Current directory is $SCRIPT_DIR. "
-  exit 1
-fi
-cecho "GREEN" "pingweave binary file -> $PINGWEAVE_BINARY_PATH"
-
 
 ######### INSTALL ########
 cecho "YELLOW" "Installing pingweave service..."

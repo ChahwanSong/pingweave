@@ -27,16 +27,16 @@ protocol_to_process_names = {
 
 
 processes_to_run = {
-    name_tcp_server: ["../bin/pingweave_tcp_server"],
-    name_tcp_client: ["../bin/pingweave_tcp_client"],
-    name_udp_server: ["../bin/pingweave_udp_server"],
-    name_udp_client: ["../bin/pingweave_udp_client"],
-    name_roce_server: ["../bin/pingweave_rdma_server"],
-    name_roce_client: ["../bin/pingweave_rdma_client"],
-    name_ib_server: ["../bin/pingweave_rdma_server"],
-    name_ib_client: ["../bin/pingweave_rdma_client"],
-    name_controller: [sys.executable, "pingweave_ctrl.py"],
-    name_agent: [sys.executable, "pingweave_agent.py"],
+    name_tcp_server: [f"{BIN_DIR}/pingweave_tcp_server"],
+    name_tcp_client: [f"{BIN_DIR}/pingweave_tcp_client"],
+    name_udp_server: [f"{BIN_DIR}/pingweave_udp_server"],
+    name_udp_client: [f"{BIN_DIR}/pingweave_udp_client"],
+    name_roce_server: [f"{BIN_DIR}/pingweave_rdma_server"],
+    name_roce_client: [f"{BIN_DIR}/pingweave_rdma_client"],
+    name_ib_server: [f"{BIN_DIR}/pingweave_rdma_server"],
+    name_ib_client: [f"{BIN_DIR}/pingweave_rdma_client"],
+    name_controller: [sys.executable, f"{SCRIPT_DIR}/pingweave_ctrl.py"],
+    name_agent: [sys.executable, f"{SCRIPT_DIR}/pingweave_agent.py"],
 }
 
 
@@ -218,7 +218,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-####
-#  TODO: key 에  protocol 이름 붙이기, pinglist 추적할 때 allmyaddr 말고 프로토콜 별로 추적해야 함. 

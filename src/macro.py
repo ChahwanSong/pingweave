@@ -12,6 +12,7 @@ HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
 SUMMARY_DIR = os.path.join(SCRIPT_DIR, "../summary")
 WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
 BOOTSTRAP_DIR = os.path.join(SCRIPT_DIR, "../libs/bootstrap")
+BIN_DIR = os.path.join(SCRIPT_DIR, "../bin")
 SHMEM_DIR = os.path.abspath("/dev/shm")
 
 # filter out in plotting if a data is too old

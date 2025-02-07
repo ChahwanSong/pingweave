@@ -155,7 +155,7 @@ def pingweave_collector_zmq():
 
     # 1) ROUTER socket (frontend) for client connections
     frontend = context.socket(zmq.ROUTER)
-    frontend.bind(f"tcp://{config["control_host"]}:{config["collect_port_zmq"]}")
+    frontend.bind(f"tcp://{config['control_host']}:{config['collect_port_zmq']}")
 
     # 2) DEALER socket (backend, inproc) to communicate with workers
     backend = context.socket(zmq.DEALER)

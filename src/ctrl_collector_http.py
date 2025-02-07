@@ -136,7 +136,7 @@ async def pingweave_collector_http():
                 await site.start()
 
                 logger.info(
-                    f"Pingweave collector running on {config["control_host"]}:{config["collect_port_http"]}"
+                    f"Pingweave collector running on {config['control_host']}:{config['collect_port_http']}"
                 )
                 await asyncio.Event().wait()
 

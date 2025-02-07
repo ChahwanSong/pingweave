@@ -443,7 +443,7 @@ async def pingweave_webserver():
                 await site.start()
 
                 logger.info(
-                    f"Pingweave webserver running on {config["control_host"]}:{config["control_port"]}"
+                    f"Pingweave webserver running on {config['control_host']}:{config['control_port']}"
                 )
 
                 asyncio.create_task(read_pinglist_periodically())
