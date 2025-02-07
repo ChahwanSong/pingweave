@@ -1,8 +1,7 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import asyncio
-import os
-import sys
-import socket
-import configparser
 from aiohttp import web  # aiohttp for webserver
 import redis  # in-memory key-value storage
 from datetime import datetime
@@ -12,17 +11,7 @@ from macro import *
 from setproctitle import setproctitle
 from common import *
 
-logger = initialize_pingweave_logger(
-    socket.gethostname(), "ctrl_collector_http", 5, False
-)
-
-# Global variables
-control_host = None
-collect_port_http = None
-collect_port_zmq = None
-
-# ConfigParser object
-config = configparser.ConfigParser()
+logger = initialize_pingweave_logger( socket.gethostname(), "ctrl_collector_http", 5, False)
 
 try:
     # Redis
@@ -46,20 +35,6 @@ except FileNotFoundError as e:
 except Exception as e:
     logger.error(f"Unexpected error of Redis server: {e}")
     redis_server = None
-
-
-def load_config_ini():
-    global control_host, collect_port_http
-
-    try:
-        config.read(CONFIG_PATH)
-        control_host = config["controller"]["host"]
-        collect_port_http = int(config["controller"]["collect_port_http"])
-        logger.debug("Configuration loaded successfully from config file.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        sys.exit(1)
-
 
 async def process_result_post(request: web.Request, protocol: str) -> web.Response:
     """
@@ -144,7 +119,6 @@ async def handle_alarm_post(request):
 
 
 async def pingweave_collector_http():
-    load_config_ini()
     runner = None
 
     try:
@@ -158,11 +132,11 @@ async def pingweave_collector_http():
                 app.router.add_post("/alarm", handle_alarm_post)
                 runner = web.AppRunner(app)
                 await runner.setup()
-                site = web.TCPSite(runner, host="0.0.0.0", port=collect_port_http)
+                site = web.TCPSite(runner, host="0.0.0.0", port=config["collect_port_http"])
                 await site.start()
 
                 logger.info(
-                    f"Pingweave collector running on {control_host}:{collect_port_http}"
+                    f"Pingweave collector running on {config["control_host"]}:{config["collect_port_http"]}"
                 )
                 await asyncio.Event().wait()
 

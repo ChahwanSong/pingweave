@@ -1,11 +1,9 @@
-import os
-import configparser
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import asyncio
-import time
-import socket
 import html
 import psutil
-import copy
 from datetime import datetime
 from setproctitle import setproctitle
 
@@ -14,6 +12,7 @@ from aiohttp import web  # requires python >= 3.7
 from macro import *
 
 from logger import initialize_pingweave_logger
+from common import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "ctrl_webserver", 10, False)
 
@@ -23,71 +22,6 @@ address_store = {}  # (for RDMA) ip -> (ip, gid, lid, qpn, dtime)
 address_store_checkpoint = 0
 pinglist_lock = asyncio.Lock()
 address_store_lock = asyncio.Lock()
-
-# Global variables
-control_host = None
-control_port = None
-interval_sync_pinglist_sec = None
-interval_read_pinglist_sec = None
-
-
-# ConfigParser object
-config = configparser.ConfigParser()
-
-
-def check_ip_active(target_ip):
-    """
-    Checks if the given IP address is active and associated with an interface that is UP.
-    """
-    try:
-        # Get network interface info from psutil
-        net_if_addrs = psutil.net_if_addrs()
-        net_if_stats = psutil.net_if_stats()
-
-        for iface, addrs in net_if_addrs.items():
-            for addr in addrs:
-                if addr.family == socket.AF_INET and addr.address == target_ip:
-                    # Check interface status
-                    if iface in net_if_stats and net_if_stats[iface].isup:
-                        return True
-                    else:
-                        logger.error(f"Interface {iface} with IP {target_ip} is down.")
-                        return False
-
-        # No match
-        logger.error(f"No active interface found with IP address {target_ip}.")
-        return False
-
-    except Exception as e:
-        logger.error(f"An unexpected error occurred while checking IP: {e}")
-        return False
-
-
-def load_config_ini():
-    """
-    Reads the configuration file and updates global variables.
-    """
-    global control_host, control_port, interval_sync_pinglist_sec, interval_read_pinglist_sec
-
-    try:
-        config.read(CONFIG_PATH)
-
-        # Update variables
-        control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["control_port"])
-
-        interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
-        interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
-
-        logger.debug(f"Configuration reloaded successfully from {CONFIG_PATH}.")
-
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        logger.error(
-            "Using default parameters: interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60"
-        )
-        interval_sync_pinglist_sec = 60
-        interval_read_pinglist_sec = 60
 
 
 async def read_pinglist():
@@ -114,7 +48,7 @@ async def read_pinglist_periodically():
     try:
         while True:
             await read_pinglist()
-            await asyncio.sleep(interval_read_pinglist_sec)
+            await asyncio.sleep(config["interval_read_pinglist_sec"])
     except asyncio.CancelledError:
         logger.info("read_pinglist_periodically task was cancelled.")
     except Exception as e:
@@ -488,8 +422,6 @@ async def index(request):
 
 
 async def pingweave_webserver():
-    load_config_ini()
-
     try:
         while True:
             try:
@@ -506,11 +438,12 @@ async def pingweave_webserver():
 
                 runner = web.AppRunner(app)
                 await runner.setup()
-                site = web.TCPSite(runner, host="0.0.0.0", port=control_port)
+                
+                site = web.TCPSite(runner, host="0.0.0.0", port=config["control_port"])
                 await site.start()
 
                 logger.info(
-                    f"Pingweave webserver running on {control_host}:{control_port}"
+                    f"Pingweave webserver running on {config["control_host"]}:{config["control_port"]}"
                 )
 
                 asyncio.create_task(read_pinglist_periodically())

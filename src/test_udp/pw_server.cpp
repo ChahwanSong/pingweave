@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     udp_context ctx_server;
     if (make_ctx(&ctx_server, server_ip, server_rx_port,
                  spdlog::default_logger())) {
-        spdlog::error("Failed to create TX context for IP: {}", server_ip);
+        spdlog::error("Failed to create a server context for {}:{}", server_ip, server_rx_port);
         throw std::runtime_error("Failed to create UDP context at server");
     }
 

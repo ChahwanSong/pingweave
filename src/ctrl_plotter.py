@@ -1,15 +1,13 @@
-import os
-import time
-import socket
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import configparser
-import copy
 import asyncio
 import yaml
 import redis  # in-memory key-value storage
 import pandas as pd
 import numpy as np
-import psutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from setproctitle import setproctitle
 import plotly.graph_objects as go
@@ -21,7 +19,9 @@ from macro import (
     HTML_DIR,
     SUMMARY_DIR,
 )
+
 from logger import initialize_pingweave_logger
+from common import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "ctrl_plotter", 5, False)
 
@@ -41,16 +41,8 @@ RDMA_RATIO_TICK_STEPS = ["No Data", "Failure", "~5%", "~20%", "~50%", "100%"]
 
 COLOR_SCALE = ["black", "purple", "green", "yellow", "orange", "red"]
 
-# These will be read from the config INI
-control_host = None
-collect_port_http = None
-interval_report_ping_result_millisec = None
-
 # Variables to store pinglist data
 pinglist_in_memory = {}
-
-# Shared ConfigParser object
-config = configparser.ConfigParser()
 
 # ======================== #
 #        Redis Setup       #
@@ -79,27 +71,6 @@ except Exception as e:
 # ======================== #
 #     Config and Pinglist  #
 # ======================== #
-
-
-def load_config_ini() -> None:
-    """
-    Loads configuration from the CONFIG_PATH file and populates
-    global variables: control_host, collect_port_http, interval_report_ping_result_millisec.
-    """
-    global control_host, collect_port_http, interval_report_ping_result_millisec
-    try:
-        config.read(CONFIG_PATH)
-        control_host = config["controller"]["host"]
-        collect_port_http = int(config["controller"]["collect_port_http"])
-        interval_report_ping_result_millisec = int(
-            config["param"]["interval_report_ping_result_millisec"]
-        )
-        logger.debug("Configuration loaded successfully from config file.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        control_host = None
-        collect_port_http = None
-
 
 def read_pinglist() -> None:
     """
@@ -146,7 +117,7 @@ def clear_directory_conditional(
             # Remove file or symlink
             if os.path.isfile(entry_path) or os.path.islink(entry_path):
                 os.remove(entry_path)
-                logger.info(f"Deleted file: {entry_path}")
+                logger.debug(f"Deleted file: {entry_path}")
 
             # Remove sub-directory
             elif os.path.isdir(entry_path):
@@ -155,11 +126,11 @@ def clear_directory_conditional(
                         file_path = os.path.join(root, file)
                         if os.path.basename(file_path) not in except_files:
                             os.remove(file_path)
-                            logger.info(f"Deleted file: {file_path}")
+                            logger.debug(f"Deleted file: {file_path}")
                     for dir_name in dirs:
                         dir_path = os.path.join(root, dir_name)
                         os.rmdir(dir_path)
-                        logger.info(f"Deleted directory: {dir_path}")
+                        logger.debug(f"Deleted directory: {dir_path}")
                 os.rmdir(entry_path)
                 logger.info(f"Deleted directory: {entry_path}")
 
@@ -621,7 +592,6 @@ async def pingweave_plotter() -> None:
     Main asynchronous plotting task. It periodically fetches data from Redis,
     generates heatmap plots, and cleans up old files.
     """
-    load_config_ini()
     last_plot_time = int(time.time())
     pinglist_protocol = ["udp", "tcp", "roce", "ib"]
     new_file_list = []
@@ -630,7 +600,7 @@ async def pingweave_plotter() -> None:
         while True:
             try:
                 now_plot_time = int(time.time())
-                interval_seconds = int(interval_report_ping_result_millisec / 1000)
+                interval_seconds = int(config["interval_report_ping_result_millisec"] / 1000)
 
                 # Plot the graph every X seconds
                 if (last_plot_time + interval_seconds < now_plot_time) and (

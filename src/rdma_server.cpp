@@ -550,9 +550,9 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
 
 void print_help() {
     std::cout
-        << "Usage: rdma_client <IPv4 address> <protocol>\n"
+        << "Usage: rdma_server <IPv4 address> <protocol>\n"
         << "Arguments:\n"
-        << "  IPv4 address   The target IPv4 address for RDMA client.\n"
+        << "  IPv4 address   The target IPv4 address for RDMA server.\n"
         << "  protocol       The protocol name (should be 'roce' or 'ib').\n"
         << "Options:\n"
         << "  -h, --help     Show this help message.\n";
@@ -580,7 +580,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        rdma_client(ipv4, protocol);
+        rdma_server(ipv4, protocol);
     } catch (const std::exception& e) {
         spdlog::error("Exception occurred: {}", e.what());
         return 1;

@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import sys
 import signal
 import time
@@ -85,7 +88,7 @@ if __name__ == "__main__":
             Signal handler to gracefully terminate all processes.
             """
             logger.info(f"Received signal {sig}. Terminating all processes...")
-            terminate_all(processes, logger)
+            terminate_multiprocesses(processes, logger)
             sys.exit(0)
 
         # Register signal handlers
@@ -96,11 +99,10 @@ if __name__ == "__main__":
             for process in processes:
                 if not process.is_alive():
                     logger.warning(f"{process.name} has stopped unexpectedly.")
-                    terminate_all(processes, logger)
+                    terminate_multiprocesses(processes, logger)
                     sys.exit(1)
             time.sleep(1)
 
     except Exception as e:
         logger.error(f"Main loop exception: {e}. Exiting cleanly...")
-    finally:
-        terminate_all(processes, logger)
+        terminate_multiprocesses(processes, logger)

@@ -37,14 +37,11 @@ const static int SMALL_JITTERING_MICROSEC = 10;  // in event polling for cqe
 const static int MSG_QUEUE_SIZE = (1 << 16);  // large enough
 const static int WAIT_DEQUEUE_TIME_MS = 10;   // milliseconds
 
-// Ping interval (for each src-dst pair) / Report interval
-const static uint32_t CHECK_PROCESS_INTERVAL_SEC = 10;  // seconds
-const static uint64_t LOAD_CONFIG_INTERVAL_SEC = 11;    // seconds
-
 // TCP socket timeout
 const static int PINGWEAVE_TCP_SOCK_TIMEOUT_SEC = 1;
 
-// Table expiry timeout
+// Table expiry timeout 
+// IMPORTANT: MUST BE LESS THAN 2000 becuase of TIME_CALC_MODULO below)
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_RDMA_MS = 1000;
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_TCP_MS = 1000;
 const static uint32_t PINGWEAVE_TABLE_EXPIRY_TIME_UDP_MS = 1000;
@@ -57,12 +54,9 @@ const static int PINGWEAVE_UDP_PORT_SERVER = 33336;
 // IB HW Timestamp correction factor
 const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 
-// Consecutive failure counting
-const static int THRESHOLD_CONSECUTIVE_FAILURE = 5;
-
 // IPC (inter-process communication) - The size of message and number of slots
 const static int IPC_MESSAGE_SIZE = 2097152;  // 2MB
-const static int IPC_BUFFER_SIZE = 32;        // 32 messages
+const static int IPC_BUFFER_SIZE = 256;        // 256 messages
 
 // get pingweave/src directory
 inline std::string get_src_dir() {

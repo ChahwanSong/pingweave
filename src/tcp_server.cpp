@@ -1,5 +1,3 @@
-#pragma once
-
 #include "tcpudp_common.hpp"
 #include "tcpudp_ping_info.hpp"
 
@@ -8,9 +6,9 @@
  */
 
 // TCP server main function
-void tcp_server(const std::string& ipv4, const std::string& protocol) {
+void tcp_server(const std::string& ipv4) {
     // Initialize logger
-    const std::string server_logname = protocol + "_server_" + ipv4;
+    const std::string server_logname = "tcp_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
     if (!get_log_config_from_ini(log_level_server,
@@ -50,4 +48,37 @@ void tcp_server(const std::string& ipv4, const std::string& protocol) {
         std::thread t(receive_tcp_message, newSockfd, server_logger);
         t.detach();
     }
+}
+
+
+void print_help() {
+    std::cout << "Usage: tcp_server <IPv4 address>\n"
+              << "Arguments:\n"
+              << "  IPv4 address   The target IPv4 address for TCP server.\n"
+              << "Options:\n"
+              << "  -h, --help     Show this help message.\n";
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        spdlog::error("Error: Invalid arguments.");
+        print_help();
+        return 1;
+    }
+
+    if ((std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        print_help();
+        return 0;
+    }
+
+    std::string ipv4 = argv[1];
+    
+    try {
+        tcp_server(ipv4);
+    } catch (const std::exception& e) {
+        spdlog::error("Exception occurred: {}", e.what());
+        return 1;
+    }
+
+    return 0;
 }

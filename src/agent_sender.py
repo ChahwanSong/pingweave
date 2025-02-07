@@ -1,11 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import sys
-import configparser
 import time
 import threading
-import asyncio
-import http.client
-import urllib.parse
 
 from ipc_consumer import *
 from macro import *
@@ -14,90 +13,11 @@ from logger import initialize_pingweave_logger
 
 logger = initialize_pingweave_logger(socket.gethostname(), "agent_sender", 10, False)
 
-config = configparser.ConfigParser()
-
-# Global variables
-control_host = None
-control_port = None
-collect_port_http = None
-collect_port_zmq = None
-protocol_to_report_result = None
-
 # Python version check
 python_version = sys.version_info
 if python_version < (3, 6):
     logger.critical("Python 3.6 or higher is required. Current version: {sys.version}")
     sys.exit(1)
-
-
-def load_config_ini():
-    """
-    Reads the configuration file and updates global variables.
-    """
-    global control_host, control_port, collect_port_http, collect_port_zmq
-    global protocol_to_report_result
-
-    try:
-        config.read(CONFIG_PATH)
-
-        # Update variables
-        control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["control_port"])
-        collect_port_http = int(config["controller"]["collect_port_http"])
-        collect_port_zmq = int(config["controller"]["collect_port_zmq"])
-
-        # Param
-        protocol_to_report_result = config["param"]["protocol_to_report_result"]
-
-        # set default protocol
-        if protocol_to_report_result != "zmq":
-            protocol_to_report_result = "http"
-        logger.info(f"Report protocol: {protocol_to_report_result}")
-        logger.debug(f"Configuration reloaded successfully from {CONFIG_PATH}.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        sys.exit(1)
-
-
-def send_message_via_http(message: str, protocol: str, ipv4: str):
-    """Sends a POST request to the server with a timeout mechanism."""
-    try:
-        start_time = time.perf_counter()
-
-        # REST api to call on http
-        rest_api = f"/result_{protocol}"
-
-        # Set timeout for the connection (3 seconds)
-        socket.setdefaulttimeout(3)
-
-        # Establish an HTTP connection
-        conn = http.client.HTTPConnection(control_host, collect_port_http, timeout=3)
-
-        # Headers
-        headers = {"Content-Type": "text/plain", "Content-Length": str(len(message))}
-
-        # Send POST request
-        conn.request("POST", rest_api, body=message, headers=headers)
-
-        # Get response
-        response = conn.getresponse()
-        response_text = response.read().decode("utf-8")
-        logger.debug(f"HTTP Response [{response.status}]: {response_text}")
-
-        end_time = time.perf_counter()
-        latency = (end_time - start_time) * 1000000  # microsec
-
-        # Close connection
-        conn.close()
-
-        return latency
-
-    except socket.timeout:
-        logger.error("Error: Request timed out!")
-    except (http.client.HTTPException, ConnectionRefusedError) as e:
-        logger.error(f"Error: Failed to send request - {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
 
 
 def thread_process_messages(protocol, ipv4, stop_event):
@@ -111,7 +31,19 @@ def thread_process_messages(protocol, ipv4, stop_event):
     # context of ZeroMQ
     zmq_context = None
 
+    # address a controller
+    control_host = config["control_host"]
+    collect_port_zmq = config["collect_port_zmq"]
+    collect_port_http = config["collect_port_http"]
+
     # load ZeroMQ library
+    protocol_to_report_result = config["protocol_to_report_result"]
+    if protocol_to_report_result not in ["http", "zmq"]:
+        logger.warning(
+            "Invalid protocol to report results: {}. Use a default protocol - http",
+            protocol_to_report_result,
+        )
+
     if protocol_to_report_result == "zmq":
         try:
             import zmq
@@ -193,11 +125,14 @@ def thread_process_messages(protocol, ipv4, stop_event):
                     logger.debug(f"[{protocol}:{ipv4}] Consumer gets message: {m}")
                     if protocol_to_report_result == "zmq":
                         send_latency = send_message_via_zmq(m, protocol, ipv4)
-                    elif protocol_to_report_result == "http":
-                        send_latency = send_message_via_http(m, protocol, ipv4)
                     else:
-                        logger.error(f"Unknown protocol: {ipv4}:{protocol}. Exit.")
-                        return
+                        send_latency = send_message_via_http(
+                            m,
+                            f"/result_{protocol}",
+                            control_host,
+                            collect_port_http,
+                            logger,
+                        )
 
                     logger.debug(
                         f"[{protocol}:{ipv4}] Latency to report: {send_latency} us"
@@ -224,7 +159,6 @@ def agent_sender():
     Periodically checks the SHMEM_DIR for any new shared memory files.
     If found, it creates a separate thread to execute 'thread_process_messages'.
     """
-    load_config_ini()
     files_running = dict()  # key: filename, value: Thread object
 
     while True:
@@ -268,7 +202,7 @@ def agent_sender():
                 protocol, ipv4 = fname.strip().split("_")
                 if (
                     not check_ip_active(ipv4, logger)
-                    or protocol not in target_protocols
+                    or protocol not in TARGET_PROTOCOLS
                 ):
                     logger.debug(f"Unavailable: {fname}:{protocol}:{ipv4}. Skipping.")
                     continue

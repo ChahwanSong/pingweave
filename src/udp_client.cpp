@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ipc_producer.hpp"
 #include "tcpudp_common.hpp"
 #include "tcpudp_ping_info.hpp"
@@ -79,7 +77,6 @@ void udp_client_rx_thread(struct udp_context* ctx_rx,
 }
 
 void udp_client_result_thread(const std::string& ipv4,
-                              const std::string& protocol,
                               TcpUdpClientQueue* client_queue,
                               std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
@@ -110,7 +107,7 @@ void udp_client_result_thread(const std::string& ipv4,
     }
 
     // IPC - producer queue
-    ProducerQueue ipc_producer(protocol, ipv4);
+    ProducerQueue ipc_producer("udp", ipv4);
 
     // timer for report
     auto last_report_time = get_current_timestamp_steady_clock();
@@ -188,9 +185,9 @@ void udp_client_result_thread(const std::string& ipv4,
     }
 }
 
-void udp_client(const std::string& ipv4, const std::string& protocol) {
+void udp_client(const std::string& ipv4) {
     // Start the RX thread
-    const std::string client_logname = protocol + "_client_" + ipv4;
+    const std::string client_logname = "udp_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
     if (!get_log_config_from_ini(log_level_client,
@@ -205,7 +202,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     }
 
     // Inter-thread queue
-    const std::string result_logname = protocol + "_" + ipv4;
+    const std::string result_logname = "udp_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
     if (!get_log_config_from_ini(log_level_result,
@@ -223,7 +220,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     TcpUdpClientQueue client_queue(MSG_QUEUE_SIZE);
 
     // ping table with timeout
-    const std::string ping_table_logname = protocol + "_table_" + ipv4;
+    const std::string ping_table_logname = "udp_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
     if (!get_log_config_from_ini(log_level_ping_table,
@@ -251,7 +248,7 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     // Start the Result thread
     client_logger->info("Starting UDP result thread (Thread ID: {})...",
                         get_thread_id());
-    std::thread result_thread(udp_client_result_thread, ipv4, protocol,
+    std::thread result_thread(udp_client_result_thread, ipv4, 
                               &client_queue, result_logger);
 
     // Start the RX thread
@@ -274,4 +271,37 @@ void udp_client(const std::string& ipv4, const std::string& protocol) {
     if (rx_thread.joinable()) {
         rx_thread.join();
     }
+}
+
+
+void print_help() {
+    std::cout << "Usage: udp_client <IPv4 address>\n"
+              << "Arguments:\n"
+              << "  IPv4 address   The target IPv4 address for UDP client.\n"
+              << "Options:\n"
+              << "  -h, --help     Show this help message.\n";
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        spdlog::error("Error: Invalid arguments.");
+        print_help();
+        return 1;
+    }
+
+    if ((std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        print_help();
+        return 0;
+    }
+
+    std::string ipv4 = argv[1];
+    
+    try {
+        udp_client(ipv4);
+    } catch (const std::exception& e) {
+        spdlog::error("Exception occurred: {}", e.what());
+        return 1;
+    }
+
+    return 0;
 }

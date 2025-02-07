@@ -1,5 +1,3 @@
-#pragma once
-
 #include "tcpudp_common.hpp"
 #include "tcpudp_ping_info.hpp"
 
@@ -9,9 +7,9 @@
  */
 
 // UDP server main function
-void udp_server(const std::string& ipv4, const std::string& protocol) {
+void udp_server(const std::string& ipv4) {
     // Initialize logger
-    const std::string server_logname = protocol + "_server_" + ipv4;
+    const std::string server_logname = "udp_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
     if (!get_log_config_from_ini(log_level_server,
@@ -28,7 +26,7 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
     // Initialize UDP context
     udp_context ctx_server;
     if (make_ctx(&ctx_server, ipv4, PINGWEAVE_UDP_PORT_SERVER, server_logger)) {
-        server_logger->error("Failed to create TX context for IP: {}", ipv4);
+        server_logger->error("Failed to create TX context for {}:{}", ipv4, PINGWEAVE_UDP_PORT_SERVER);
         throw std::runtime_error("Failed to create UDP context at server");
     }
 
@@ -56,4 +54,38 @@ void udp_server(const std::string& ipv4, const std::string& protocol) {
             continue;
         }
     }
+}
+
+
+
+void print_help() {
+    std::cout << "Usage: udp_server <IPv4 address>\n"
+              << "Arguments:\n"
+              << "  IPv4 address   The target IPv4 address for UDP server.\n"
+              << "Options:\n"
+              << "  -h, --help     Show this help message.\n";
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        spdlog::error("Error: Invalid arguments.");
+        print_help();
+        return 1;
+    }
+
+    if ((std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        print_help();
+        return 0;
+    }
+
+    std::string ipv4 = argv[1];
+    
+    try {
+        udp_server(ipv4);
+    } catch (const std::exception& e) {
+        spdlog::error("Exception occurred: {}", e.what());
+        return 1;
+    }
+
+    return 0;
 }

@@ -1,26 +1,26 @@
 [Unit]
-Description=PingWeave - High-resolutional end-to-end RoCE/Infiniband/TCP network monitoring tool 
+Description=PingWeave - Network monitoring tool for TCP/UDP/RDMA 
 Requires=chronyd.service network-online.target
 After=network.target network-online.target chronyd.service
 
 
 [Service]
 Type=simple
-ExecStart=/pingweave/bin/pingweave 
+ExecStart=python3 /pingweave/src/pingweave.py 
 WorkingDirectory=/pingweave
 Restart=always
 RestartSec=5s
 
 # CPU and memory resource limit
 CPUQuota=5%
-MemoryMax=1G
+MemoryMax=2G
 
 # file and process limit
 LimitNOFILE=1024
-LimitNPROC=512
+LimitNPROC=1024
 
 # stop & kill
-TimeoutStopSec=10s
+TimeoutStopSec=30s
 KillSignal=SIGTERM
 SendSIGKILL=yes
 

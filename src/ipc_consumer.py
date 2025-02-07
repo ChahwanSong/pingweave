@@ -61,10 +61,10 @@ class ConsumerQueue:
             )
             raise FileNotFoundError(f"Shared memory file not found: {self.file_path}")
 
-        # 파일 열기 (읽기/쓰기)
+        # File open
         fd = os.open(self.file_path, os.O_RDWR)
 
-        # 파일 사이즈 확인 (SharedData 구조체의 크기와 일치해야 함)
+        # File size check
         needed_size = ctypes.sizeof(SharedData)
         file_size = os.fstat(fd).st_size
         if file_size < needed_size:
@@ -72,9 +72,9 @@ class ConsumerQueue:
             logging.error(f"File size ({file_size}) is smaller than expected ({needed_size}).")
             raise ValueError("Shared memory file is smaller than expected.")
 
-        # 파일 디스크립터를 mmap으로 매핑
+        # mapping file descriptor to mmap
         self.mapfile = mmap.mmap(fd, needed_size, access=mmap.ACCESS_WRITE)
-        os.close(fd)  # fd는 mmap 이후 더 이상 필요 없음
+        os.close(fd)  # after mmap, no need to keep fd
 
         # Attach our ctypes structure to the shared memory buffer
         self.shared_data = SharedData.from_buffer(self.mapfile)

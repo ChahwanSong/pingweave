@@ -1,5 +1,3 @@
-#pragma once
-
 #include "ipc_producer.hpp"
 #include "rdma_common.hpp"
 #include "rdma_ping_info.hpp"
@@ -218,7 +216,8 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                         wc.wr_id, cqe_time);
                     if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
                         logger->warn(
-                            "Failed to update send completion time for ping ID {}.",
+                            "Failed to update send completion time for ping ID "
+                            "{}.",
                             wc.wr_id);
                     }
                 } else {
@@ -658,4 +657,45 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
     if (result_thread.joinable()) {
         result_thread.join();
     }
+}
+
+void print_help() {
+    std::cout
+        << "Usage: rdma_client <IPv4 address> <protocol>\n"
+        << "Arguments:\n"
+        << "  IPv4 address   The target IPv4 address for RDMA client.\n"
+        << "  protocol       The protocol name (should be 'roce' or 'ib').\n"
+        << "Options:\n"
+        << "  -h, --help     Show this help message.\n";
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        if (argc == 2 && (std::string(argv[1]) == "-h" ||
+                          std::string(argv[1]) == "--help")) {
+            print_help();
+            return 0;
+        }
+        spdlog::error("Error: Invalid arguments.");
+        print_help();
+        return 1;
+    }
+
+    std::string ipv4 = argv[1];
+    std::string protocol = argv[2];
+
+    if (protocol != "roce" && protocol != "ib") {
+        spdlog::error(
+            "Error: Unsupported protocol. Only 'roce' or 'ib' is supported.");
+        return 1;
+    }
+
+    try {
+        rdma_client(ipv4, protocol);
+    } catch (const std::exception& e) {
+        spdlog::error("Exception occurred: {}", e.what());
+        return 1;
+    }
+
+    return 0;
 }

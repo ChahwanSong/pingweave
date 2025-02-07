@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import sys
-import configparser
 import time
 import json
 import socket
@@ -11,18 +13,9 @@ import urllib.error
 
 from logger import initialize_pingweave_logger
 from macro import *
+from common import *
 
 logger = initialize_pingweave_logger(socket.gethostname(), "agent_fetcher", 10, False)
-
-# ConfigParser object
-config = configparser.ConfigParser()
-
-# Global variables
-control_host = None
-control_port = None
-collect_port_http = None
-interval_sync_pinglist_sec = None
-interval_read_pinglist_sec = None
 
 # Python version
 python_version = sys.version_info
@@ -31,33 +24,6 @@ if python_version < (3, 6):
     sys.exit(1)
 
 retry_cntr_fetch_data = {}
-
-
-def load_config_ini():
-    """
-    Reads the configuration file and updates global variables.
-    """
-    global control_host, control_port, collect_port_http
-    global interval_sync_pinglist_sec, interval_read_pinglist_sec
-
-    try:
-        config.read(CONFIG_PATH)
-
-        # Update variables
-        control_host = config["controller"]["host"]
-        control_port = int(config["controller"]["control_port"])
-        collect_port_http = int(config["controller"]["collect_port_http"])
-
-        interval_sync_pinglist_sec = int(config["param"]["interval_sync_pinglist_sec"])
-        interval_read_pinglist_sec = int(config["param"]["interval_read_pinglist_sec"])
-
-        logger.debug(f"Configuration reloaded successfully from {CONFIG_PATH}.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        logger.error("Using default parameters:")
-        logger.error("interval_sync_pinglist_sec=60, interval_read_pinglist_sec=60")
-        interval_sync_pinglist_sec = 60
-        interval_read_pinglist_sec = 60
 
 
 def fetch_data(ip: str, port: str, data_type: str):
@@ -211,18 +177,17 @@ def agent_fetcher():
     (1) upload gid
     (2) download pinglist, address_store
     """
-    load_config_ini()
 
     while True:
         # GID send
-        send_gid_files(control_host, control_port)
+        send_gid_files(config["control_host"], config["control_port"])
 
         # download pinglist, address_store
-        fetch_data(control_host, control_port, "pinglist")
-        fetch_data(control_host, control_port, "address_store")
+        fetch_data(config["control_host"], config["control_port"], "pinglist")
+        fetch_data(config["control_host"], config["control_port"], "address_store")
 
-        # random sleep
-        time.sleep(interval_sync_pinglist_sec + random.randint(0, 10) * 0.01)
+        # random sleep to avoid request bursts
+        time.sleep(config["interval_sync_pinglist_sec"] + random.randint(0, 100) * 0.01)
 
 
 def run_agent_fetcher():

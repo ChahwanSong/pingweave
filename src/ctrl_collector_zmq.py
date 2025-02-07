@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import sys
 import socket
-import configparser
 import redis  # in-memory key-value storage
 from datetime import datetime
 import zmq
@@ -15,13 +17,6 @@ from common import *
 logger = initialize_pingweave_logger(
     socket.gethostname(), "ctrl_collector_zmq", 5, False
 )
-
-# Global variables
-control_host = None
-collect_port_zmq = None
-
-# ConfigParser object
-config = configparser.ConfigParser()
 
 try:
     # Attempt to connect to Redis via Unix socket
@@ -46,23 +41,6 @@ except FileNotFoundError as e:
 except Exception as e:
     logger.error(f"Unexpected error of Redis server: {e}")
     redis_server = None
-
-
-def load_config_ini():
-    """
-    Reads configuration from CONFIG_PATH and sets global variables.
-    """
-    global control_host, collect_port_zmq
-
-    try:
-        config.read(CONFIG_PATH)
-        control_host = config["controller"]["host"]
-        collect_port_zmq = int(config["controller"]["collect_port_zmq"])
-
-        logger.debug("Configuration loaded successfully from config file.")
-    except Exception as e:
-        logger.error(f"Error reading configuration: {e}")
-        sys.exit(1)
 
 
 def worker_routine(worker_url, worker_id):
@@ -173,13 +151,11 @@ def pingweave_collector_zmq():
     Main function that sets up the Router (frontend) and Dealer (backend),
     spawns worker threads, and starts the ZeroMQ proxy.
     """
-    load_config_ini()
-
     context = zmq.Context.instance()
 
     # 1) ROUTER socket (frontend) for client connections
     frontend = context.socket(zmq.ROUTER)
-    frontend.bind(f"tcp://{control_host}:{collect_port_zmq}")
+    frontend.bind(f"tcp://{config["control_host"]}:{config["collect_port_zmq"]}")
 
     # 2) DEALER socket (backend, inproc) to communicate with workers
     backend = context.socket(zmq.DEALER)
