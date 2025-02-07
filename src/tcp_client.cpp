@@ -16,7 +16,7 @@ void tcp_client_tx_thread(const std::string& ipv4,
     try {
         while (true) {
             // Retrieve the next destination for sending
-            if (scheduler.next(dst_addr, time_sleep_us)) {
+            if (IS_SUCCESS(scheduler.next(dst_addr, time_sleep_us))) {
                 // Create a pingid
                 auto pingid = make_pingid(ip2uint(ipv4), ping_uid++);
 
@@ -40,8 +40,8 @@ void tcp_client_result_thread(const std::string& ipv4,
                               TcpUdpClientQueue* client_queue,
                               std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
-    if (get_int_param_from_ini(report_interval_ms,
-                               "interval_report_ping_result_millisec")) {
+    if (IS_FAILURE(get_int_param_from_ini(
+            report_interval_ms, "interval_report_ping_result_millisec"))) {
         logger->error(
             "Failed to load 'report_interval' from pingwewave.ini. Use default "
             "- 10 seconds");
@@ -60,7 +60,8 @@ void tcp_client_result_thread(const std::string& ipv4,
     // get controller address and port
     std::string controller_host;
     int controller_port;
-    if (get_controller_info_from_ini(controller_host, controller_port)) {
+    if (IS_FAILURE(
+            get_controller_info_from_ini(controller_host, controller_port))) {
         logger->error(
             "Exit the result thread - failed to load pingweave.ini file");
         throw;  // Propagate exception
@@ -150,30 +151,30 @@ void tcp_client(const std::string& ipv4) {
     const std::string client_logname = "tcp_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
-    if (!get_log_config_from_ini(log_level_client,
-                                 "logger_cpp_process_tcp_client")) {
+    if (IS_FAILURE(get_log_config_from_ini(log_level_client,
+                                           "logger_cpp_process_tcp_client"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_tcp_client'");
+    } else {
         client_logger =
             initialize_logger(client_logname, DIR_LOG_PATH, log_level_client,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         client_logger->info("TCP Client is running on pid {}", getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_tcp_client'");
     }
 
     // Inter-thread queue
     const std::string result_logname = "tcp_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
-    if (!get_log_config_from_ini(log_level_result,
-                                 "logger_cpp_process_tcp_result")) {
+    if (IS_FAILURE(get_log_config_from_ini(log_level_result,
+                                           "logger_cpp_process_tcp_result"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_tcp_result'");
+    } else {
         result_logger =
             initialize_logger(result_logname, DIR_RESULT_PATH, log_level_result,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         result_logger->info("TCP Result is running on pid {}", getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_tcp_result'");
     }
 
     // Internal message-queue
@@ -183,16 +184,16 @@ void tcp_client(const std::string& ipv4) {
     const std::string ping_table_logname = "tcp_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
-    if (!get_log_config_from_ini(log_level_ping_table,
-                                 "logger_cpp_process_tcp_ping_table")) {
+    if (IS_FAILURE(get_log_config_from_ini(
+            log_level_ping_table, "logger_cpp_process_tcp_ping_table"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_tcp_ping_table'");
+    } else {
         ping_table_logger = initialize_logger(
             ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
             LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         ping_table_logger->info("TCP ping_table is running on pid {}",
                                 getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_tcp_ping_table'");
     }
 
     TcpUdpPinginfoMap ping_table(ping_table_logger, &client_queue,
@@ -201,8 +202,8 @@ void tcp_client(const std::string& ipv4) {
     // Start the Result thread
     client_logger->info("Starting TCP result thread (Thread ID: {})...",
                         get_thread_id());
-    std::thread result_thread(tcp_client_result_thread, ipv4,
-                              &client_queue, result_logger);
+    std::thread result_thread(tcp_client_result_thread, ipv4, &client_queue,
+                              result_logger);
 
     // Start the client thread
     std::thread client_thread(tcp_client_tx_thread, ipv4, &ping_table,
@@ -239,7 +240,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::string ipv4 = argv[1];
-    
+
     try {
         tcp_client(ipv4);
     } catch (const std::exception& e) {

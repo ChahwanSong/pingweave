@@ -45,7 +45,7 @@ int get_context_by_ip(struct rdma_context *ctx,
     int family;
     if (getifaddrs(&ifaddr) == -1) {
         logger->error("Failed to getifaddrs");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
@@ -61,7 +61,7 @@ int get_context_by_ip(struct rdma_context *ctx,
                                 NI_MAXHOST, nullptr, 0, NI_NUMERICHOST);
             if (s != 0) {
                 logger->error("getnameinfo(): {}", gai_strerror(s));
-                return true;
+                return PINGWEAVE_FAILURE;
             }
 
             ctx->iface = std::string(ifa->ifa_name);
@@ -71,7 +71,7 @@ int get_context_by_ip(struct rdma_context *ctx,
                         "No matching RDMA device found for interface: {}",
                         ifa->ifa_name);
                     freeifaddrs(ifaddr);
-                    return true;
+                    return PINGWEAVE_FAILURE;
                 } else {
                     break;
                 }
@@ -82,11 +82,11 @@ int get_context_by_ip(struct rdma_context *ctx,
     freeifaddrs(ifaddr);
     if (!ctx->context) {
         logger->error("No matching RDMA device found for IP {}", ctx->ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // Find a valid active port on RDMA devices
@@ -184,22 +184,22 @@ int get_traffic_class(struct rdma_context *ctx,
                       std::shared_ptr<spdlog::logger> logger) {
     // get traffic class value from pingweave.ini
     if (ctx->protocol == "ib") {
-        if (get_int_param_from_ini(ctx->traffic_class, "traffic_class_ib")) {
+        if (IS_FAILURE(get_int_param_from_ini(ctx->traffic_class,
+                                              "traffic_class_ib"))) {
             logger->error(
                 "Failed to get a traffic class for IB from pingweave.ini. Use "
-                "a "
-                "default class: 0.");
+                "a default class: 0.");
             ctx->traffic_class = 0;
-            return false;
+            return PINGWEAVE_FAILURE;
         }
     } else if (ctx->protocol == "roce") {
-        if (get_int_param_from_ini(ctx->traffic_class, "traffic_class_roce")) {
+        if (IS_FAILURE(get_int_param_from_ini(ctx->traffic_class,
+                                              "traffic_class_roce"))) {
             logger->error(
                 "Failed to get a traffic class for RoCE from pingweave.ini. "
-                "Use a "
-                "default class: 0.");
+                "Use a default class: 0.");
             ctx->traffic_class = 0;
-            return false;
+            return PINGWEAVE_FAILURE;
         }
     } else {
         logger->error("Invalid protocol type: {}", ctx->protocol);
@@ -208,7 +208,7 @@ int get_traffic_class(struct rdma_context *ctx,
     }
 
     // success
-    return true;
+    return PINGWEAVE_SUCCESS;
 }
 
 ibv_ah *get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
@@ -264,7 +264,7 @@ bool allocate_and_register_buffer(struct ibv_pd *pd, Buffer &buffer,
     int ret = posix_memalign((void **)&buffer.addr, page_size, size);
     if (ret != 0 || !buffer.addr) {
         logger->error("Failed to allocate memory");
-        return false;
+        return PINGWEAVE_FAILURE;
     }
     buffer.length = size;
     std::memset(buffer.addr, 0x0, size);  // initialize the buffer
@@ -276,11 +276,11 @@ bool allocate_and_register_buffer(struct ibv_pd *pd, Buffer &buffer,
         // Handle registration failure
         free(buffer.addr);
         logger->error("Failed to register memory region");
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return true;
+    return PINGWEAVE_SUCCESS;
 }
 
 int init_ctx(struct rdma_context *ctx, const int &is_rx,
@@ -350,8 +350,8 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
 
     {  // buffer allocation
         for (int i = 0; i < ctx->buf.size(); ++i) {
-            if (!allocate_and_register_buffer(
-                    ctx->pd, ctx->buf[i], MESSAGE_SIZE + GRH_SIZE, logger)) {
+            if (IS_FAILURE(allocate_and_register_buffer(
+                    ctx->pd, ctx->buf[i], MESSAGE_SIZE + GRH_SIZE, logger))) {
                 logger->error("Failed to alloc/register memory");
                 goto clean_pd;
             }
@@ -419,7 +419,7 @@ int init_ctx(struct rdma_context *ctx, const int &is_rx,
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 
 clean_qp:
     ibv_destroy_qp(ctx->qp);
@@ -449,7 +449,7 @@ clean_device:
     ibv_close_device(ctx->context);
 
     // failure
-    return true;
+    return PINGWEAVE_FAILURE;
 }
 
 int prepare_ctx(struct rdma_context *ctx,
@@ -458,7 +458,7 @@ int prepare_ctx(struct rdma_context *ctx,
     attr.qp_state = IBV_QPS_RTR;
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE)) {
         logger->error("Failed to modify QP to RTR");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     attr.qp_state = IBV_QPS_RTS;
@@ -466,11 +466,11 @@ int prepare_ctx(struct rdma_context *ctx,
 
     if (ibv_modify_qp(ctx->qp, &attr, IBV_QP_STATE | IBV_QP_SQ_PSN)) {
         logger->error("Failed to modify QP to RTS");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
@@ -480,22 +480,22 @@ int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
     ctx->is_rx = is_rx;        // rx or tx
     ctx->protocol = protocol;  // ib or roce
 
-    if (get_context_by_ip(ctx, logger)) {
-        return true;  // propagate error
+    if (IS_FAILURE(get_context_by_ip(ctx, logger))) {
+        return PINGWEAVE_FAILURE;  // propagate error
     }
 
-    if (init_ctx(ctx, is_rx, logger)) {
-        return true;  // propagate error
+    if (IS_FAILURE(init_ctx(ctx, is_rx, logger))) {
+        return PINGWEAVE_FAILURE;  // propagate error
     }
 
-    if (prepare_ctx(ctx, logger)) {
-        return true;  // propagate error
+    if (IS_FAILURE(prepare_ctx(ctx, logger))) {
+        return PINGWEAVE_FAILURE;  // propagate error
     }
 
     if (ibv_query_gid(ctx->context, ctx->active_port, ctx->gid_index,
                       &ctx->gid)) {
         logger->error("Could not get my gid for gid index {}", ctx->gid_index);
-        return true;  // propagate error
+        return PINGWEAVE_FAILURE;  // propagate error
     }
 
     // gid to wired and parsed gid
@@ -510,7 +510,7 @@ int make_ctx(struct rdma_context *ctx, const std::string &ipv4,
                  ctx_send_type, ipv4, ctx->parsed_gid, ctx->qp->qp_num);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // Function to initialize RDMA contexts
@@ -518,15 +518,15 @@ int initialize_contexts(struct rdma_context &ctx_tx,
                         struct rdma_context &ctx_rx, const std::string &ipv4,
                         const std::string &protocol,
                         std::shared_ptr<spdlog::logger> logger) {
-    if (make_ctx(&ctx_tx, ipv4, protocol, false, logger)) {
+    if (IS_FAILURE(make_ctx(&ctx_tx, ipv4, protocol, false, logger))) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
-    if (make_ctx(&ctx_rx, ipv4, protocol, true, logger)) {
+    if (IS_FAILURE(make_ctx(&ctx_rx, ipv4, protocol, true, logger))) {
         logger->error("Failed to create RX context for IP: {}", ipv4);
         return true;
     }
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int post_recv(struct rdma_context *ctx, const uint64_t &wr_id, const int &n) {
@@ -561,7 +561,7 @@ int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
     ibv_ah *ah = get_or_create_ah(ctx, rem_dest, logger);
     if (!ah) {
         logger->error("Failed to create or reuse an AH");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // Prepare ibv_send_wr
@@ -585,9 +585,9 @@ int post_send(struct rdma_context *ctx, union rdma_addr rem_dest,
     struct ibv_send_wr *bad_wr = nullptr;
     if (ibv_post_send(ctx->qp, &wr, &bad_wr)) {
         logger->error("ibv_post_send(...) failed");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // Utility function: Wait for CQ event and handle it
@@ -598,16 +598,16 @@ int wait_for_cq_event(struct rdma_context *ctx,
 
     if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
         logger->error("Failed to get cq_event");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // Verify that the event is from the correct CQ
     if (ev_cq != pingweave_cq(ctx)) {
         logger->error("CQ event for unknown CQ");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // save RDMA device's Server RX QP information
@@ -620,7 +620,7 @@ int save_device_info(struct rdma_context *ctx,
         // create a directory if not exists
         if (mkdir(directory.c_str(), 0744) != 0) {
             logger->error("Cannot create a directory {}", directory);
-            return 1;
+            return PINGWEAVE_FAILURE;
         }
     }
 
@@ -631,7 +631,7 @@ int save_device_info(struct rdma_context *ctx,
     std::ofstream outfile(filename);
     if (!outfile.is_open()) {
         logger->error("Cannot open a file {} ({})", filename, strerror(errno));
-        return 1;
+        return PINGWEAVE_FAILURE;
     }
 
     // 4. get a current time
@@ -647,63 +647,13 @@ int save_device_info(struct rdma_context *ctx,
     if (!outfile) {
         logger->error("Error occued when writing a file {} ({})", filename,
                       strerror(errno));
-        return 1;
+        return PINGWEAVE_FAILURE;
     }
 
     outfile.close();
-    return 0;
+    return PINGWEAVE_SUCCESS;
 }
 
-// for test purpose
-int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
-                     std::shared_ptr<spdlog::logger> logger) {
-    std::string line, gid, lid, qpn;
-
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
-        logger->error("Error opening file.");
-        return 1;
-    }
-
-    // read gid
-    if (std::getline(file, line)) {
-        gid = line;
-    } else {
-        logger->error("Error reading first line.");
-        return 1;
-    }
-
-    // read lid
-    if (std::getline(file, line)) {
-        lid = line;
-    } else {
-        logger->error("Error reading second line.");
-        return 1;
-    }
-
-    // read qpn
-    if (std::getline(file, line)) {
-        qpn = line;
-    } else {
-        logger->error("Error reading second line.");
-        return 1;
-    }
-
-    file.close();
-
-    try {
-        wire_gid_to_gid(gid.c_str(), &dst_addr->x.gid);
-        dst_addr->x.lid = std::stoi(lid);
-        dst_addr->x.qpn = std::stoi(qpn);
-    } catch (const std::invalid_argument &e) {
-        logger->error("Invalid argument: {}", e.what());
-        return 1;
-    } catch (const std::out_of_range &e) {
-        logger->error("Out of range: {}", e.what());
-        return 1;
-    }
-    return 0;
-}
 
 std::string convert_rdma_result_to_str(const std::string &srcip,
                                        const std::string &dstip,

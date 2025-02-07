@@ -12,15 +12,15 @@ Restart=always
 RestartSec=5s
 
 # CPU and memory resource limit
-CPUQuota=5%
-MemoryMax=2G
+CPUQuota=600%
+MemoryMax=4G
 
 # file and process limit
-LimitNOFILE=1024
-LimitNPROC=1024
+LimitNOFILE=4096
+LimitNPROC=64
 
 # stop & kill
-TimeoutStopSec=30s
+TimeoutStopSec=60s
 KillSignal=SIGTERM
 SendSIGKILL=yes
 

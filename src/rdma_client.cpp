@@ -15,8 +15,8 @@ void handle_received_message(rdma_context* ctx_rx,
         // Handle PONG message
         logger->debug("[CQE] -> Recv PONG ({}): recv_time: {}, cqe_time:{}",
                       pong_msg.x.pingid, recv_time, cqe_time);
-        if (!ping_table->update_pong_info(pong_msg.x.pingid, recv_time,
-                                          cqe_time)) {
+        if (IS_FAILURE(ping_table->update_pong_info(pong_msg.x.pingid, recv_time,
+                                          cqe_time))) {
             logger->debug("PONG ({}): No entry in ping_table.",
                           pong_msg.x.pingid);
         }
@@ -24,8 +24,8 @@ void handle_received_message(rdma_context* ctx_rx,
         // Handle ACK message
         logger->debug("[CQE] -> Recv PONG_ACK ({}): server_delay: {}",
                       pong_msg.x.pingid, pong_msg.x.server_delay);
-        if (!ping_table->update_ack_info(pong_msg.x.pingid,
-                                         pong_msg.x.server_delay)) {
+        if (IS_FAILURE(ping_table->update_ack_info(pong_msg.x.pingid,
+                                         pong_msg.x.server_delay))) {
             logger->debug("PONG_ACK ({}): No entry in ping_table.",
                           pong_msg.x.pingid);
         }
@@ -214,7 +214,8 @@ void client_process_tx_cqe(rdma_context* ctx_tx, RdmaPinginfoMap* ping_table,
                     logger->debug(
                         "[CQE] Send complete (ping ID: {}), cqe_time: {}.",
                         wc.wr_id, cqe_time);
-                    if (!ping_table->update_ping_cqe_time(wc.wr_id, cqe_time)) {
+                    if (IS_FAILURE(ping_table->update_ping_cqe_time(
+                            wc.wr_id, cqe_time))) {
                         logger->warn(
                             "Failed to update send completion time for ping ID "
                             "{}.",
@@ -315,7 +316,7 @@ void rdma_client_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     try {
         while (true) {
             // Wait for the next CQE
-            if (wait_for_cq_event(ctx_rx, logger)) {
+            if (IS_FAILURE(wait_for_cq_event(ctx_rx, logger))) {
                 logger->error("Failed during CQ event waiting");
                 throw std::runtime_error(
                     "rx thread - Failed during CQ event waiting");
@@ -347,7 +348,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
     try {
         while (true) {
             // Retrieve the next destination for sending
-            if (scheduler.next(dst_addr, time_sleep_us)) {
+            if (IS_SUCCESS(scheduler.next(dst_addr, time_sleep_us))) {
                 const auto& [dst_ip, dst_gid_str, dst_lid, dst_qpn] = dst_addr;
 
                 // Set the destination address
@@ -364,7 +365,7 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 msg.x.lid = rx_lid;
 
                 // Record the send time
-                if (!ping_table->insert(msg.x.pingid, msg, dst_ip)) {
+                if (IS_FAILURE(ping_table->insert(msg.x.pingid, msg, dst_ip))) {
                     logger->warn("Failed to insert ping ID {} into ping_table.",
                                  msg.x.pingid);
                 }
@@ -379,17 +380,18 @@ void rdma_client_tx_sched_thread(struct rdma_context* ctx_tx,
                 // sanity check
                 assert(msg.x.pingid > PINGWEAVE_WRID_PONG_ACK);
 
-                if (post_send(ctx_tx, dst_addr, msg.raw, sizeof(rdma_pingmsg_t),
-                              msg.x.pingid % ctx_tx->buf.size(), msg.x.pingid,
-                              logger)) {
+                if (IS_FAILURE(post_send(ctx_tx, dst_addr, msg.raw,
+                                         sizeof(rdma_pingmsg_t),
+                                         msg.x.pingid % ctx_tx->buf.size(),
+                                         msg.x.pingid, logger))) {
                     logger->error("Failed to send PING message, dst: {}.",
                                   dst_ip);
                 } else {
                     // if RNIC_TIMESTAMP is not supported, update ping cqe here
                     if (!ctx_tx->rnic_hw_ts) {
                         auto cqe_time = get_current_timestamp_steady_ns();
-                        if (!ping_table->update_ping_cqe_time(msg.x.pingid,
-                                                              cqe_time)) {
+                        if (IS_FAILURE(ping_table->update_ping_cqe_time(
+                                msg.x.pingid, cqe_time))) {
                             logger->warn(
                                 "Failed to update send completion time for "
                                 "ping ID {}.",
@@ -428,7 +430,7 @@ void rdma_client_tx_cqe_thread(struct rdma_context* ctx_tx,
     try {
         while (true) {
             // Wait for the next CQE
-            if (wait_for_cq_event(ctx_tx, logger)) {
+            if (IS_FAILURE(wait_for_cq_event(ctx_tx, logger))) {
                 logger->error("Failed during CQ event waiting");
                 throw std::runtime_error(
                     "tx cqe - Failed during CQ event waiting");
@@ -448,8 +450,8 @@ void rdma_client_result_thread(const std::string& ipv4,
                                RdmaClientQueue* client_queue,
                                std::shared_ptr<spdlog::logger> logger) {
     int report_interval_ms = 10000;
-    if (get_int_param_from_ini(report_interval_ms,
-                               "interval_report_ping_result_millisec")) {
+    if (IS_FAILURE(get_int_param_from_ini(
+            report_interval_ms, "interval_report_ping_result_millisec"))) {
         logger->error(
             "Failed to load 'report_interval' from pingwewave.ini. Use default "
             "- 10 sec.");
@@ -468,7 +470,8 @@ void rdma_client_result_thread(const std::string& ipv4,
     // get controller address and port
     std::string controller_host;
     int controller_port;
-    if (get_controller_info_from_ini(controller_host, controller_port)) {
+    if (IS_FAILURE(
+            get_controller_info_from_ini(controller_host, controller_port))) {
         logger->error(
             "Exit the result thread - failed to load pingweave.ini file");
         throw;  // Propagate exception
@@ -566,30 +569,30 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
     const std::string client_logname = protocol + "_client_" + ipv4;
     enum spdlog::level::level_enum log_level_client;
     std::shared_ptr<spdlog::logger> client_logger;
-    if (!get_log_config_from_ini(log_level_client,
-                                 "logger_cpp_process_rdma_client")) {
+    if (IS_FAILURE(get_log_config_from_ini(log_level_client,
+                                           "logger_cpp_process_rdma_client"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_client'");
+    } else {
         client_logger =
             initialize_logger(client_logname, DIR_LOG_PATH, log_level_client,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         client_logger->info("RDMA Client is running on pid {}", getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_rdma_client'");
     }
 
     // Inter-thread queue
     const std::string result_logname = protocol + "_" + ipv4;
     enum spdlog::level::level_enum log_level_result;
     std::shared_ptr<spdlog::logger> result_logger;
-    if (!get_log_config_from_ini(log_level_result,
-                                 "logger_cpp_process_rdma_result")) {
+    if (IS_FAILURE(get_log_config_from_ini(log_level_result,
+                                           "logger_cpp_process_rdma_result"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_result'");
+    } else {
         result_logger =
             initialize_logger(result_logname, DIR_RESULT_PATH, log_level_result,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         result_logger->info("RDMA Result is running on pid {}", getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_rdma_result'");
     }
 
     // Internal message-queue
@@ -599,16 +602,16 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
     const std::string ping_table_logname = protocol + "_table_" + ipv4;
     enum spdlog::level::level_enum log_level_ping_table;
     std::shared_ptr<spdlog::logger> ping_table_logger;
-    if (!get_log_config_from_ini(log_level_ping_table,
-                                 "logger_cpp_process_rdma_ping_table")) {
+    if (IS_FAILURE(get_log_config_from_ini(
+            log_level_ping_table, "logger_cpp_process_rdma_ping_table"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_ping_table'");
+    } else {
         ping_table_logger = initialize_logger(
             ping_table_logname, DIR_LOG_PATH, log_level_ping_table,
             LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         ping_table_logger->info("RDMA ping_table is running on pid {}",
                                 getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_rdma_ping_table'");
     }
 
     RdmaPinginfoMap ping_table(ping_table_logger, &client_queue,
@@ -616,7 +619,8 @@ void rdma_client(const std::string& ipv4, const std::string& protocol) {
 
     // Initialize RDMA contexts
     rdma_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol, client_logger)) {
+    if (IS_FAILURE(initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol,
+                                       client_logger))) {
         throw std::runtime_error(
             "Client main - Failed to initialize RDMA contexts.");
     }

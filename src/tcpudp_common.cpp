@@ -5,14 +5,19 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
     ctx->ipv4 = ipv4;
 
     // get the polling parameter
-    get_int_param_from_ini(ctx->poll_interval_us,
-                           "interval_poll_event_udp_microsec");
+    if (IS_FAILURE(get_int_param_from_ini(
+            ctx->poll_interval_us, "interval_poll_event_udp_microsec"))) {
+        logger->error(
+            "Failed to load 'interval_poll_event_udp_microsec' from "
+            "pingweave.ini.");
+            return PINGWEAVE_FAILURE;
+    }
 
     // create socket
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         logger->error("Failed to create UDP socket");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // (optional) non-blocking I/O
@@ -20,11 +25,11 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
         int flags = fcntl(fd, F_GETFL, 0);
         if (flags == -1) {
             logger->error("make_ctx: socket fcntl(F_GETFL) failed");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
             logger->error("make_ctx: socket fcntl(F_SETFL) failed");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
     }
 
@@ -39,35 +44,35 @@ int make_ctx(struct udp_context *ctx, const std::string &ipv4,
     // change string IP to network byte order
     if (inet_pton(AF_INET, ipv4.data(), &addr.sin_addr) <= 0) {
         logger->error("Given ipv4 address is invalild: {}", ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&addr),
              sizeof(addr)) < 0) {
         logger->error("Failed to bind UDP local addr");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     logger->info("IP: {}:{} is ready for UDP communication", ipv4, port);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // Initialize TX/RX context for UDP
 int initialize_contexts(struct udp_context &ctx_tx, struct udp_context &ctx_rx,
-                        const std::string &ipv4, const uint16_t& rx_port,
+                        const std::string &ipv4, const uint16_t &rx_port,
                         std::shared_ptr<spdlog::logger> logger) {
     uint16_t tx_port = 0;
-    if (make_ctx(&ctx_tx, ipv4, tx_port, logger)) {
+    if (IS_FAILURE(make_ctx(&ctx_tx, ipv4, tx_port, logger))) {
         logger->error("Failed to create TX context for IP: {}", ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
-    if (make_ctx(&ctx_rx, ipv4, rx_port, logger)) {
+    if (IS_FAILURE(make_ctx(&ctx_rx, ipv4, rx_port, logger))) {
         logger->error("Failed to create RX context for IP: {}", ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 void log_bound_address(int sock_fd, std::shared_ptr<spdlog::logger> logger) {
@@ -97,7 +102,7 @@ int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
 
     if (inet_pton(AF_INET, dst_ip.data(), &dest.sin_addr) <= 0) {
         logger->error("Invalid host address: {}", dst_ip);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     union tcpudp_pingmsg_t msg;
@@ -111,18 +116,18 @@ int send_udp_message(struct udp_context *ctx_tx, std::string dst_ip,
 
     if (sent < 0) {
         logger->error("Failed to send msg {} to {}", msg.x.pingid, dst_ip);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     if (static_cast<size_t>(sent) != sizeof(tcpudp_pingmsg_t)) {
         logger->error("Partial message sent");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     logger->debug("Sending UDP message with pingid {} to {}", pingid, dst_ip);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
@@ -151,7 +156,7 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
                     continue;
                 } else {
                     logger->error("recvfrom() failed: {}", strerror(errno));
-                    return true;
+                    return PINGWEAVE_FAILURE;
                 }
             }
             // successful, exit the loop
@@ -169,14 +174,14 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
     // sanity check
     if (received < 0) {
         logger->error("Failed to receive UDP messsage");
-        return true;  // error
+        return PINGWEAVE_FAILURE;  // error
     }
 
     // check received message size
     if (static_cast<size_t>(received) != sizeof(tcpudp_pingmsg_t)) {
         logger->error("Received unexpected message size: {} (expected: {})",
                       received, sizeof(tcpudp_pingmsg_t));
-        return true;  // error
+        return PINGWEAVE_FAILURE;  // error
     }
 
     // parse the received message
@@ -186,11 +191,11 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
     if (ping_msg.x._prefix != 0 || ping_msg.x._pad != 0) {
         logger->error(
             "Prefix and pad is non-zero. Message might be corrupted.");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
     if (ping_msg.x.pingid == 0) {
         logger->error("PingID must not be zero.");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // memorize for PONG to sender
@@ -201,7 +206,7 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
     if (inet_ntop(AF_INET, &sender_addr.sin_addr, sender_ip,
                   sizeof(sender_ip)) == nullptr) {
         logger->error("Failed to parse a sender information from inet_ntop");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
     sender = sender_ip;  // char to str
     // auto sender_port = ntohs(sender_addr.sin_port);
@@ -210,7 +215,7 @@ int receive_udp_message(struct udp_context *ctx_rx, uint64_t &pingid,
                   ping_msg.x.pingid, sender);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
@@ -221,7 +226,7 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         logger->error("Failed to create TCP socket");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
     ctx->sock = tcp_socket(new int(fd));
 
@@ -231,7 +236,7 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
         if (setsockopt(*ctx->sock, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                        &enable, sizeof(int)) < 0) {
             logger->error("Failed to set SO_REUSEADDR | SO_REUSEPORT");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         logger->debug(
             "TCP server socket - set option - SO_REUSEADDR | SO_REUSEPORT");
@@ -245,7 +250,7 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
         if (setsockopt(*ctx->sock, SOL_SOCKET, SO_RCVTIMEO | SO_SNDTIMEO,
                        (char *)&tv, sizeof(tv)) < 0) {
             logger->error("Failed to set SO_SNDTIMEO Timeout.");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         logger->debug("TCP client socket - set option - RCVTIMEO and SNDTIMEO");
 
@@ -256,7 +261,7 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
         if (setsockopt(*ctx->sock, SOL_SOCKET, SO_LINGER, &solinger,
                        sizeof(struct linger)) == -1) {
             logger->error("Failed to set SO_LINGER");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         logger->debug("TCP client socket - set option - LO_LINGER {1, 0}");
     }
@@ -271,13 +276,13 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
     if (inet_pton(AF_INET, ipv4.data(), &ctx->addr.sin_addr) <= 0) {
         // -1: invalid address, 0: AF_INET is not supported
         logger->error("Given ipv4 address is invalild: {}", ipv4);
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     if (bind(*ctx->sock, reinterpret_cast<struct sockaddr *>(&ctx->addr),
              sizeof(ctx->addr)) < 0) {
         logger->error("Failed to bind TCP server local addr");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // server is listening
@@ -288,19 +293,19 @@ int make_ctx(struct tcp_context *ctx, const std::string &ipv4,
                         reinterpret_cast<struct sockaddr *>(&ctx->addr),
                         &addr_size) == -1) {
             logger->error("getsockname failed");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         logger->info("TCP server is lstening on port {}",
                      ntohs(ctx->addr.sin_port));
 
         if (listen(*ctx->sock, SOMAXCONN) == -1) {
             logger->error("TCP server cannot listen the socket");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
@@ -310,10 +315,10 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
     tcp_context ctx_client;
     ctx_client.is_server = false;
     try {
-        if (make_ctx(&ctx_client, src_ip, 0, logger)) {
+        if (IS_FAILURE(make_ctx(&ctx_client, src_ip, 0, logger))) {
             logger->error("Failed to create a client context for IP: {}",
                           src_ip);
-            return true;
+            return PINGWEAVE_FAILURE;
         }
 
         std::memset(&ctx_client.addr, 0, sizeof(ctx_client.addr));
@@ -322,11 +327,11 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
 
         if (inet_pton(AF_INET, dst_ip.data(), &ctx_client.addr.sin_addr) <= 0) {
             logger->error("Invalid address/ Address not supported");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
 
         // Record the send time
-        if (!ping_table->insert(pingid, pingid, dst_ip)) {
+        if (IS_FAILURE(ping_table->insert(pingid, pingid, dst_ip))) {
             logger->warn("Failed to insert ping ID {} into ping_table.",
                          pingid);
         }
@@ -339,12 +344,12 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
         if (connect(*ctx_client.sock, (const sockaddr *)&ctx_client.addr,
                     sizeof(sockaddr_in)) == -1) {
             logger->debug("Connection failed - {} -> {}", src_ip, dst_ip);
-            return true;
+            return PINGWEAVE_FAILURE;
         }
 
         // End of handshake
         uint64_t recv_time_steady = get_current_timestamp_steady_ns();
-        if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
+        if (IS_FAILURE(ping_table->update_pong_info(pingid, recv_time_steady))) {
             logger->warn("PONG ({}): No entry in ping_table", pingid);
         }
 
@@ -357,7 +362,7 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
         if (getsockname(*ctx_client.sock, (struct sockaddr *)&local,
                         &addr_len) == -1) {
             logger->error("getsockname failed.");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
         char local_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(local.sin_addr), local_ip, INET_ADDRSTRLEN);
@@ -371,28 +376,28 @@ int send_tcp_message(TcpUdpPinginfoMap *ping_table, std::string src_ip,
         /** NOTE: no need to close socket as we use the unique pointer */
 
         // success
-        return false;
+        return PINGWEAVE_SUCCESS;
 
     } catch (const std::exception &e) {
         logger->error("Exception in send_tcp_message: {}", e.what());
-        return false;
+        return PINGWEAVE_FAILURE;
     } catch (...) {
         logger->error("Unknown exception in send_tcp_message");
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 }
 
 int receive_tcp_message(int sockfd, std::shared_ptr<spdlog::logger> logger) {
     if (sockfd < 0) {
         logger->warn("Failed to accept a new TCP connection.");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     /* server makes passive-close (i.e., after FIN from client) */
     close(sockfd);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 std::string convert_tcpudp_result_to_str(

@@ -55,19 +55,19 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
     } catch (const std::exception &e) {
         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
                      e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
         // check empty or not
         if (config.empty()) {
             spdlog::warn("No entry in pinglist.yaml, skip.");
-            return true;
+            return PINGWEAVE_FAILURE;
         }
     } catch (const std::exception &e) {
         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:empty: {}",
                      e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -75,7 +75,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
         local_ips = get_all_local_ips();
     } catch (const std::exception &e) {
         spdlog::error("Failed to get my local IPs");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -97,7 +97,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
     } catch (const std::exception &e) {
         spdlog::error("RoCE: Failure occurs while getting IP from pinglist: {}",
                       e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -119,7 +119,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
     } catch (const std::exception &e) {
         spdlog::error("IB: Failure occurs while getting IP from pinglist: {}",
                       e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -141,7 +141,7 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
     } catch (const std::exception &e) {
         spdlog::error("TCP: Failure occurs while getting IP from pinglist: {}",
                       e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -163,34 +163,34 @@ int get_my_addr_from_pinglist(const std::string &pinglist_filename,
     } catch (const std::exception &e) {
         spdlog::error("UDP: Failure occurs while getting IP from pinglist: {}",
                       e.what());
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int get_controller_info_from_ini(std::string &ip, int &port) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     ip = parser.get("controller", "host");
     if (ip.empty()) {
         spdlog::error("pingweave.ini gives an erratic controller host ip.");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     port = parser.getInt("controller", "collect_port_http");
     if (port < 0) {
         spdlog::error("pingweave.ini gives an erratic controller port.");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int get_int_value_from_ini(IniParser &parser, const std::string &section,
@@ -218,34 +218,34 @@ int get_int_param_from_ini(int &ret, const std::string &key) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
         ret = get_int_value_from_ini(parser, "param", key);
     } catch (const std::runtime_error &) {
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int get_str_param_from_ini(std::string &ret, const std::string &key) {
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
         ret = get_str_value_from_ini(parser, "param", key);
     } catch (const std::runtime_error &) {
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
@@ -253,7 +253,7 @@ int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
     IniParser parser;
     if (!parser.load(PINGWEAVE_INI_ABS_PATH)) {
         spdlog::error("Failed to load pingweave.ini");
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     try {
@@ -263,14 +263,14 @@ int get_log_config_from_ini(enum spdlog::level::level_enum &log_level,
             log_level = it->second;
         } else {
             spdlog::error("Unknown log level from pingweave.ini: {}", key);
-            return true;
+            return PINGWEAVE_FAILURE;
         }
     } catch (const std::runtime_error &) {
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 void delete_files_in_directory(const std::string &directoryPath) {
@@ -437,15 +437,6 @@ uint64_t calc_time_delta_with_modulo(const uint64_t &t1, const uint64_t &t2,
     uint64_t t1_modulo = t1 % modulo;
     uint64_t t2_modulo = t2 % modulo;
     uint64_t t_diff_modulo = ((t2_modulo + modulo) - t1_modulo) % modulo;
-
-    // // for debugging
-    // logger->debug("Calculate time diff - original: {}, modulo: {}", t2 - t1,
-    // t_diff_modulo); uint64_t t_diff = t2 - t1; if (t_diff > (1ULL << 30) &&
-    // t_diff < (1ULL << 33)) {
-    //     logger->debug("Invalid time difference: {}, modulo: {}", t_diff,
-    //     t_diff_modulo);
-    // }
-
     return t_diff_modulo;
 }
 
@@ -461,7 +452,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
     if (sock < 0) {
         logger->error("HTTP Socket creation failed! errno: {} - {}", errno,
                       strerror(errno));
-        return true;  // fail
+        return PINGWEAVE_FAILURE;  // fail
     }
 
     // set timeout (3 seconds, by default)
@@ -474,7 +465,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to set timeout! errno: {} - {}", errno,
                       strerror(errno));
         close(sock);
-        return true;  // fail
+        return PINGWEAVE_FAILURE;  // fail
     }
 
     // set http server address
@@ -485,7 +476,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Invalid server IP address: {}! errno: {} - {}",
                       server_ip, errno, strerror(errno));
         close(sock);
-        return true;  // fail
+        return PINGWEAVE_FAILURE;  // fail
     }
 
     // connect to server
@@ -494,7 +485,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Connection to server {}:{} failed! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return true;  // fail
+        return PINGWEAVE_FAILURE;  // fail
     }
 
     // construct HTTP request
@@ -513,7 +504,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
         logger->error("HTTP Failed to send request to {}:{}! errno: {} - {}",
                       server_ip, server_port, errno, strerror(errno));
         close(sock);
-        return true;  // fail
+        return PINGWEAVE_FAILURE;  // fail
     } else if (bytes_sent < static_cast<ssize_t>(request.size())) {
         logger->warn("HTTP Partial send: Only {}/{} bytes sent to {}:{}!",
                      bytes_sent, request.size(), server_ip, server_port);
@@ -529,7 +520,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
                   server_port);
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 int message_to_http_server(std::string message, std::string controller_host,
@@ -537,17 +528,17 @@ int message_to_http_server(std::string message, std::string controller_host,
                            std::shared_ptr<spdlog::logger> logger) {
     if (message.empty()) {
         // skip to send an empty message
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
-    if (send_message_to_http_server(controller_host, controller_port, message,
-                                    req_api, logger)) {
+    if (IS_FAILURE(send_message_to_http_server(controller_host, controller_port, message,
+                                    req_api, logger))) {
         logger->error("Failed to post - api: {}, msg: {}.", req_api, message);
-        return true;  // failed
+        return PINGWEAVE_FAILURE;  // failed
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 // calculate stats from delay histroy

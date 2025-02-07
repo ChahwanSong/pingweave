@@ -6,5 +6,4 @@
 #include <spdlog/spdlog.h>                    // spdlog
 
 #include "../libs/readerwriterqueue/readerwriterqueue.h"  // SPSC queue
-
 #include "../libs/fkyaml/node.hpp" // yaml handler

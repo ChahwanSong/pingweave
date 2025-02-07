@@ -28,14 +28,14 @@ void udp_client_tx_thread(struct udp_context* ctx_tx,
         auto pingid = make_pingid(ip2uint(server_ip), ping_uid++);
 
         // Record the send time
-        if (!ping_table->insert(pingid, pingid, server_ip)) {
+        if (IS_FAILURE(ping_table->insert(pingid, pingid, server_ip))) {
             logger->warn("[TX] Failed to insert ping ID {} into ping_table.",
                          pingid);
         }
 
         // send
-        if (send_udp_message(ctx_tx, server_ip, server_port, pingid,
-                             spdlog::default_logger())) {
+        if (IS_FAILURE(send_udp_message(ctx_tx, server_ip, server_port, pingid,
+                             spdlog::default_logger()))) {
             // somethign wrong
             logger->warn("[TX] Failed to send response to {}", server_ip);
             continue;
@@ -56,13 +56,13 @@ void udp_client_rx_thread(struct udp_context* ctx_rx,
             uint64_t pingid = 0;
             uint64_t recv_time_steady;
             std::string sender;
-            if (receive_udp_message(ctx_rx, pingid, sender, recv_time_steady,
-                                    logger)) {
+            if (IS_FAILURE(receive_udp_message(ctx_rx, pingid, sender, recv_time_steady,
+                                    logger))) {
                 // something wrong
                 continue;
             }
 
-            if (!ping_table->update_pong_info(pingid, recv_time_steady)) {
+            if (IS_FAILURE(ping_table->update_pong_info(pingid, recv_time_steady))) {
                 logger->warn("[RX] PONG ({}): No entry in ping_table", pingid);
                 continue;
             }
@@ -134,8 +134,8 @@ int main(int argc, char* argv[]) {
 
     // Initialize UDP contexts
     udp_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, client_ip, client_rx_port,
-                            spdlog::default_logger())) {
+    if (IS_FAILURE(initialize_contexts(ctx_tx, ctx_rx, client_ip, client_rx_port,
+                            spdlog::default_logger()))) {
         throw std::runtime_error("Failed to initialize UDP contexts.");
     }
 

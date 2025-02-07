@@ -41,8 +41,6 @@ int wait_for_cq_event(struct rdma_context *ctx,
                       std::shared_ptr<spdlog::logger> logger);
 int save_device_info(struct rdma_context *ctx,
                      std::shared_ptr<spdlog::logger> logger);
-int load_device_info(union rdma_addr *dst_addr, const std::string &filepath,
-                     std::shared_ptr<spdlog::logger> logger);
 void wire_gid_to_gid(const char *wgid, union ibv_gid *gid);
 void gid_to_wire_gid(const union ibv_gid *gid, char wgid[]);
 std::string parsed_gid(union ibv_gid *gid);

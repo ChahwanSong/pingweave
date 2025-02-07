@@ -13,13 +13,25 @@
 #define IS_SUCCESS(retval) ((retval) == PINGWEAVE_SUCCESS)
 #define IS_FAILURE(retval) ((retval) == PINGWEAVE_FAILURE)
 
+// get pingweave/src directory
+inline std::string get_src_dir() {
+#ifndef SOURCE_DIR
+    // If missed, give a current directory
+    return ".";
+#else
+    // SOURCE_DIR will be defined in Makefile
+    return SOURCE_DIR;
+#endif
+}
+
 // directory
 const std::string DIR_UPLOAD_PATH = "/../upload";
 const std::string DIR_DOWNLOAD_PATH = "/../download";
 const std::string DIR_LOG_PATH = "/../logs";
 const std::string DIR_RESULT_PATH = "/../result";
 const std::string DIR_CONFIG_PATH = "/../config";
-
+const std::string PINGWEAVE_INI_ABS_PATH =
+    get_src_dir() + DIR_CONFIG_PATH + "/pingweave.ini";
 // constants
 const static int MESSAGE_SIZE = 64;                  // Message size of 64B
 const static int MAX_NUM_HOSTS_IN_PINGLIST = 10000;  // Maximum of host number
@@ -58,18 +70,4 @@ const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 const static int IPC_MESSAGE_SIZE = 2097152;  // 2MB
 const static int IPC_BUFFER_SIZE = 256;        // 256 messages
 
-// get pingweave/src directory
-inline std::string get_src_dir() {
-#ifndef SOURCE_DIR
-    // If missed, give a current directory
-    return ".";
-#else
-    // SOURCE_DIR will be defined in Makefile
-    return SOURCE_DIR;
-#endif
-}
 
-const std::string PINGWEAVE_INI_ABS_PATH =
-    get_src_dir() + DIR_CONFIG_PATH + "/pingweave.ini";
-const std::string PY_CLIENT_ABS_PATH = get_src_dir() + "/pingweave_client.py";
-const std::string PY_SERVER_ABS_PATH = get_src_dir() + "/pingweave_server.py";

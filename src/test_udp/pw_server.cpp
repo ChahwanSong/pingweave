@@ -25,9 +25,10 @@ int main(int argc, char *argv[]) {
 
     // Initialize UDP context
     udp_context ctx_server;
-    if (make_ctx(&ctx_server, server_ip, server_rx_port,
-                 spdlog::default_logger())) {
-        spdlog::error("Failed to create a server context for {}:{}", server_ip, server_rx_port);
+    if (IS_FAILURE(make_ctx(&ctx_server, server_ip, server_rx_port,
+                            spdlog::default_logger()))) {
+        spdlog::error("Failed to create a server context for {}:{}", server_ip,
+                      server_rx_port);
         throw std::runtime_error("Failed to create UDP context at server");
     }
 
@@ -35,15 +36,16 @@ int main(int argc, char *argv[]) {
         uint64_t pingid = 0;
         uint64_t dummy_ts;
         std::string addr_msg_from;
-        if (receive_udp_message(&ctx_server, pingid, addr_msg_from, dummy_ts,
-                                spdlog::default_logger())) {
+        if (IS_FAILURE(receive_udp_message(&ctx_server, pingid, addr_msg_from, dummy_ts,
+                                spdlog::default_logger()))) {
             // receive_message 실패 시 처리
             spdlog::warn("receive_message failed");
             continue;
         }
 
-        if (send_udp_message(&ctx_server, addr_msg_from, client_rx_port, pingid,
-                             spdlog::default_logger())) {
+        if (IS_FAILURE(send_udp_message(&ctx_server, addr_msg_from,
+                                        client_rx_port, pingid,
+                                        spdlog::default_logger()))) {
             // somethign wrong
             spdlog::warn("Failed to send response to {}", addr_msg_from);
             continue;

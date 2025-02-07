@@ -193,22 +193,23 @@ int server_process_pong_cqe(struct rdma_context* ctx_tx,
         dst_addr.x.qpn = ping_msg.x.qpn;
 
         // send PONG ACK
-        if (post_send(ctx_tx, dst_addr, pong_msg.raw, sizeof(rdma_pongmsg_t),
-                      wc.wr_id % ctx_tx->buf.size(), PINGWEAVE_WRID_PONG_ACK,
-                      logger)) {
-            return true;  // failed
+        if (IS_FAILURE(post_send(ctx_tx, dst_addr, pong_msg.raw,
+                                 sizeof(rdma_pongmsg_t),
+                                 wc.wr_id % ctx_tx->buf.size(),
+                                 PINGWEAVE_WRID_PONG_ACK, logger))) {
+            return PINGWEAVE_FAILURE;  // failed
         }
     } else {
         logger->warn("pingid {} entry does not exist at ping_table (expired?)",
                      wc.wr_id);
     }
     // Remove entry from table
-    if (!ping_table->remove(wc.wr_id)) {
+    if (IS_FAILURE(ping_table->remove(wc.wr_id))) {
         logger->warn("Nothing to remove the id {} from ping_table", wc.wr_id);
     }
 
     // success
-    return false;
+    return PINGWEAVE_SUCCESS;
 }
 
 void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
@@ -257,8 +258,8 @@ void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     }
 
                     // PONG's CQE ('wr_id' is the 'pingid')
-                    if (server_process_pong_cqe(ctx_tx, wc, cqe_time,
-                                                ping_table, logger)) {
+                    if (IS_FAILURE(server_process_pong_cqe(ctx_tx, wc, cqe_time,
+                                                ping_table, logger))) {
                         throw std::runtime_error(
                             "tx cqe - Failed to process PONG CQE");
                     }
@@ -320,8 +321,8 @@ void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     }
 
                     // PONG's CQE ('wr_id' is 'pingid')
-                    if (server_process_pong_cqe(ctx_tx, wc, cqe_time,
-                                                ping_table, logger)) {
+                    if (IS_FAILURE(server_process_pong_cqe(ctx_tx, wc, cqe_time,
+                                                ping_table, logger))) {
                         throw std::runtime_error(
                             "tx cqe - Failed to process PONG CQE");
                     }
@@ -376,7 +377,7 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         // Polling loop
         while (true) {
             // Wait for the next CQE
-            if (wait_for_cq_event(ctx_rx, logger)) {
+            if (IS_FAILURE(wait_for_cq_event(ctx_rx, logger))) {
                 throw std::runtime_error(
                     "rx thread -  Failed during CQ event waiting");
             }
@@ -407,7 +408,7 @@ void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
     try {
         while (true) {
             // Wait for the next CQE
-            if (wait_for_cq_event(ctx_tx, logger)) {
+            if (IS_FAILURE(wait_for_cq_event(ctx_tx, logger))) {
                 throw std::runtime_error(
                     "tx thread -  Failed during CQ event waiting");
             }
@@ -449,7 +450,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                     ping_msg.x.time);
 
                 // (1) Store in table
-                if (!ping_table->insert(ping_msg.x.pingid, ping_msg)) {
+                if (IS_FAILURE(ping_table->insert(ping_msg.x.pingid, ping_msg))) {
                     logger->warn("Failed to insert pingid {} into ping_table.",
                                  ping_msg.x.pingid);
                 }
@@ -471,10 +472,10 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                     pong_msg.x.pingid, dst_addr.x.qpn,
                     parsed_gid(&dst_addr.x.gid), dst_addr.x.lid);
 
-                if (post_send(ctx_tx, dst_addr, pong_msg.raw,
-                              sizeof(rdma_pongmsg_t),
-                              pong_msg.x.pingid % ctx_tx->buf.size(),
-                              pong_msg.x.pingid, logger)) {
+                if (IS_FAILURE(post_send(ctx_tx, dst_addr, pong_msg.raw,
+                                         sizeof(rdma_pongmsg_t),
+                                         pong_msg.x.pingid % ctx_tx->buf.size(),
+                                         pong_msg.x.pingid, logger))) {
                     throw std::runtime_error(
                         "tx thread - SEND PONG post failed");
                 }
@@ -492,15 +493,15 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
     const std::string server_logname = protocol + "_server_" + ipv4;
     enum spdlog::level::level_enum log_level_server;
     std::shared_ptr<spdlog::logger> server_logger;
-    if (!get_log_config_from_ini(log_level_server,
-                                 "logger_cpp_process_rdma_server")) {
+    if (IS_FAILURE(get_log_config_from_ini(log_level_server,
+                                           "logger_cpp_process_rdma_server"))) {
+        throw std::runtime_error(
+            "Failed to get a param 'logger_cpp_process_rdma_server'");
+    } else {
         server_logger =
             initialize_logger(server_logname, DIR_LOG_PATH, log_level_server,
                               LOG_FILE_SIZE, LOG_FILE_EXTRA_NUM);
         server_logger->info("RDMA Server is running on pid {}", getpid());
-    } else {
-        throw std::runtime_error(
-            "Failed to get a param 'logger_cpp_process_rdma_server'");
     }
 
     // Create internal queue
@@ -511,13 +512,14 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
 
     // Initialize RDMA context
     rdma_context ctx_tx, ctx_rx;
-    if (initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol, server_logger)) {
+    if (IS_FAILURE(initialize_contexts(ctx_tx, ctx_rx, ipv4, protocol,
+                                       server_logger))) {
         throw std::runtime_error(
             "server main - Failed to initialize RDMA contexts.");
     }
 
     // Save file info for Server RX QP
-    if (save_device_info(&ctx_rx, server_logger)) {
+    if (IS_FAILURE(save_device_info(&ctx_rx, server_logger))) {
         server_logger->error("Failed to save device info: {}", ipv4);
         throw std::runtime_error("server main - save_device_info failed.");
     }

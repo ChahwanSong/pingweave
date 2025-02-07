@@ -39,14 +39,14 @@ class RdmaMsgScheduler : public MsgScheduler {
                 result = addressInfo[addr_idx % addressInfo.size()];
                 addr_idx = (addr_idx + 1) % addressInfo.size();
                 time_sleep_us = 0;
-                return 1;  // Success
+                return PINGWEAVE_SUCCESS;  // Success
             } else {
                 time_sleep_us = 1000000;  // if no addr to send, sleep 1 second
-                return 0;  // Failure: No address information available
+                return PINGWEAVE_FAILURE;  // Failure: No address information available
             }
         } else {
             time_sleep_us = inter_ping_interval_us - ping_elapsed_time_us;
-            return 0;  // Failure: Called too soon
+            return PINGWEAVE_FAILURE;  // Failure: Called too soon
         }
     }
 

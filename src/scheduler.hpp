@@ -23,8 +23,8 @@ class MsgScheduler {
 
         std::string interval_param =
             "interval_send_ping_" + protocol + "_microsec";
-        if (get_int_param_from_ini(interval_send_ping_microsec,
-                                    interval_param)) {
+        if (IS_FAILURE(get_int_param_from_ini(interval_send_ping_microsec,
+                                    interval_param))) {
             interval_send_ping_microsec = 1000000;
             logger->error(
                 "Failed to load 'report_interval' from pingweave.ini. Use {} "
@@ -32,8 +32,8 @@ class MsgScheduler {
                 interval_send_ping_microsec);
         }
 
-        if (get_int_param_from_ini(load_config_interval_sec,
-                                    "interval_sync_pinglist_sec")) {
+        if (IS_FAILURE(get_int_param_from_ini(load_config_interval_sec,
+                                    "interval_sync_pinglist_sec"))) {
             load_config_interval_sec = 10;
             logger->error(
                 "Failed to load 'interval_sync_pinglist_sec' from "

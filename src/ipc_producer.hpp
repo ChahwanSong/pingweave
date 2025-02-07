@@ -80,12 +80,12 @@ ProducerQueue::ProducerQueue(const std::string& prefix_name,
     // Initialize logger
     const std::string logname = "ipc_producer_" + prefix_name + "_" + shm_name;
     enum spdlog::level::level_enum log_level;
-    if (!get_log_config_from_ini(log_level, "logger_ipc_process_producer")) {
-        logger = initialize_logger(logname, DIR_LOG_PATH, log_level,
-                                   LOG_FILE_SIZE_SMALL, LOG_FILE_EXTRA_NUM);
-    } else {
+    if (IS_FAILURE(get_log_config_from_ini(log_level, "logger_ipc_process_producer"))) {
         throw std::runtime_error(
             "Failed to get a param 'logger_ipc_process_producer'");
+    } else {
+        logger = initialize_logger(logname, DIR_LOG_PATH, log_level,
+                                   LOG_FILE_SIZE_SMALL, LOG_FILE_EXTRA_NUM);
     }
     logger->info("Logger initialized (PID: {})", logname, getpid());
 

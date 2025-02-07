@@ -62,7 +62,6 @@ class RdmaPinginfoMap {
           client_queue(queue),
           logger(ping_table_logger) {}
 
-    // if already exists, return false
     bool insert(const Key& key, const union rdma_pingmsg_t& msg,
                 const std::string& dstip) {
         std::unique_lock lock(mutex_);
@@ -70,7 +69,7 @@ class RdmaPinginfoMap {
 
         auto it = map.find(key);
         if (it != map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         // Add at the end of list
@@ -84,7 +83,7 @@ class RdmaPinginfoMap {
              0, 0, PINGWEAVE_MASK_INIT},
             steady_now,
             listIter};
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     // if fail to find, return false
@@ -94,17 +93,17 @@ class RdmaPinginfoMap {
         if (it != map.end()) {
             // found
             value = it->second.value;
-            return true;
+            return PINGWEAVE_SUCCESS;
         }
         // failed
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 
     bool update_ping_cqe_time(const Key& key, const uint64_t& x) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         if (it->second.value.network_delay == 0) {
@@ -127,7 +126,7 @@ class RdmaPinginfoMap {
 
         // condition to record
         logging(it->second.value);
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     bool update_pong_info(const Key& key, const uint64_t& recv_time,
@@ -136,7 +135,7 @@ class RdmaPinginfoMap {
         auto it = map.find(key);
         if (it == map.end()) {
             // failure
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         // client delay
@@ -166,14 +165,14 @@ class RdmaPinginfoMap {
         logging(it->second.value);
 
         // success
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     bool update_ack_info(const Key& key, const uint64_t& server_delay) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         // update times
@@ -185,10 +184,10 @@ class RdmaPinginfoMap {
 
         // condition to record
         logging(it->second.value);
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
-    bool logging(const rdma_pinginfo_t& ping_info) {
+    void logging(const rdma_pinginfo_t& ping_info) {
         if (ping_info.recv_bitmap == PINGWEAVE_MASK_RECV) {
             // sanity check
             if (ping_info.recv_cnt != 3) {
@@ -197,7 +196,7 @@ class RdmaPinginfoMap {
                     "{}.",
                     ping_info.pingid, ping_info.dstip, ping_info.recv_cnt);
                 remove(ping_info.pingid);
-                return true;
+                return;
             }
 
             // logging
@@ -250,14 +249,13 @@ class RdmaPinginfoMap {
                         ping_info.pingid, ping_info.dstip);
                 }
 
-                if (remove(ping_info.pingid)) {  // if failed to remove
+                if (IS_FAILURE(remove(ping_info.pingid))) {  // if failed to remove
                     logger->warn(
-                        "[Expired?] Entry for pingid {} does not exist, so "
-                        "cannot remove.",
+                        "[Expired?] Entry for pingid {} does not exist.",
                         ping_info.pingid);
                 }
 
-                return false;
+                return;
             }
 
             // send out for analysis
@@ -272,16 +270,16 @@ class RdmaPinginfoMap {
                     ping_info.pingid, ping_info.dstip);
             }
 
-            if (remove(ping_info.pingid)) {  // if failed to remove
+            if (IS_FAILURE(remove(ping_info.pingid))) {  // if failed to remove
                 logger->warn(
                     "[Expired?] Entry for pingid {} does not exist, so cannot "
                     "remove.",
                     ping_info.pingid);
             }
-            return false;
+            return;
         }
 
-        return true;  // not complete
+        return;
     }
 
     bool empty() {
@@ -373,10 +371,10 @@ class RdmaPinginfoMap {
         if (it != map.end()) {
             keyList.erase(it->second.listIter);
             map.erase(it);
-            return false;
+            return PINGWEAVE_SUCCESS;
         }
         // if nothing to remove
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     std::unordered_map<Key, MapEntry> map;

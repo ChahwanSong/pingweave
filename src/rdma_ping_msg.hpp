@@ -19,21 +19,20 @@ class PingMsgMap {
     explicit PingMsgMap(int threshold_ms = 1000)
         : threshold_ms(threshold_ms) {}
 
-    // if already exists, return false
     bool insert(const Key& key, const rdma_pingmsg_t& value) {
         std::unique_lock lock(mutex_);
         expireEntries();
 
         auto it = map.find(key);
         if (it != map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         // add to list and map with timestamp
         TimePoint now = get_current_timestamp_steady_clock();
         auto listIter = keyList.emplace(keyList.end(), key);
         map[key] = {value, now, listIter};
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     // if fail to find, return false
@@ -43,10 +42,10 @@ class PingMsgMap {
         if (it != map.end()) {
             // found
             value = it->second.value;
-            return true;
+            return PINGWEAVE_SUCCESS;
         }
         // failed
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 
     int remove(const Key& key) {
@@ -55,10 +54,10 @@ class PingMsgMap {
         if (it != map.end()) {
             keyList.erase(it->second.listIter);
             map.erase(it);
-            return true;
+            return PINGWEAVE_SUCCESS;
         }
         // if nothing to remove
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 
     bool empty() {

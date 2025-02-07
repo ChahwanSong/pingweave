@@ -75,27 +75,3 @@ class IniParser {
                    : str.substr(start, end - start + 1);
     }
 };
-
-/* example code */
-// int main() {
-//     IniParser parser;
-//     if (!parser.load("../config/pingweave.ini")) {
-//         std::cerr << "Failed to load config.ini\n";
-//         return 1;
-//     }
-
-//     // read value
-//     std::string controller_host = parser.get("controller", "host");
-//     std::string controller_port = parser.get("controller", "port");
-//     int interval_download =
-//         parser.getInt("param", "interval_download_pinglist_sec");
-//     int interval_read = parser.getInt("param", "interval_read_pinglist_sec");
-
-//     // print value
-//     std::cout << "Controller Host: " << controller_host << '\n';
-//     std::cout << "Controller Port: " << controller_port << '\n';
-//     std::cout << "Download Interval: " << interval_download << " seconds\n";
-//     std::cout << "Read Interval: " << interval_read << " seconds\n";
-
-//     return 0;
-// }

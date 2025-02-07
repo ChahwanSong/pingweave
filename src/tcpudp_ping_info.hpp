@@ -33,7 +33,6 @@ class TcpUdpPinginfoMap {
           client_queue(queue),
           logger(ping_table_logger) {}
 
-    // if already exists, return false
     bool insert(const Key& key, const uint64_t& pingid,
                 const std::string& dstip) {
         std::unique_lock lock(mutex_);
@@ -41,7 +40,7 @@ class TcpUdpPinginfoMap {
 
         auto it = map.find(key);
         if (it != map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         // Add at the end of list
@@ -53,7 +52,7 @@ class TcpUdpPinginfoMap {
                      convert_clock_to_ns(steady_now)},
                     steady_now,
                     listIter};
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     // if fail to find, return false
@@ -63,17 +62,17 @@ class TcpUdpPinginfoMap {
         if (it != map.end()) {
             // found
             value = it->second.value;
-            return true;
+            return PINGWEAVE_SUCCESS;
         }
         // failed
-        return false;
+        return PINGWEAVE_FAILURE;
     }
 
     bool update_pong_info(const Key& key, const uint64_t& recv_time) {
         std::unique_lock lock(mutex_);
         auto it = map.find(key);
         if (it == map.end()) {
-            return false;
+            return PINGWEAVE_FAILURE;
         }
 
         auto ping_info = it->second.value;
@@ -97,14 +96,12 @@ class TcpUdpPinginfoMap {
                 ping_info.pingid, ping_info.dstip);
         }
 
-        if (remove(ping_info.pingid)) {  // if failed to remove
-            logger->warn(
-                "[Expired?] Entry for pingid {} does not exist, so cannot "
-                "remove.",
-                ping_info.pingid);
+        if (IS_FAILURE(remove(ping_info.pingid))) {  // if failed to remove
+            logger->warn("[Expired?] Entry for pingid {} does not exist.",
+                         ping_info.pingid);
         }
 
-        return true;
+        return PINGWEAVE_SUCCESS;
     }
 
     bool empty() {
@@ -182,10 +179,10 @@ class TcpUdpPinginfoMap {
         if (it != map.end()) {
             keyList.erase(it->second.listIter);
             map.erase(it);
-            return false;
+            return PINGWEAVE_SUCCESS;
         }
         // if nothing to remove
-        return true;
+        return PINGWEAVE_FAILURE;
     }
 
     std::unordered_map<Key, MapEntry> map;
