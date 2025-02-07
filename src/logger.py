@@ -4,8 +4,10 @@ from logging.handlers import RotatingFileHandler
 from macro import *
 
 # Create the logs directory if it doesn't exist
+# TODO: read from pingweave.ini
+
 logging_level = logging.INFO
-console_level = logging.WARNING
+console_level = logging.INFO
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)

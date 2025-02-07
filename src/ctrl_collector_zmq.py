@@ -85,7 +85,7 @@ def worker_routine(worker_url, worker_id):
             # Skip this message and continue receiving next
             continue
         except Exception as e:
-            logger.exception(
+            logger.error(
                 f"[Worker {worker_id}] Unexpected error parsing frames: {e}"
             )
             continue
@@ -131,7 +131,7 @@ def worker_routine(worker_url, worker_id):
 
             except Exception as e:
                 # Log the error but keep the worker running
-                logger.exception(
+                logger.error(
                     f"[Worker {worker_id}] Error processing message lines: {e}"
                 )
                 # Decide whether to continue or break. Here we continue.
@@ -142,7 +142,7 @@ def worker_routine(worker_url, worker_id):
             reply_data = "Success.".encode("utf-8")
             socket.send_multipart([client_id, b"", reply_data])
         except Exception as e:
-            logger.exception(f"[Worker {worker_id}] Error sending reply: {e}")
+            logger.error(f"[Worker {worker_id}] Error sending reply: {e}")
             continue
 
 
