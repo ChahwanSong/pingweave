@@ -4,6 +4,6 @@ bin
 result
 download
 upload
-!redis/redis.tar.gz
-src/**/*.o
-src/__pycache__
+image
+html
+**/__pycache__
