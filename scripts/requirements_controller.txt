@@ -1,3 +1,4 @@
+pyzmq
 pyyaml
 psutil
 pandas
@@ -9,5 +10,3 @@ datetime
 setproctitle
 plotly
 kaleido
-matplotlib
-pyzmq

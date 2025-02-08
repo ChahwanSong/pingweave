@@ -2,15 +2,18 @@
 PingWeave
 
 ## Prerequisites
-
 ### Common
-* c++17
-* ibverbs library (e.g., libibverbs) - "rdma-core" or "rdma-core-devel"
-* chronyd.service (NTP time synchronization) - to evict stale information 
+* `c++17`
+* `libibverbs` (ibverbs library): `rdma-core` or `rdma-core-devel`
+* `chronyd.service` (NTP time synchronization): to evict stale information 
 
 ### Agent
 * python >= 3.6 (for asyncio)
-* kafka
+* python packages
+    * pyzmq
+    * datetime
+    * setproctitle
+    * pyyaml
 
 ### Controller
 * redis: in-memory key-value store
@@ -27,20 +30,24 @@ port 0  # TCP/IP inactivate (optional)
 ```
 
 * python >= 3.7 (for aiohttp)
-* python packages (versions do not necessarily be same with clients)
+* python packages
     * pyyaml
     * psutil
     * pandas
+    * aiohttp
     * numpy
-    * aiohttp (+ jinja2)
-    * redis (client)
-    * logging
+    * redis
+    * jinja2
     * datetime
     * setproctitle
     * plotly
     * kaleido
+    * pyzmq
     * matplotlib
-    * confluent-kafka
+
+
+For python package installations, see [scripts/requirements_agent.txt](scripts/requirements_agent.txt) and [scripts/requirements_controller.txt](scripts/requirements_controller.txt).
+
 
 ### Install & Build
 

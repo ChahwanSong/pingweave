@@ -213,7 +213,7 @@ async def index(request):
                 if (localStorage.getItem('autoReloadEnabled') === 'true') {{
                   window.location.reload();
                 }}
-              }}, 30000);
+              }}, 60000);
             }}
           }}
 
@@ -282,28 +282,47 @@ async def index(request):
             images.forEach(img => {{
               let loadedTime = parseInt(img.dataset.loadedAt);
               if (!loadedTime) return;
-              # let diffSec = Math.floor((now - loadedTime) / 1000);
-              # let displayElem = img.parentNode.querySelector('.timeSinceImageLoad');
-              # if (displayElem) {{
-              #   displayElem.innerText = diffSec + " seconds since this image loaded.";
-              # }}
+              // The following lines have been commented out properly with //
+              // let diffSec = Math.floor((now - loadedTime) / 1000);
+              // let displayElem = img.parentNode.querySelector('.timeSinceImageLoad');
+              // if (displayElem) {{
+              //   displayElem.innerText = diffSec + " seconds since this image loaded.";
+              // }}
             }});
           }}
           setInterval(updateImageTimes, 1000);
 
           // (C) Reload all images every 10 seconds
-          //     (Separate from page reload)
+          
           function reloadAllImages() {{
             let images = document.querySelectorAll('img[data-original-src]');
             images.forEach(img => {{
               let original = img.dataset.originalSrc;
-              // Cache-busting query param
               let newSrc = original + "?_=" + Date.now();
               img.src = newSrc;
             }});
           }}
           setInterval(reloadAllImages, 10000);
 
+          // (D) Reload all summaries every 10 seconds
+          function reloadAllSummaries() {{
+            let summaries = document.querySelectorAll('.summary-content[data-original-summary]');
+            summaries.forEach(elem => {{
+              let url = elem.dataset.originalSummary;
+              let newUrl = url + "?_=" + Date.now();
+              fetch(newUrl)
+                .then(response => {{
+                  if (!response.ok) throw new Error("Network response was not ok");
+                  return response.text();
+                }})
+                .then(text => {{
+                  elem.innerHTML = text;
+                }})
+                .catch(error => console.error("Error reloading summary:", error));
+            }});
+          }}
+          setInterval(reloadAllSummaries, 10000);
+          
           // =========================
           // (5) DOMContentLoaded Setup
           // =========================
@@ -344,7 +363,7 @@ async def index(request):
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="autoReloadSwitch">
             <label class="form-check-label" for="autoReloadSwitch">
-              Auto-Reload Entire Page (every 30s)
+              Auto-Reload Entire Page (every 60s)
             </label>
           </div>
 
@@ -484,34 +503,37 @@ async def index(request):
                 png_path = f"/image/{png_fname}.png"
 
                 content += f"""
-                      <li class="mb-4 border-bottom pb-3">
-                        <div><strong>Measure:</strong> {measure}</div>
-                        <div><strong>Filename:</strong>
-                          <a href="/{fname}" target="_blank">{fname}</a>
-                        </div>
+                  <li class="mb-4 border-bottom pb-3">
+                    <div><strong>Measure:</strong> {measure}</div>
+                    <div><strong>Filename:</strong>
+                      <a href="/{fname}" target="_blank">{fname}</a>
+                    </div>
 
-                        <div class="d-flex mt-3">
-                          <div>
-                            <img src="{png_path}"
-                                data-original-src="{png_path}"
-                                alt="{png_fname}"
-                                onload="recordLoad(this)"
-                                data-loaded-at=""
-                                style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
+                    <div class="d-flex mt-3">
+                      <div>
+                        <img src="{png_path}"
+                            data-original-src="{png_path}"
+                            alt="{png_fname}"
+                            onload="recordLoad(this)"
+                            data-loaded-at=""
+                            style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
+                      </div>
+                      <div class="ms-3" style="flex: 1; max-width: 400px;">
+                        <div class="card shadow-sm">
+                          <div class="card-header bg-primary text-white">
+                            Summary
                           </div>
-                          <div class="ms-3" style="flex: 1; max-width: 400px;">
-                            <div class="card shadow-sm">
-                              <div class="card-header bg-primary text-white">
-                                Summary
-                              </div>
-                              <div class="card-body">
-                                <p class="card-text" style="white-space: pre-wrap;">{summary_text_escaped}</p>
-                                {summary_timestamp_html}
-                              </div>
+                          <div class="card-body">
+                            <!-- Note the addition of data-original-summary -->
+                            <div class="summary-content" data-original-summary="/summary/{summary_fname}" style="white-space: pre-wrap;">
+                              {summary_text_escaped}
                             </div>
+                            {summary_timestamp_html}
                           </div>
                         </div>
-                      </li>
+                      </div>
+                    </div>
+                  </li>
                 """
 
             content += """
