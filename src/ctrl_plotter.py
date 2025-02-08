@@ -72,6 +72,7 @@ except Exception as e:
 #     Config and Pinglist  #
 # ======================== #
 
+
 def read_pinglist() -> None:
     """
     Reads the YAML pinglist from PINGLIST_PATH and updates the global
@@ -378,6 +379,9 @@ def plot_heatmap_value(
         html_path = os.path.join(HTML_DIR, f"{outname}.html")
         fig.write_html(html_path)
 
+        image_path = os.path.join(IMAGE_DIR, f"{outname}.png")
+        fig.write_image(image_path, scale=2, width=800, height=700)
+
         # Logging the HTML generating time
         elapsed_time = time.time() - now_plot_time
         logger.debug(f"{outname}.html - elapsed time: {elapsed_time} seconds")
@@ -400,7 +404,7 @@ def plot_heatmap_value(
         return html_path
 
     except Exception as e:
-        logger.error(f"plot_heatmap_value exception: {e}")
+        logger.error(f"Unexpectedly terminated: {e}")
         return ""
 
 
@@ -528,7 +532,7 @@ def plot_heatmap(
     # if no ip list in pinglist.yaml, return the empty list
     if not data:
         return []
-    
+
     records = [prepare_record(k, v, plot_type) for k, v in data.items()]
     output_files = []
 
@@ -594,7 +598,9 @@ async def pingweave_plotter() -> None:
         while True:
             try:
                 now_plot_time = int(time.time())
-                interval_seconds = int(config["interval_report_ping_result_millisec"] / 1000)
+                interval_seconds = int(
+                    config["interval_report_ping_result_millisec"] / 1000
+                )
 
                 # Plot the graph every X seconds
                 if (last_plot_time + interval_seconds < now_plot_time) and (
@@ -613,8 +619,8 @@ async def pingweave_plotter() -> None:
                         for group, ip_list in cat_data.items():
                             # if empty list, ignore
                             if not ip_list:
-                                break 
-                            
+                                break
+
                             # Make a template for each possible src-dst combination
                             records[proto][group] = {
                                 f"{src},{dst}": None
@@ -677,7 +683,7 @@ async def pingweave_plotter() -> None:
                                             f"{record_key} is not in records[{proto}][{group}]"
                                         )
                                     records[proto][group][record_key] = value_splits
-                    
+
                     # Step 4: Generate plots (concurrently for each category and group)
                     new_file_list = []
                     with ThreadPoolExecutor() as executor:
@@ -695,9 +701,10 @@ async def pingweave_plotter() -> None:
 
                         for future in futures:
                             new_file_list.extend(future.result())
-                    
+
                     # Step 5: Cleanup stale HTML/SUMMARY files
                     clear_directory_conditional(HTML_DIR, new_file_list, "html")
+                    clear_directory_conditional(IMAGE_DIR, new_file_list, "png")
                     clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
                     elapsed_time = time.time() - now_plot_time
                     logger.info(f"Total elapsed time: {elapsed_time:.2f} seconds")
@@ -713,8 +720,8 @@ async def pingweave_plotter() -> None:
                 logger.error(f"Plotter - Unhandled exception: {e}")
             finally:
                 clear_directory_conditional(HTML_DIR, new_file_list, "html")
+                clear_directory_conditional(IMAGE_DIR, new_file_list, "png")
                 clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
-
 
     except KeyboardInterrupt:
         logger.info("pingweave_plotter received KeyboardInterrupt. Exiting.")

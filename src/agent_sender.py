@@ -51,6 +51,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
             zmq_context = zmq.Context()
 
             def send_message_via_zmq(message: str, protocol: str, ipv4: str):
+                latency = None
                 try:
                     start_time = time.perf_counter()
                     zmq_socket = zmq_context.socket(zmq.DEALER)  # socket=DEALER
@@ -96,11 +97,12 @@ def thread_process_messages(protocol, ipv4, stop_event):
 
                     end_time = time.perf_counter()
                     latency = (end_time - start_time) * 1000000  # microsec
-                    return latency
 
                 except Exception as e:
                     logger.error(f"Exception while sending message with ZMQ: {e}")
                     zmq_socket.close()
+                finally:
+                    return latency
 
         except ImportError as e:
             logger.error(f"Could not import zmq (ZeroMQ): {e}")
@@ -122,7 +124,7 @@ def thread_process_messages(protocol, ipv4, stop_event):
             msgs = consumer.read_messages()
             if msgs:
                 for m in msgs:
-                    logger.info(f"[{protocol}:{ipv4}] Consumer gets message: {m}")
+                    logger.debug(f"[{protocol}:{ipv4}] Consumer gets message: {m}")
                     if protocol_to_report_result == "zmq":
                         send_latency = send_message_via_zmq(m, protocol, ipv4)
                     else:
@@ -134,9 +136,11 @@ def thread_process_messages(protocol, ipv4, stop_event):
                             logger,
                         )
 
-                    logger.info(
-                        f"[{protocol}:{ipv4}] Latency to report: {send_latency} us"
-                    )
+                    # if send latency is over 1 second, print error message
+                    if send_latency > 1000000:
+                        logger.warning(
+                            f"[{protocol}:{ipv4}] Latency to report using {protocol_to_report_result}: {send_latency} us"
+                        )
 
             else:
                 # If there's no message, sleep for 10 milliseconds

@@ -19,6 +19,7 @@ LOGS_DIR = ../logs
 UPLOAD_DIR = ../upload
 DOWNLOAD_DIR = ../download
 HTML_DIR = ../html
+IMAGE_DIR = ../image
 SUMMARY_DIR = ../summary
 
 # -----------------------------------------------------------
@@ -82,6 +83,7 @@ mkdir:
 	@mkdir -p $(UPLOAD_DIR)
 	@mkdir -p $(DOWNLOAD_DIR)
 	@mkdir -p $(HTML_DIR)
+	@mkdir -p $(IMAGE_DIR)
 	@mkdir -p $(SUMMARY_DIR)
 
 # tcp_server
@@ -133,11 +135,14 @@ clean:
 		$(OBJS_COMMON) $(OBJS_TCPUDP) $(OBJS_RDMA) \
 		$(OBJS_TCP_SERVER) $(OBJS_TCP_CLIENT) \
 		$(OBJS_UDP_SERVER) $(OBJS_UDP_CLIENT) \
-		$(OBJS_RDMA_SERVER) $(OBJS_RDMA_CLIENT)
+		$(OBJS_RDMA_SERVER) $(OBJS_RDMA_CLIENT) \
 		$(TARGET_TCP_SERVER) $(TARGET_TCP_CLIENT) \
 		$(TARGET_UDP_SERVER) $(TARGET_UDP_CLIENT) \
 		$(TARGET_RDMA_SERVER) $(TARGET_RDMA_CLIENT)
-	
+	rm -rf $(BIN_DIR) $(RESULT_DIR) \
+			$(LOGS_DIR) $(UPLOAD_DIR) \
+			$(DOWNLOAD_DIR) $(HTML_DIR) \
+			$(IMAGE_DIR) $(SUMMARY_DIR)
 # $@: 현재 타겟의 이름
 # $^: 모든 의존성의 리스트
 # $<: 첫 번째 의존성

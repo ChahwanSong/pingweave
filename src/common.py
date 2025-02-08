@@ -47,11 +47,14 @@ try:
         "interval_report_ping_result_millisec": int(
             config_parser["param"]["interval_report_ping_result_millisec"]
         ),
-        "protocol_to_report_result": config_parser["param"]["protocol_to_report_result"],
+        "protocol_to_report_result": config_parser["param"][
+            "protocol_to_report_result"
+        ],
     }
 except Exception as e:
     logging.critical(f"Error parsing pingweave.ini: {e}")
     exit(1)
+
 
 def is_interface_up(iface):
     """
@@ -64,11 +67,12 @@ def is_interface_up(iface):
         # SIOCGIFFLAGS: 0x8913 retrieves the interface flags
         res = fcntl.ioctl(sock.fileno(), 0x8913, ifreq)
         # The flags are stored in the bytes 16-18 of the result.
-        flags, = struct.unpack("H", res[16:18])
+        (flags,) = struct.unpack("H", res[16:18])
         IFF_UP = 0x1  # Flag for interface being up (from net/if.h)
         return (flags & IFF_UP) == IFF_UP
     except Exception:
         return False
+
 
 def get_ip_address(iface):
     """
@@ -95,11 +99,11 @@ def get_interfaces():
     try:
         with open("/proc/net/dev") as f:
             lines = f.readlines()[2:]  # Skip the header lines
-    
+
         if lines:
             for line in lines:
                 iface = line.split(":")[0].strip()
-                
+
                 # Skip the local, virtual, and docker interfaces
                 if iface == "lo" or "virbr" in iface or "docker" in iface:
                     continue
@@ -158,11 +162,12 @@ def terminate_multiprocesses(processes, logger):
     for process in processes:
         process.join()
 
+
 # for subprocesses
 def terminate_subprocesses(processes, logger):
     """
     Kills all child processes by sending a SIGTERM to their process groups.
-    
+
     This function is registered with atexit to ensure cleanup is performed when the
     main process exits.
     """
@@ -205,10 +210,12 @@ def kill_pingweave_except_main(logger):
     except Exception as e:
         logger.error("Unexpected error when pkill -f pingweave: {e}")
 
+
 def send_message_via_http(
     message: str, rest_api: str, control_host: str, collect_port_http: int, logger
 ):
     """Sends a POST request to the server with a timeout mechanism."""
+    latency = None
     try:
         start_time = time.perf_counter()
 
@@ -235,15 +242,14 @@ def send_message_via_http(
         # Close connection
         conn.close()
 
-        return latency
-
-    except socket.timeout:
-        logger.error("Error: Request timed out!")
+    except socket.timeout as e:
+        logger.error(f"Request timed out : {e}")
     except (http.client.HTTPException, ConnectionRefusedError) as e:
-        logger.error(f"Error: Failed to send request - {e}")
+        logger.error(f"Failed to send request: {e}")
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-
+    finally:
+        return latency
 
 def delete_files_in_directory(directory_path, logger):
     """
@@ -253,9 +259,7 @@ def delete_files_in_directory(directory_path, logger):
     try:
         entries = os.listdir(directory_path)
     except Exception as e:
-        logger.error(
-            "Failed to open directory: {}. Error: {}".format(directory_path, e)
-        )
+        logger.error("Failed to open directory: {}: {}".format(directory_path, e))
         return
 
     for entry in entries:
@@ -267,7 +271,7 @@ def delete_files_in_directory(directory_path, logger):
         try:
             st = os.stat(file_path)
         except Exception as e:
-            logger.error("Failed to stat file: {}. Error: {}".format(file_path, e))
+            logger.error("Failed to stat file: {}: {}".format(file_path, e))
             continue
 
         # 디렉토리인 경우 재귀 호출 후 디렉토리 삭제
@@ -277,17 +281,14 @@ def delete_files_in_directory(directory_path, logger):
                 os.rmdir(file_path)
                 logger.info("Deleted directory: {}".format(file_path))
             except Exception as e:
-                logger.error(
-                    "Failed to remove directory: {}. Error: {}".format(file_path, e)
-                )
+                logger.error("Failed to remove directory: {}: {}".format(file_path, e))
         else:
             try:
                 os.remove(file_path)
                 logger.info("Deleted file: {}".format(file_path))
             except Exception as e:
-                logger.error(
-                    "Failed to remove file: {}. Error: {}".format(file_path, e)
-                )
+                logger.error("Failed to remove file: {}: {}".format(file_path, e))
+
 
 def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
     records = {k: set() for k in TARGET_PROTOCOLS}
@@ -296,29 +297,29 @@ def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
             with open(pinglist_path, "r") as file:
                 pinglist = yaml.safe_load(file)
                 logger.debug(f"{pinglist_path} yaml was loaded successfully.")
-            
+
             for protocol, group_data in pinglist.items():
                 # filter invalid protocols
                 if protocol not in records:
                     logger.debug(f"Skip to load invalid protocols: {protocol}")
-                
+
                 # get ip lists
                 if not group_data:
                     continue
-                
+
                 for group, iplist in group_data.items():
-                    if not iplist: 
+                    if not iplist:
                         continue
-                    
+
                     for ip in iplist:
                         if ip in local_ips:
                             records[protocol].add(ip)
         else:
-            logger.warning(f"Pinglist file not found at {pinglist_path}. Use empty pinglist.")
-        
+            logger.warning(
+                f"Pinglist file not found at {pinglist_path}. Use empty pinglist."
+            )
+
         return records
     except Exception as e:
         logger.warning("Failed to load pinglist.yaml")
         return False
-
-    

@@ -8,11 +8,12 @@ PINGLIST_PATH = os.path.join(SCRIPT_DIR, "../config/pinglist.yaml")
 LOG_DIR = os.path.join(SCRIPT_DIR, "../logs")
 UPLOAD_PATH = os.path.join(SCRIPT_DIR, "../upload")
 DOWNLOAD_PATH = os.path.join(SCRIPT_DIR, "../download")
-HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
 SUMMARY_DIR = os.path.join(SCRIPT_DIR, "../summary")
 WEBSERVER_DIR = os.path.join(SCRIPT_DIR, "../webserver")
 BOOTSTRAP_DIR = os.path.join(SCRIPT_DIR, "../libs/bootstrap")
 BIN_DIR = os.path.join(SCRIPT_DIR, "../bin")
+HTML_DIR = os.path.join(SCRIPT_DIR, "../html")
+IMAGE_DIR = os.path.join(SCRIPT_DIR, "../image")
 SHMEM_DIR = os.path.abspath("/dev/shm")
 
 # filter out in plotting if a data is too old

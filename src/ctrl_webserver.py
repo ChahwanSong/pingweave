@@ -131,11 +131,18 @@ async def post_address(request):
         return web.Response(text="Internal webserver error", status=500)
 
 
+# Helper function to read a file’s contents in a thread
+def read_file_contents(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 async def index(request):
-    files = os.listdir(HTML_DIR)
+    # 1) List files using asyncio.to_thread to avoid blocking
+    files = await asyncio.to_thread(os.listdir, HTML_DIR)
     html_files = [f for f in files if f.endswith(".html")]
 
-    # 1) Group the HTML files by protocol -> group -> (fname, measure)
+    # 2) Group the HTML files by protocol -> group -> (fname, measure)
     grouped_files = {}
     for fname in html_files:
         name_only = fname.replace(".html", "")
@@ -170,7 +177,10 @@ async def index(request):
         <script src="/bootstrap/js/bootstrap.bundle.min.js"></script>
 
         <script>
-          // Show current time in "YYYY-MM-DD HH:MM:SS" at top-right
+          // =========================
+          // (1) Clock & Date Utilities
+          // =========================
+
           function formatDateTime(dateObj) {{
             let year = dateObj.getFullYear();
             let month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -189,54 +199,133 @@ async def index(request):
               currentTimeElem.textContent = timeString;
             }}
           }}
-
-          // Update the clock every second
+          // Update every second
           setInterval(updateCurrentTime, 1000);
 
-          // Auto-reload every 10 seconds
-          setInterval(function() {{
-            window.location.reload();
-          }}, 10000);
+          // ===============================
+          // (2) Page Auto-Reload (Optional)
+          // ===============================
+          function handleAutoReload() {{
+            let isEnabled = (localStorage.getItem('autoReloadEnabled') === 'true');
+            if (isEnabled) {{
+              setInterval(function() {{
+                // Re-check user toggle each time
+                if (localStorage.getItem('autoReloadEnabled') === 'true') {{
+                  window.location.reload();
+                }}
+              }}, 30000);
+            }}
+          }}
 
-          // Keep track of which tabs are active so we can restore them after reload
-          document.addEventListener('DOMContentLoaded', function() {{
-            // 1) Restore the saved protocol tab (if any)
+          // ==================================
+          // (3) Protocol & Group Tab Persistence
+          // ==================================
+          function setupTabPersistence() {{
+            // (A) Restore the protocol tab
             let savedProtocolTabId = localStorage.getItem('activeProtocolTab');
             if (savedProtocolTabId) {{
               let tabElement = document.querySelector('#' + savedProtocolTabId);
               if (tabElement) {{
-                // Use Bootstrap's Tab API to show the saved tab
                 let protocolTab = new bootstrap.Tab(tabElement);
                 protocolTab.show();
               }}
             }}
 
-            // 2) Restore the saved group tab (if any)
-            let savedGroupTabId = localStorage.getItem('activeGroupTab');
-            if (savedGroupTabId) {{
-              let groupTabElement = document.querySelector('#' + savedGroupTabId);
-              if (groupTabElement) {{
-                let groupTab = new bootstrap.Tab(groupTabElement);
-                groupTab.show();
-              }}
-            }}
-
-            // 3) Listen for protocol-tab changes to save the new active tab
+            // (B) Listen for protocol-tab changes to save new active tab
             const protocolTabEls = document.querySelectorAll('#protocolTab .nav-link');
             protocolTabEls.forEach(el => {{
               el.addEventListener('shown.bs.tab', (event) => {{
-                // event.target.id might be something like "tab-roce" or "tab-ib"
                 localStorage.setItem('activeProtocolTab', event.target.id);
+                // Store also the name of the protocol
+                let protocolName = event.target.getAttribute('data-protocol');
+                localStorage.setItem('activeProtocolName', protocolName);
               }});
             }});
 
-            // 4) Listen for group-tab changes to save the new active group
+            // (C) Restore group tab for the current protocol
+            let activeProtocolName = localStorage.getItem('activeProtocolName');
+            if (activeProtocolName) {{
+              let savedGroupTabId = localStorage.getItem('activeGroupTab_' + activeProtocolName);
+              if (savedGroupTabId) {{
+                let groupTabElement = document.querySelector('#' + savedGroupTabId);
+                if (groupTabElement) {{
+                  let groupTab = new bootstrap.Tab(groupTabElement);
+                  groupTab.show();
+                }}
+              }}
+            }}
+
+            // (D) Listen for group-tab changes, store them per-protocol
             const groupTabEls = document.querySelectorAll('.nav-pills .nav-link');
             groupTabEls.forEach(el => {{
               el.addEventListener('shown.bs.tab', (event) => {{
-                localStorage.setItem('activeGroupTab', event.target.id);
+                let protocolName = el.getAttribute('data-protocol');
+                localStorage.setItem('activeGroupTab_' + protocolName, event.target.id);
               }});
             }});
+          }}
+
+          // =========================
+          // (4) Image Handling
+          // =========================
+
+          // (A) Called when an image finishes loading
+          function recordLoad(imgElem) {{
+            let now = Date.now();
+            imgElem.dataset.loadedAt = now;
+          }}
+
+          // (B) Update each image's load time every second
+          function updateImageTimes() {{
+            let now = Date.now();
+            let images = document.querySelectorAll('img[data-loaded-at]');
+            images.forEach(img => {{
+              let loadedTime = parseInt(img.dataset.loadedAt);
+              if (!loadedTime) return;
+              # let diffSec = Math.floor((now - loadedTime) / 1000);
+              # let displayElem = img.parentNode.querySelector('.timeSinceImageLoad');
+              # if (displayElem) {{
+              #   displayElem.innerText = diffSec + " seconds since this image loaded.";
+              # }}
+            }});
+          }}
+          setInterval(updateImageTimes, 1000);
+
+          // (C) Reload all images every 10 seconds
+          //     (Separate from page reload)
+          function reloadAllImages() {{
+            let images = document.querySelectorAll('img[data-original-src]');
+            images.forEach(img => {{
+              let original = img.dataset.originalSrc;
+              // Cache-busting query param
+              let newSrc = original + "?_=" + Date.now();
+              img.src = newSrc;
+            }});
+          }}
+          setInterval(reloadAllImages, 10000);
+
+          // =========================
+          // (5) DOMContentLoaded Setup
+          // =========================
+          document.addEventListener('DOMContentLoaded', function() {{
+            // (A) Set up auto-reload toggle
+            let reloadSwitch = document.getElementById('autoReloadSwitch');
+            if (reloadSwitch) {{
+              let isEnabled = (localStorage.getItem('autoReloadEnabled') === 'true');
+              reloadSwitch.checked = isEnabled;
+              reloadSwitch.addEventListener('change', () => {{
+                localStorage.setItem('autoReloadEnabled', reloadSwitch.checked);
+              }});
+            }}
+
+            // Kick off the auto-reload logic (page reload)
+            handleAutoReload();
+
+            // Set up protocol/group tab persistence
+            setupTabPersistence();
+
+            // Trigger the first clock update
+            updateCurrentTime();
           }});
         </script>
       </head>
@@ -251,8 +340,17 @@ async def index(request):
 
           <h1 class="mb-3">PingWeave Dashboard</h1>
 
+          <!-- Auto-Reload Toggle Switch (for entire page) -->
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="autoReloadSwitch">
+            <label class="form-check-label" for="autoReloadSwitch">
+              Auto-Reload Entire Page (every 30s)
+            </label>
+          </div>
+
           <p class="text-secondary">
-            This PingWeave dashboard shows a grouped end-to-end latency monitoring with a mesh grid.<br>
+            This PingWeave dashboard shows grouped end-to-end latency monitoring with a mesh grid.<br>
+            The images below automatically reload every 10 seconds.
           </p>
 
           <!-- Protocol Tabs -->
@@ -264,8 +362,6 @@ async def index(request):
     for protocol in protocol_list:
         active_class = "active" if first_protocol else ""
         aria_selected = "true" if first_protocol else "false"
-        # ID for the <button> that we'll use as localStorage key
-        # e.g., tab-roce, tab-ib, etc.
         protocol_button_id = f"tab-{protocol}"
         content += f"""
             <li class="nav-item" role="presentation">
@@ -277,7 +373,8 @@ async def index(request):
                 type="button"
                 role="tab"
                 aria-controls="panel-{protocol}"
-                aria-selected="{aria_selected}">
+                aria-selected="{aria_selected}"
+                data-protocol="{protocol}">
                 {protocol}
               </button>
             </li>
@@ -292,12 +389,12 @@ async def index(request):
     # Protocol tab panes
     first_protocol = True
     for protocol in protocol_list:
-        show_active = "show active" if first_protocol else ""
+        show_active_protocol = "show active" if first_protocol else ""
         first_protocol = False
 
         content += f"""
             <div
-              class="tab-pane fade {show_active}"
+              class="tab-pane fade {show_active_protocol}"
               id="panel-{protocol}"
               role="tabpanel"
               aria-labelledby="tab-{protocol}">
@@ -313,10 +410,8 @@ async def index(request):
         for group_name in group_list:
             active_class = "active" if first_group else ""
             aria_selected = "true" if first_group else "false"
-
-            # ID for the group tab's button
             safe_group_id = f"{protocol}-{group_name}".replace(" ", "_")
-            group_button_id = f"tab-{safe_group_id}"  # e.g., tab-roce-myGroup
+            group_button_id = f"tab-{safe_group_id}"
             content += f"""
                   <li class="nav-item" role="presentation">
                     <button
@@ -327,7 +422,8 @@ async def index(request):
                       type="button"
                       role="tab"
                       aria-controls="panel-{safe_group_id}"
-                      aria-selected="{aria_selected}">
+                      aria-selected="{aria_selected}"
+                      data-protocol="{protocol}">
                       {group_name}
                     </button>
                   </li>
@@ -341,16 +437,17 @@ async def index(request):
 
         first_group = True
         for group_name in group_list:
-            show_active = "show active" if first_group else ""
+            show_active_group = "show active" if first_group else ""
             first_group = False
             safe_group_id = f"{protocol}-{group_name}".replace(" ", "_")
 
             file_list = group_dict[group_name]
+            # Sort by measure
             file_list = sorted(file_list, key=lambda x: x[1])
 
             content += f"""
                   <div
-                    class="tab-pane fade {show_active}"
+                    class="tab-pane fade {show_active_group}"
                     id="panel-{safe_group_id}"
                     role="tabpanel"
                     aria-labelledby="tab-{safe_group_id}">
@@ -363,14 +460,14 @@ async def index(request):
                 summary_fname = fname.replace(".html", ".summary")
                 summary_path = os.path.join(SUMMARY_DIR, summary_fname)
 
-                # Default fallback
                 summary_text = "No summary available."
                 summary_timestamp_html = ""
 
-                if os.path.exists(summary_path):
-                    with open(summary_path, "r", encoding="utf-8") as f:
-                        summary_text = f.read()
-                    # If we loaded the summary, show a timestamp
+                if await asyncio.to_thread(os.path.exists, summary_path):
+                    loaded_text = await asyncio.to_thread(
+                        read_file_contents, summary_path
+                    )
+                    summary_text = loaded_text
                     loaded_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     summary_timestamp_html = f"""
                         <div class="text-muted small">
@@ -378,20 +475,43 @@ async def index(request):
                         </div>
                     """
 
-                # Escape HTML special chars to display text safely
                 summary_text_escaped = html.escape(summary_text)
+
+                # Prepare PNG path
+                # We assume the PNG has the same base name as the HTML file,
+                # e.g., "roce_group_something_measure1_measure2.png"
+                png_fname = fname.replace(".html", "")
+                png_path = f"/image/{png_fname}.png"
 
                 content += f"""
                       <li class="mb-4 border-bottom pb-3">
                         <div><strong>Measure:</strong> {measure}</div>
-                        <div><strong>Filename:</strong> 
+                        <div><strong>Filename:</strong>
                           <a href="/{fname}" target="_blank">{fname}</a>
                         </div>
-                        <div class="mt-2">
-                          <strong>Summary:</strong>
-                          <div style="white-space: pre-wrap;">{summary_text_escaped}</div>
-                          {summary_timestamp_html}
+
+                        <div class="d-flex mt-3">
+                          <div>
+                            <img src="{png_path}"
+                                data-original-src="{png_path}"
+                                alt="{png_fname}"
+                                onload="recordLoad(this)"
+                                data-loaded-at=""
+                                style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
+                          </div>
+                          <div class="ms-3" style="flex: 1;">
+                            <div class="card shadow-sm" style="min-width:300px;">
+                              <div class="card-header bg-primary text-white">
+                                Summary
+                              </div>
+                              <div class="card-body">
+                                <p class="card-text" style="white-space: pre-wrap;">{summary_text_escaped}</p>
+                                {summary_timestamp_html}
+                              </div>
+                            </div>
+                          </div>
                         </div>
+                        
                       </li>
                 """
 
@@ -409,11 +529,6 @@ async def index(request):
     content += """
           </div> <!-- end protocolTabContent -->
         </div> <!-- end container -->
-
-        <script>
-          // Trigger the first time update for currentTime
-          updateCurrentTime();
-        </script>
       </body>
     </html>
     """
@@ -428,9 +543,8 @@ async def pingweave_webserver():
                 app = web.Application()
                 app.router.add_get("/", index)  # indexing for html files
                 app.router.add_static("/", HTML_DIR)  # static route for html files
-                app.router.add_static(
-                    "/summary", SUMMARY_DIR
-                )  # static route for images
+                app.router.add_static("/summary", SUMMARY_DIR)  # static for summary
+                app.router.add_static("/image", IMAGE_DIR)  # static route for images
                 app.router.add_static("/bootstrap", BOOTSTRAP_DIR)  # for bootstrap
                 app.router.add_get("/pinglist", get_pinglist)
                 app.router.add_get("/address_store", get_address_store)
@@ -438,7 +552,7 @@ async def pingweave_webserver():
 
                 runner = web.AppRunner(app)
                 await runner.setup()
-                
+
                 site = web.TCPSite(runner, host="0.0.0.0", port=config["control_port"])
                 await site.start()
 
