@@ -499,8 +499,8 @@ async def index(request):
                                 data-loaded-at=""
                                 style="max-width:600px; border:1px solid #aaa; border-radius:3px;">
                           </div>
-                          <div class="ms-3" style="flex: 1;">
-                            <div class="card shadow-sm" style="min-width:300px;">
+                          <div class="ms-3" style="flex: 1; max-width: 400px;">
+                            <div class="card shadow-sm">
                               <div class="card-header bg-primary text-white">
                                 Summary
                               </div>
@@ -511,7 +511,6 @@ async def index(request):
                             </div>
                           </div>
                         </div>
-                        
                       </li>
                 """
 
