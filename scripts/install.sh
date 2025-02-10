@@ -17,8 +17,8 @@ print_help() {
     echo "Options:"
     echo "  -h, --help       Show this help message and exit"
     echo "  -d               Stop and remove pingweave.service"
-    echo "  -c               Controller installation"
-    echo "  -p               Copy pip.conf to ~/.pip"
+    echo "  -c               Follow the installation steps for controller node"
+    echo "  -p               Copy scripts/pip.conf to ~/.pip"
     echo ""
     echo "If no options are provided, the script will perform the following steps:"
     echo "  1. Check system prerequisites (systemd and Python >= 3.6), NTP, systemd, etc."
@@ -41,6 +41,11 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    cecho "RED" "Error: This script must be run as root."
+    exit 1
+fi
 
 # Handle -d option to stop and remove pingweave service immediately
 if [[ " $@ " == *" -d "* ]]; then
@@ -109,7 +114,7 @@ else
 fi
 
 
-# (3) Check Python version (>= 3.6)
+# (3) Check Python version (>= 3.6 for agent and 3.7 for controller)
 cecho "YELLOW" "Checking Python version..."
 PYTHON_VERSION=$(python3 --version 2>/dev/null)
 
@@ -134,6 +139,82 @@ else
         exit 1
     else
         cecho "GREEN" "Python version is 3.6 or higher: $PYTHON_VERSION"
+    fi
+fi
+
+# (4) check that redis package is installed and configured ---
+if [[ " $@ " == *" -c "* ]]; then
+    cecho "YELLOW" "Checking if redis package is installed..."
+
+    # Check if redis package is installed depending on the OS
+    if [[ -f /etc/redhat-release ]]; then
+        # RHEL-based systems
+        if ! rpm -q redis &>/dev/null; then
+            cecho "RED" "Error: redis package is not installed. Please install redis and try again."
+            exit 1
+        fi
+    elif [[ -f /etc/lsb-release || -f /etc/debian_version ]]; then
+        # Ubuntu-based systems (the package name might be redis or redis-server)
+        if ! dpkg -l | grep -qw redis; then
+            cecho "RED" "Error: redis package is not installed. Please install redis and try again."
+            exit 1
+        fi
+    else
+        cecho "RED" "Unsupported OS for redis package check."
+        exit 1
+    fi
+    cecho "GREEN" "redis package is installed."
+
+    # --- Now check that redis is configured for unix domain socket communication ---
+    cecho "YELLOW" "Checking redis configuration for unix domain socket communication..."
+
+    # Determine redis config file location (try common paths)
+    if [ -f /etc/redis/redis.conf ]; then
+        REDIS_CONF="/etc/redis/redis.conf"
+    elif [ -f /etc/redis.conf ]; then
+        REDIS_CONF="/etc/redis.conf"
+    else
+        cecho "RED" "Error: Could not locate the redis configuration file."
+        echo "$(
+cat << 'EOF'
+To enable unix domain socket, you must modify a redis configuration file (typically located at /etc/redis/redis.conf or /etc/redis.conf) and restart the redis.service:
+
+unixsocket /var/run/redis/redis-server.sock # specify the path to unix socket
+unixsocketperm 700 # usually 700 or 770
+EOF
+)"
+        exit 1
+    fi
+
+    # Initialize a flag to detect missing configuration
+    missing_config=false
+
+    # Check for the "unixsocket" configuration
+    if ! grep -E "^[[:space:]]*unixsocket[[:space:]]+/var/run/redis/redis-server.sock" "$REDIS_CONF" | grep -qv "^[[:space:]]*#"; then
+        cecho "RED" "Error: redis configuration missing: 'unixsocket /var/run/redis/redis-server.sock'"
+        missing_config=true
+    fi
+
+    # Check for the "unixsocketperm" configuration
+    if ! grep -E "^[[:space:]]*unixsocketperm[[:space:]]+700" "$REDIS_CONF" | grep -qv "^[[:space:]]*#"; then
+        cecho "RED" "Error: redis configuration missing: 'unixsocketperm 700'"
+        missing_config=true
+    fi
+
+    # If any configuration is missing, print the instruction message and exit
+    if $missing_config; then
+        cecho "RED" "The redis configuration for unix domain socket is not applied correctly."
+        echo "$(
+cat << 'EOF'
+To enable unix domain socket, you must modify a redis configuration file (typically located at /etc/redis/redis.conf or /etc/redis.conf) and restart the redis.service:
+
+unixsocket /var/run/redis/redis-server.sock # specify the path to unix socket
+unixsocketperm 700 # usually 700 or 770
+EOF
+)"
+        exit 1
+    else
+        cecho "GREEN" "Redis configuration for unix domain socket is applied correctly."
     fi
 fi
 

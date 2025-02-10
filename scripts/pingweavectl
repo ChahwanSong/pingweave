@@ -1,186 +1,280 @@
 #!/bin/bash -i
+# Save this file as "pingweavectl" and make it executable:
+# chmod +x pingweavectl
 
-# print_help () {
+#########################################
+# Utility Functions for Colored Output  #
+#########################################
 
-# 	echo -e "Usage: netnsctl [options] <command> <command arguments>\n"
-	
-# 	echo "Options: "
-# 	echo "-v   Show verbose output of netnsctl"
-# 	echo "-h   Show this help menu"
+cecho() {
+    # Usage: cecho COLOR "Your message"
+    # Available colors: RED, GREEN, YELLOW
+    local color="$1"
+    local message="$2"
+    local NC="\033[0m"
+    local color_code=""
 
-# 	echo -e "\nCommands:"
-# 	echo "add <netns name>                           Create a new network namespace with name <netns name>"
-# 	echo ""
-# 	echo "assign <network interface> <netns name>    Assign specified interface to the specified namespace"
-# 	echo ""
-# 	echo "switch <netns name>                        Starts a new shell in the specified namespace"
-# 	echo ""
-# 	echo "show <netns name>                          Lists interfaces in the specified namespace"
-# 	echo ""
-# 	echo "delete <netns name>                        Deletes the namespace and puts interfaces in default namespace"
-# }
+    case "$color" in
+        RED)    color_code="\033[0;31m" ;;
+        GREEN)  color_code="\033[0;32m" ;;
+        YELLOW) color_code="\033[0;33m" ;;
+        *)      color_code="" ;;
+    esac
 
-# print_verbose () {
+    echo -e "${color_code}${message}${NC}"
+}
 
-# 	if [ "$VERBOSE" == true ];then
-# 		echo $1
-# 	fi
-# }
+#########################################
+# Command Handlers                      #
+#########################################
 
+# Display help for interactive mode
+show_help() {
+    echo "Available commands:"
+    echo "  redis show {all|tcp|udp}   - Show redis information"
+    echo "  help                       - Display this help message"
+    echo "  exit | quit                - Exit the interactive mode"
+}
 
-# add_netns () {
-# 	netns=$1
-# 	print_verbose "Adding netns $netns"
+# Handler for the 'redis' command
+handle_redis_command() {
+    if [ "$#" -lt 1 ]; then
+        cecho YELLOW "Usage: redis <subcommand> [options...]"
+        echo "Available subcommands: show"
+        return
+    fi
 
-# 	sudo ip netns add $netns
-# }
+    local subcmd="$1"
+    shift
 
-# assign_netns () {
-# 	iface=$1
-# 	netns=$2
-# 	print_verbose "Assigning $iface to $netns"
+    case "$subcmd" in
+        show)
+            handle_redis_show "$@"
+            ;;
+        *)
+            cecho RED "Unknown redis subcommand: $subcmd"
+            echo "Usage: redis show {all|tcp|udp}"
+            ;;
+    esac
+}
 
-# 	sudo ip link set dev $iface netns $netns
-# 	sudo ip netns exec $netns ip link set $iface up
-# }
+# Handler for the 'redis show' subcommand
+handle_redis_show() {
+    if [ "$#" -lt 1 ]; then
+        cecho YELLOW "Usage: redis show {all|tcp|udp|roce|ib}"
+        return 1
+    fi
 
-# switch_netns () {
-# 	netns=$1
-# 	print_verbose "Switching to namespace $netns"
+    local option="$1"
+    local filter=""
+    local message=""
 
-# 	newPS1=$(echo $PS1 | sed 's,\\h,\\h_'"$netns"',g') # add netns to existing PS1
-# 	newPS1=$newPS1" "   # sed for some reason removes the leading whitespace. Restore it.
+    case "$option" in
+        all)
+            message="Showing all redis info..."
+            ;;
+        tcp)
+            message="Showing redis TCP info..."
+            filter="tcp"
+            ;;
+        udp)
+            message="Showing redis UDP info..."
+            filter="udp"
+            ;;
+        roce)
+            message="Showing redis ROCE info..."
+            filter="roce"
+            ;;
+        ib)
+            message="Showing redis IB info..."
+            filter="ib"
+            ;;
+        *)
+            cecho RED "Unknown option: $option"
+            echo "Usage: redis show {all|tcp|udp|roce|ib}"
+            return 1
+            ;;
+    esac
 
-# 	curr_user=$USER
-# 	orig_bashrc=$HOME/.bashrc
-# 	new_bashrc=$orig_bashrc.netnsctl
+    cecho GREEN "$message"
 
-# 	cp $orig_bashrc $new_bashrc  # Make a copy of current .bashrc
+    local redis_sock="/var/run/redis/redis-server.sock"
+    local redis_cmd="redis-cli -s $redis_sock"
 
-# 	# Add following lines to the copy
-# 	echo -e "\n\n## Added by netnsctl" >> $new_bashrc
-# 	echo "PS1=\"$newPS1\"" >> $new_bashrc
-
-
-# 	# TO-DO: when we need to preserve the current environment variables (use --perserve-env after sudo)
-# 	# sudo env PS1="$newPS1" ip netns exec $netns sudo -u $curr_user bash --norc
-# 	sudo ip netns exec $netns sudo -u $curr_user bash --rcfile $new_bashrc
-
-# }
-
-# show_netns () {
-# 	netns=$1
-# 	print_verbose "Showing details for namespace $netns"
-
-# 	# ip netns list   <--- to list all active netns
-
-# 	ifaces=( $(sudo ip netns exec $netns ip addr list | awk -F': ' '/^[0-9]/ {print $2}') )
-
-# 	echo "$netns:"
-
-# 	for iface in ${ifaces[@]}; do
-# 		echo "    - $iface"
-# 	done
-# }
-
-# delete_netns () {
-# 	netns=$1
-# 	print_verbose "Deleting netns $netns"
-
-# 	decision="y"
-
-# 	echo "WARNING: Deleting namespace $netns will kill all processes associated with the namespace"
-# 	read -p "Do you want to continue? (y/n) [y]:" decision
-
-# 	if [ "$decision" == "n" ] || [ "$decision" == "N" ];then
-# 		exit 0
-# 	fi
-
-# 	print_verbose "Decision was to continue"
-
-# 	sudo sh -c "ip netns pids $netns | xargs kill -9"
-
-# 	sudo ip netns del $netns
-
-# }
-
-
-# while getopts ":vh" opt; do
-#   case ${opt} in
-#     v ) 
-#       	VERBOSE=true
-#       	;;
-#     h ) 
-#     	print_help
-#     	exit 0
-#       	;;
-#     \? ) 
-# 		echo "Invalid Option: -$OPTARG" 1>&2
-# 		print_help
-#       	;;
-#   esac
-# done
-# shift $((OPTIND -1))
-
-# print_verbose "Finished opt parsing"
-
-# subcommand=$1
-# shift
-
-# case $subcommand in 
-# 	add)
-# 		if [ "$1" == "" ];then
-# 			echo "Provide a namespace name to create"
-# 			exit 1
-# 		fi
-# 		netns=$1
-# 		add_netns $netns
-# 		;;
-# 	assign)
-# 		if [ "$1" == "" ] || [ "$2" == "" ];then
-# 			echo "Provide both interface name and the namespace to add to"
-# 			exit 1
-# 		fi
-# 		iface=$1
-# 		netns=$2
-# 		assign_netns $iface $netns
-# 		;;
-# 	switch)
-# 		if [ "$1" == "" ];then
-# 			echo "Provide a namespace name to switch to"
-# 			exit 1
-# 		fi
-# 		netns=$1
-# 		switch_netns $netns
-# 		;;
-# 	show)
-# 		if [ "$1" == "" ];then
-# 			echo "Provide a namespace name to show the details about it"
-# 			exit 1
-# 		fi
-# 		netns=$1
-# 		show_netns $netns
-# 		;;
-# 	delete)
-# 		if [ "$1" == "" ];then
-# 			echo "Provide a namespace name to delete"
-# 			exit 1
-# 		fi
-# 		netns=$1
-# 		delete_netns $netns
-# 		;; 
-# 	*)
-# 		echo "Unknown command $subcommand"
-# 		;;
-# esac
-
-# exit 1
+    # Get all keys; if a filter is set, pipe through grep.
+    if [ -n "$filter" ]; then
+        $redis_cmd keys '*' | grep "$filter" | while read -r key; do
+            echo "$key => $($redis_cmd get "$key")"
+        done
+    else
+        $redis_cmd keys '*' | while read -r key; do
+            echo "$key => $($redis_cmd get "$key")"
+        done
+    fi
+}
 
 
+#########################################
+# Autocompletion Setup                  #
+#########################################
 
-# redis-cli -s /var/run/redis/redis-server.sock keys '*' | while read key; do echo "$key => $(redis-cli -s /var/run/redis/redis-server.sock get "$key")"; done
+# Global variables for cycling through completions.
+_auto_cycle_index=0
+_auto_cycle_token=""
+_auto_cycle_candidates=()
 
+# This function uses READLINE_LINE and READLINE_POINT to determine the current token,
+# decide which completions are allowed for that token position, and then either pick
+# the matching candidate or cycle through the available options.
+_pingweavectl_autocomplete() {
+    local tokens cur_word cur_index options completions new_prefix
+    local candidate new_index=0 candidate_exact=false
 
-# journalctl -u rdma-ping.service
-# sudo systemctl restart rdma-ping.service
-# systemctl status rdma-ping.service
+    # Split the current line into tokens (words). Note that trailing spaces are not
+    # included in the array, so if the line ends with a space, we treat it as starting a new token.
+    IFS=' ' read -r -a tokens <<< "$READLINE_LINE"
+    if [ ${#tokens[@]} -eq 0 ]; then
+        tokens=("")
+    fi
+    if [[ "$READLINE_LINE" =~ [[:space:]]$ ]]; then
+        cur_index=$((${#tokens[@]} + 1))
+        cur_word=""
+    else
+        cur_index=${#tokens[@]}
+        cur_word="${tokens[${#tokens[@]}-1]}"
+    fi
+
+    # Decide which completions to offer based on the token position.
+    case "$cur_index" in
+        1)
+            options="redis help exit quit"
+            ;;
+        2)
+            if [ "${tokens[0]}" = "redis" ]; then
+                options="show"
+            fi
+            ;;
+        3)
+            if [ "${tokens[0]}" = "redis" ] && [ "${tokens[1]}" = "show" ]; then
+                options="all tcp udp"
+            fi
+            ;;
+        *)
+            options=""
+            ;;
+    esac
+
+    # Create an array of the full allowed candidates.
+    local full_candidates=($options)
+
+    # Determine whether the current token exactly matches one of the allowed options.
+    for opt in "${full_candidates[@]}"; do
+        if [[ "$cur_word" == "$opt" ]]; then
+            candidate_exact=true
+            break
+        fi
+    done
+
+    # If the token exactly matches an allowed option, then use the full list for cycling.
+    # Also determine the index of the current token so that the first Tab press moves to the next candidate.
+    if [[ "$candidate_exact" == true ]]; then
+        completions=("${full_candidates[@]}")
+        for i in "${!full_candidates[@]}"; do
+            if [[ "${full_candidates[i]}" == "$cur_word" ]]; then
+                new_index=$(( (i + 1) % ${#full_candidates[@]} ))
+                break
+            fi
+        done
+    else
+        # Otherwise, filter the allowed options using the current token as a prefix.
+        completions=($(compgen -W "$options" -- "$cur_word"))
+    fi
+
+    # If no completions are found, do nothing.
+    if [ ${#completions[@]} -eq 0 ]; then
+        return
+    fi
+
+    # If the token (or the candidate list) has changed since the last Tab press,
+    # then reset our cycling globals.
+    if [[ "$cur_word" != "$_auto_cycle_token" || ${#completions[@]} -ne ${#_auto_cycle_candidates[@]} ]]; then
+        _auto_cycle_candidates=("${completions[@]}")
+        if [[ "$candidate_exact" == true ]]; then
+            _auto_cycle_index=$new_index
+        else
+            _auto_cycle_index=0
+        fi
+        _auto_cycle_token="$cur_word"
+    else
+        # Otherwise, simply move to the next candidate.
+        _auto_cycle_index=$(( (_auto_cycle_index + 1) % ${#_auto_cycle_candidates[@]} ))
+    fi
+
+    candidate="${_auto_cycle_candidates[$_auto_cycle_index]}"
+
+    # Remove the current (incomplete) token from the input.
+    new_prefix="${READLINE_LINE%$cur_word}"
+    # Replace it with the chosen candidate.
+    READLINE_LINE="${new_prefix}${candidate}"
+    # If only one candidate is available, append a space to finalize the token.
+    if [ ${#_auto_cycle_candidates[@]} -eq 1 ]; then
+        READLINE_LINE="${READLINE_LINE} "
+    fi
+    READLINE_POINT=${#READLINE_LINE}
+}
+
+# Bind the Tab key to our autocomplete function.
+bind -x '"\t": _pingweavectl_autocomplete'
+
+#########################################
+# Interactive Shell                     #
+#########################################
+
+interactive_shell() {
+    cecho GREEN "Welcome to pingweavectl interactive shell."
+    cecho GREEN "Type 'help' to see available commands, or 'exit' to quit."
+
+    while true; do
+        # Use -e to enable readline (history, editing, etc.)
+        read -e -p "pingweavectl> " line
+
+        # Trim any extra whitespace.
+        line=$(echo "$line" | xargs)
+
+        # Skip empty input.
+        if [[ -z "$line" ]]; then
+            continue
+        fi
+
+        # If the user types "exit" or "quit", exit the shell.
+        if [[ "$line" == "exit" || "$line" == "quit" ]]; then
+            cecho GREEN "Exiting pingweavectl interactive shell."
+            break
+        fi
+
+        # Tokenize the input.
+        read -ra tokens <<< "$line"
+        command="${tokens[0]}"
+        args=("${tokens[@]:1}")
+
+        # Dispatch the command.
+        case "$command" in
+            redis)
+                handle_redis_command "${args[@]}"
+                ;;
+            help)
+                show_help
+                ;;
+            *)
+                cecho RED "Unknown command: $command"
+                show_help
+                ;;
+        esac
+    done
+}
+
+#########################################
+# Script Entry Point                    #
+#########################################
+
+interactive_shell
