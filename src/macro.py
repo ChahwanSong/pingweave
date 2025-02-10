@@ -20,8 +20,8 @@ SHMEM_DIR = os.path.abspath("/dev/shm")
 INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 60
 
 # Match C++ constants for Inter-Process Communication (IPC)
-IPC_MESSAGE_SIZE = 2097152  # 2MB
-IPC_BUFFER_SIZE = 256  # 256 messages
+IPC_MESSAGE_SIZE = 2097152  # 2MB supports > 20K lines
+IPC_BUFFER_SIZE = 64  # 64 messages
 
 # Target protocols
 TARGET_PROTOCOLS = ["tcp", "udp", "roce", "ib"]

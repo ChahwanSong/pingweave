@@ -67,7 +67,7 @@ const static int PINGWEAVE_UDP_PORT_SERVER = 33336;
 const static uint64_t PINGWEAVE_TIME_CALC_MODULO = 1ULL << 32;
 
 // IPC (inter-process communication) - The size of message and number of slots
-const static int IPC_MESSAGE_SIZE = 2097152;  // 2MB
-const static int IPC_BUFFER_SIZE = 256;        // 256 messages
+const static int IPC_MESSAGE_SIZE = 2097152;  // 2MB supports > 20K lines
+const static int IPC_BUFFER_SIZE = 64;        // 64 reports
 
 
