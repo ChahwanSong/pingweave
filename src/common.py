@@ -363,14 +363,14 @@ def process_collected_message(redis_server, results, protocol, logger):
                     )
 
                 #######################################################
-                ############# Publish Trigger Check ###################
+                ############# Check Stream Producer ###################
                 #######################################################
-                publish = False
+                xadd = False
 
                 # check number of failures
                 n_failure = int(data[5])
                 if n_failure > REDIS_THRES_N_FAILURE:
-                    publish = True
+                    xadd = True
                 
                 # check mean network latency
                 if protocol in ["roce", "ib"]:
@@ -382,11 +382,11 @@ def process_collected_message(redis_server, results, protocol, logger):
                     continue
 
                 if network_mean_lat > REDIS_THRES_AVG_NETWORK_LAT_NS[protocol]:
-                    publish = True
+                    xadd = True
                 
-                if publish:
-                    topic = f"{REDIS_TOPIC_PINGWEAVE_RESULT}_{protocol}"
-                    redis_server.publish(topic, line)
+                if xadd:
+                    stream_name = f"{REDIS_STREAM_PREFIX}_{protocol}"
+                    redis_server.xadd(stream_name, {"message": line})
                 
 
         except Exception as e:

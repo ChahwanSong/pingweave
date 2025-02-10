@@ -19,8 +19,8 @@ SHMEM_DIR = os.path.abspath("/dev/shm")
 # filter out in plotting if a data is too old
 INTERVAL_PLOTTER_FILTER_OLD_DATA_SEC = 120
 
-# Redis pub/sub topic
-REDIS_TOPIC_PINGWEAVE_RESULT = "redis_pingweave"
+# Redis stream
+REDIS_STREAM_PREFIX = "redis_pingweave"
 
 # Redis pub/sub thresholds
 REDIS_THRES_AVG_NETWORK_LAT_NS = {
