@@ -480,20 +480,13 @@ async def index(request):
                 summary_path = os.path.join(SUMMARY_DIR, summary_fname)
 
                 summary_text = "No summary available."
-                summary_timestamp_html = ""
-
+                
                 if await asyncio.to_thread(os.path.exists, summary_path):
                     loaded_text = await asyncio.to_thread(
                         read_file_contents, summary_path
                     )
                     summary_text = loaded_text
-                    loaded_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    summary_timestamp_html = f"""
-                        <div class="text-muted small">
-                          Summary loaded at: {loaded_timestamp}
-                        </div>
-                    """
-
+                    
                 summary_text_escaped = html.escape(summary_text)
 
                 # Prepare PNG path
@@ -528,7 +521,6 @@ async def index(request):
                             <div class="summary-content" data-original-summary="/summary/{summary_fname}" style="white-space: pre-wrap;">
                               {summary_text_escaped}
                             </div>
-                            {summary_timestamp_html}
                           </div>
                         </div>
                       </div>
