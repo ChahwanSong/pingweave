@@ -48,6 +48,12 @@ except ImportError as e:
     logger.error(f"Could not import run_pingweave_webserver from webserver.py: {e}")
     sys.exit(1)
 
+try:
+    from ctrl_subscriber import run_pingweave_subscriber  # Import redis subscribe
+except ImportError as e:
+    logger.error(f"Could not import run_pingweave_subscriber from webserver.py: {e}")
+    sys.exit(1)
+
 
 if __name__ == "__main__":
     # List to hold all processes
@@ -71,12 +77,18 @@ if __name__ == "__main__":
             name="pingweave_collector_zmq",
             daemon=True,
         )
+        process_subscriber = multiprocessing.Process(
+            target=run_pingweave_subscriber,
+            name="pingweave_subscriber",
+            daemon=True,
+        )
 
         processes = [
             process_server,
             process_collector_http,
             process_collector_zmq,
             process_plotter,
+            process_subscriber,
         ]
 
         # Start processes

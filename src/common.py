@@ -19,7 +19,7 @@ import signal
 import logging
 import atexit
 import yaml
-
+from datetime import datetime
 from macro import *
 
 # ConfigParser object
@@ -323,3 +323,75 @@ def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
     except Exception as e:
         logger.warning("Failed to load pinglist.yaml")
         return False
+
+
+def process_collected_message(redis_server, results, protocol, logger):
+    if redis_server is not None:
+        try:
+            for line in results:
+                data = line.strip().split(",")
+                if len(data) < 3:
+                    logger.warning(f"Skipping malformed line: {line}")
+                    continue
+                # e.g., key = "roce,192.168.0.1,192.168.0.2"
+                #       value = "ts_start,ts_end,#success,#fail,..."
+                key = f"{protocol}," + ",".join(data[:2])
+                value = ",".join(data[2:])
+
+                # To avoid showing old data in redis, we catch the out-of-order POSTs
+                # by comparing the 'ts_end' and ignore the old arrivals.
+                curr_ts_end_raw = redis_server.get(key)
+                if curr_ts_end_raw:
+                    curr_ts_end = datetime.strptime(
+                        curr_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                else:
+                    # no data
+                    curr_ts_end = datetime.min
+
+                # compare with new post time
+                new_ts_end = datetime.strptime(data[3][:26], "%Y-%m-%d %H:%M:%S.%f")
+                if curr_ts_end < new_ts_end:
+                    try:
+                        redis_server.set(key, value)
+                    except Exception as e:
+                        logger.error(f"Redis Unexpected error: {e}")
+                        raise
+                else:
+                    logger.info(
+                        f"{key} - out-of-order result arrival (current: {curr_ts_end}, new: {new_ts_end})"
+                    )
+
+                #######################################################
+                ############# Publish Trigger Check ###################
+                #######################################################
+                publish = False
+
+                # check number of failures
+                n_failure = int(data[5])
+                if n_failure > REDIS_THRES_N_FAILURE:
+                    publish = True
+                
+                # check mean network latency
+                if protocol in ["roce", "ib"]:
+                    network_mean_lat = int(data[14])
+                elif protocol in ["tcp", "udp"]:
+                    network_mean_lat = int(data[8])
+                else:
+                    logger.error(f"Unknown protocol: {protocol}")
+                    continue
+
+                if network_mean_lat > REDIS_THRES_AVG_NETWORK_LAT_NS[protocol]:
+                    publish = True
+                
+                if publish:
+                    topic = f"{REDIS_TOPIC_PINGWEAVE_RESULT}_{protocol}"
+                    redis_server.publish(topic, line)
+                
+
+        except Exception as e:
+            # Log the error but keep the worker running
+            logger.error(
+                f"Error processing message lines: {e}"
+            )
+            raise

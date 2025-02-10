@@ -5,7 +5,6 @@ import os
 import sys
 import socket
 import redis  # in-memory key-value storage
-from datetime import datetime
 import zmq
 import threading
 
@@ -20,9 +19,8 @@ logger = initialize_pingweave_logger(
 
 try:
     # Attempt to connect to Redis via Unix socket
-    socket_path = "/var/run/redis/redis-server.sock"
     redis_server = redis.StrictRedis(
-        unix_socket_path=socket_path, decode_responses=True
+        unix_socket_path=REDIS_SOCKET_PATH, decode_responses=True
     )
     logger.info(f"Redis server running - {redis_server.ping()}")
     assert redis_server.ping()
@@ -32,8 +30,8 @@ try:
 
 except redis.exceptions.ConnectionError as e:
     logger.error(f"Cannot connect to Redis server: {e}")
-    if not os.path.exists(socket_path):
-        logger.error(f"Socket file does not exist: {socket_path}")
+    if not os.path.exists(REDIS_SOCKET_PATH):
+        logger.error(f"Socket file does not exist: {REDIS_SOCKET_PATH}")
     redis_server = None
 except FileNotFoundError as e:
     logger.error(f"Redis socket file does not exist: {e}")
@@ -94,48 +92,10 @@ def worker_routine(worker_url, worker_id):
         results = msg_str.strip().split("\n")
 
         # Store or log data in Redis if available
-        if redis_server is not None:
-            try:
-                for line in results:
-                    data = line.strip().split(",")
-                    if len(data) < 3:
-                        logger.warning(f"Skipping malformed line: {line}")
-                        continue
-                    # e.g., key = "roce,192.168.0.1,192.168.0.2"
-                    #       value = "ts_start,ts_end,#success,#fail,..."
-                    key = f"{protocol}," + ",".join(data[:2])
-                    value = ",".join(data[2:])
-
-                    # To avoid showing old data in redis, we catch the out-of-order POSTs
-                    # by comparing the 'ts_end' and ignore the old arrivals.
-                    curr_ts_end_raw = redis_server.get(key)
-                    if curr_ts_end_raw:
-                        curr_ts_end = datetime.strptime(
-                            curr_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
-                        )
-                    else:
-                        # no data
-                        curr_ts_end = datetime.min
-
-                    # compare with new post time
-                    new_ts_end = datetime.strptime(data[3][:26], "%Y-%m-%d %H:%M:%S.%f")
-                    if curr_ts_end < new_ts_end:
-                        try:
-                            redis_server.set(key, value)
-                        except redis.exceptions.ConnectionError:
-                            logger.error("Redis server is down!")
-                    else:
-                        logger.info(
-                            f"{key} - out-of-order result arrival (current: {curr_ts_end}, new: {new_ts_end})"
-                        )
-
-            except Exception as e:
-                # Log the error but keep the worker running
-                logger.error(
-                    f"[Worker {worker_id}] Error processing message lines: {e}"
-                )
-                # Decide whether to continue or break. Here we continue.
-                continue
+        try:
+            process_collected_message(redis_server, results, protocol, logger)
+        except Exception as e:
+            pass # no error handling
 
         # Send response: [client_id, rest_api, reply_data]
         try:

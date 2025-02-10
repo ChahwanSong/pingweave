@@ -4,7 +4,6 @@
 import asyncio
 from aiohttp import web  # aiohttp for webserver
 import redis  # in-memory key-value storage
-from datetime import datetime
 
 from logger import initialize_pingweave_logger
 from macro import *
@@ -15,9 +14,8 @@ logger = initialize_pingweave_logger( socket.gethostname(), "ctrl_collector_http
 
 try:
     # Redis
-    socket_path = "/var/run/redis/redis-server.sock"
     redis_server = redis.StrictRedis(
-        unix_socket_path=socket_path, decode_responses=True
+        unix_socket_path=REDIS_SOCKET_PATH, decode_responses=True
     )
     logger.info(f"Redis server running - {redis_server.ping()}")
     assert redis_server.ping()
@@ -26,8 +24,8 @@ try:
 
 except redis.exceptions.ConnectionError as e:
     logger.error(f"Cannot connect to Redis server: {e}")
-    if not os.path.exists(socket_path):
-        logger.error(f"Socket file does not exist: {socket_path}")
+    if not os.path.exists(REDIS_SOCKET_PATH):
+        logger.error(f"Socket file does not exist: {REDIS_SOCKET_PATH}")
     redis_server = None
 except FileNotFoundError as e:
     logger.error(f"Redis socket file does not exist: {e}")
@@ -47,44 +45,13 @@ async def process_result_post(request: web.Request, protocol: str) -> web.Respon
         logger.debug(f"Raw POST RESULT data from {client_ip}: {raw_data}")
 
         results = raw_data.strip().split("\n")
-
-        if redis_server is not None:
-            for line in results:
-                data = line.strip().split(",")
-                if len(data) < 3:
-                    logger.warning(f"Skipping malformed line: {line}")
-                    continue
-                # e.g., key = "roce,192.168.0.1,192.168.0.2"
-                #       value = "ts_start,ts_end,#success,#fail,..."
-                key = f"{protocol}," + ",".join(data[:2])
-                value = ",".join(data[2:])
-
-                # To avoid showing old data in redis, we catch the out-of-order POSTs
-                # by comparing the 'ts_end' and ignore the old arrivals.
-                curr_ts_end_raw = redis_server.get(key)
-                if curr_ts_end_raw:
-                    curr_ts_end = datetime.strptime(
-                        curr_ts_end_raw.split(",")[1][:26], "%Y-%m-%d %H:%M:%S.%f"
-                    )
-                else:
-                    # no data
-                    curr_ts_end = datetime.min
-
-                # compare with new post time
-                new_ts_end = datetime.strptime(data[3][:26], "%Y-%m-%d %H:%M:%S.%f")
-                if curr_ts_end < new_ts_end:
-                    try:
-                        redis_server.set(key, value)
-                    except redis.exceptions.ConnectionError:
-                        logger.error("Redis server is down!")
-                else:
-                    logger.info(
-                        f"{key} - out-of-order result arrival (prev: {curr_ts_end}, new: {new_ts_end})"
-                    )
-
-                # TODO: Anyway, we keep all the data in database.
+        try:
+            process_collected_message(redis_server, results, protocol, logger) 
+        except Exception as e:
+            pass # no error handling
 
         return web.Response(text="Data processed successfully", status=200)
+    
     except Exception as e:
         logger.error(f"Error processing POST result_{protocol} from {client_ip}: {e}")
         return web.Response(text="Internal server error", status=500)

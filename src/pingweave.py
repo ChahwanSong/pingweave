@@ -4,6 +4,7 @@
 from common import *
 from macro import *
 from logger import initialize_pingweave_logger
+import random
 
 logger = initialize_pingweave_logger(socket.gethostname(), "main", 10, True)
 
@@ -50,6 +51,11 @@ def main():
     )
     if latency:
         logger.info(f"HTTP latency to controller: {latency}")
+
+    # Start after a short sleep
+    sleep_time = random.uniform(0, config["interval_report_ping_result_millisec"] / 1000)
+    logger.info(f"To avoid burst pattern, sleeping for {sleep_time:.2f} seconds...")
+    time.sleep(sleep_time)
 
     # kill all running pingweave processes (pkill -f pingweave)
     kill_pingweave_except_main(logger)

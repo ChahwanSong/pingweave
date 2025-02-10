@@ -7,7 +7,6 @@ import yaml
 import redis  # in-memory key-value storage
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from setproctitle import setproctitle
 import plotly.graph_objects as go
@@ -49,16 +48,15 @@ pinglist_in_memory = {}
 # ======================== #
 
 try:
-    SOCKET_PATH = "/var/run/redis/redis-server.sock"
     redis_server = redis.StrictRedis(
-        unix_socket_path=SOCKET_PATH, decode_responses=True
+        unix_socket_path=REDIS_SOCKET_PATH, decode_responses=True
     )
     logger.info(f"Redis server running - {redis_server.ping()}")
     assert redis_server.ping()
 except redis.exceptions.ConnectionError as e:
     logger.error(f"Cannot connect to Redis server: {e}")
-    if not os.path.exists(SOCKET_PATH):
-        logger.error(f"Socket file does not exist: {SOCKET_PATH}")
+    if not os.path.exists(REDIS_SOCKET_PATH):
+        logger.error(f"Socket file does not exist: {REDIS_SOCKET_PATH}")
     redis_server = None
 except FileNotFoundError as e:
     logger.error(f"Redis socket file does not exist: {e}")

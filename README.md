@@ -14,6 +14,21 @@ Currently, `linux` is the only OS that pingweave supports. It is tested on RHEL 
 
 ---
 
+## Config Guideline
+* Each group size must be less than 300 devices.
+    * The complexity of mesh grid is O(N^2). Instead of using a bigger group, use more groups. 
+* Total number of connections must be less than 100K.
+    * In our testbed, Redis could process nearly ~30K entries per second (both set()/get() and publish()/subscribe())
+* For a large-scale deployment, use ZeroMQ instead of HTTP for ping reports.
+* For controller node, unlimit the `CPUQuota` of pingweave.service.
+
+
+### To-DO
+* Reduce sync overhead to fetch address_store.yaml pinglist.yaml data (versioning)
+* 
+
+
+
 ## Simple Installation
 **IMPORTANT** We assume to run `pingweave` on `root`. 
 

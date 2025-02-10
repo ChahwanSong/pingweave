@@ -186,8 +186,8 @@ def agent_fetcher():
         fetch_data(config["control_host"], config["control_port"], "pinglist")
         fetch_data(config["control_host"], config["control_port"], "address_store")
 
-        # random sleep to avoid request bursts
-        time.sleep(config["interval_sync_pinglist_sec"] + random.randint(0, 100) * 0.01)
+        # random sleep to avoid request bursts (~ 10 seconds)
+        time.sleep(config["interval_sync_pinglist_sec"] + random.randint(0, 100) * 0.1)
 
 
 def run_agent_fetcher():
