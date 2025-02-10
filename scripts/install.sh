@@ -47,6 +47,33 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Clean up shared memory in /dev/shm
+if [[ ! -d /dev/shm ]]; then
+    cecho "RED" "Error: /dev/shm does not exist or is not a directory." >&2
+    exit 1
+fi
+if [[ ! -w /dev/shm ]]; then
+    cecho "RED" "Error: /dev/shm is not writable. You may need elevated privileges." >&2
+    exit 1
+fi
+
+# Collect files matching the specified prefixes.
+shopt -s nullglob
+shm_files=(/dev/shm/{tcp,udp,roce,ib}_*)
+for shm_file in "${shm_files[@]}"; do
+    if [ -f "$shm_file" ]; then
+        if rm -f "$shm_file"; then
+            cecho "GREEN" "Removed: $shm_file"
+        else
+            cecho "RED" "Error: Failed to remove $shm_file"
+            exit 1;
+        fi
+    else
+        cecho "YELLOW" "Skipping (not a regular shm_file): $shm_file"
+    fi
+done
+
+
 # Handle -d option to stop and remove pingweave service immediately
 if [[ " $@ " == *" -d "* ]]; then
     cecho "YELLOW" "Stopping and removing pingweave service..."
