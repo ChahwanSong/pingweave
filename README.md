@@ -2,10 +2,10 @@
 PingWeave is a mesh-grid network monitoring framework for various transport protocols. 
 It currently supports TCP, UDP, RDMA (RoCEv2 and Infiniband). 
 The design goals are as following:
-(1) Performant: CPU consumption, OS resources such as connection states.
-(2) Scalable: Support ~O(10K) pings per second
-(3) Standalone: Minimum package dependency (C++, python)  
-(4) Versatile: Supports RDMA, TCP, UDP (and more in future)
+- Performant: CPU consumption, OS resources such as connection states.
+- Scalable: Support ~O(10K) pings per second
+- Standalone: Minimum package dependency (C++, python)  
+- Versatile: Supports RDMA, TCP, UDP (and more in future)
 
 Specifically, pingweave's RDMA ping framework is based on unreliable datagram (UD) to minimize the connection overhead.
 Pingweave supports RDMA HW timestamping as long as RNIC can provide. That said, it supports ns-scale high-resolution ping monitoring.
@@ -87,19 +87,19 @@ Agent requires the following python packages (see [scripts/requirements_agent.tx
 Controller requires the following python pacakges (see [scripts/requirements_controller.txt](scripts/requirements_controller.txt)):
 * python >= 3.7 (for aiohttp)
 * python packages
-    * pyyaml
-    * psutil
-    * pandas
-    * aiohttp
-    * numpy
-    * redis
-    * jinja2
-    * datetime
-    * setproctitle
-    * plotly
-    * kaleido
-    * pyzmq
-    * matplotlib
+    * `pyyaml`
+    * `psutil`
+    * `pandas`
+    * `aiohttp`
+    * `numpy`
+    * `redis`
+    * `jinja2`
+    * `datetime`
+    * `setproctitle`
+    * `plotly`
+    * `kaleido`
+    * `pyzmq`
+    * `matplotlib`
 
 In addition, the controller runs in-memory key-value store to keep the "very recent" ping results as a mesh-grid data structure. 
 On RHEL, you can install the redis:
