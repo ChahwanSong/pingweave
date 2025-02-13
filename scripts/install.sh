@@ -344,10 +344,25 @@ cecho "GREEN" "Make completed successfully."
 
 
 ######### INSTALL ########
-cecho "YELLOW" "Installing pingweave service..."
-# Register pingweave service to systemd
-sudo cp "$SCRIPT_DIR/pingweave.service" /etc/systemd/system/ || {
-    cecho "RED" "Error: Failed to copy pingweave.service to /etc/systemd/system/."
+# --- Determine resource limits based on -c flag ---
+if [[ " $@ " == *" -c "* ]]; then
+    CPU_QUOTA="1200%"
+    MEM_MAX="16G"
+else
+    CPU_QUOTA="400%"
+    MEM_MAX="2G"
+fi
+
+cecho "YELLOW" "Setting CPUQuota to $CPU_QUOTA and MemoryMax to $MEM_MAX in the service file..."
+
+# --- Modify the service file using sed ---
+sed -e "s/^CPUQuota=.*/CPUQuota=${CPU_QUOTA}/" \
+    -e "s/^MemoryMax=.*/MemoryMax=${MEM_MAX}/" \
+    "$SCRIPT_DIR/pingweave.service" > /tmp/pingweave.service
+
+# --- Copy the modified service file ---
+sudo cp /tmp/pingweave.service /etc/systemd/system/pingweave.service || {
+    cecho "RED" "Error: Failed to copy modified pingweave.service to /etc/systemd/system/."
     exit 1
 }
 

@@ -5,7 +5,9 @@
 
 void tcp_client_tx_thread(const std::string& ipv4,
                           TcpUdpPinginfoMap* ping_table,
-                          std::shared_ptr<spdlog::logger> logger) {
+                          std::shared_ptr<spdlog::logger> logger,
+                          std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
     logger->info("Running a client thread (Thread ID: {})...", get_thread_id());
 
     uint32_t ping_uid = 0;
@@ -32,13 +34,18 @@ void tcp_client_tx_thread(const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 }
 
 void tcp_client_result_thread(const std::string& ipv4,
                               TcpUdpClientQueue* client_queue,
-                              std::shared_ptr<spdlog::logger> logger) {
+                              std::shared_ptr<spdlog::logger> logger,
+                              std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
+    logger->info("Running Result thread (Thread ID: {})", get_thread_id());
+
     int report_interval_ms = 10000;
     if (IS_FAILURE(get_int_param_from_ini(
             report_interval_ms, "interval_report_ping_result_millisec"))) {
@@ -64,6 +71,7 @@ void tcp_client_result_thread(const std::string& ipv4,
             get_controller_info_from_ini(controller_host, controller_port))) {
         logger->error(
             "Exit the result thread - failed to load pingweave.ini file");
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 
@@ -99,7 +107,7 @@ void tcp_client_result_thread(const std::string& ipv4,
                 } else if (result_msg.result == PINGWEAVE_RESULT_WEIRD) {
                     ++info->n_weird;
                 } else {
-                    logger->error("Unknown type of result - {}, dstip:{}",
+                    logger->warn("Unknown type of result - {}, dstip: {}",
                                   result_msg.result, result_msg.dstip);
                     continue;
                 }
@@ -142,6 +150,7 @@ void tcp_client_result_thread(const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in result_thread: {}", e.what());
+        thread_alive->store(false);
         throw;
     }
 }
@@ -199,23 +208,43 @@ void tcp_client(const std::string& ipv4) {
     TcpUdpPinginfoMap ping_table(ping_table_logger, &client_queue,
                                  PINGWEAVE_TABLE_EXPIRY_TIME_TCP_MS);
 
+    // true: running, false: terminated
+    std::atomic<bool> tx_alive{true};
+    std::atomic<bool> result_alive{true};
+
     // Start the Result thread
     client_logger->info("Starting TCP result thread (Thread ID: {})...",
                         get_thread_id());
     std::thread result_thread(tcp_client_result_thread, ipv4, &client_queue,
-                              result_logger);
+                              result_logger, &result_alive);
 
     // Start the client thread
-    std::thread client_thread(tcp_client_tx_thread, ipv4, &ping_table,
-                              client_logger);
+    std::thread tx_thread(tcp_client_tx_thread, ipv4, &ping_table,
+                              client_logger, &tx_alive);
 
-    // termination
-    if (client_thread.joinable()) {
-        client_thread.join();
-    }
-
-    if (result_thread.joinable()) {
-        result_thread.join();
+    
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!tx_alive.load()) {
+            message_to_http_server("Unexpected termination: tcp_client_tx_thread", "/alarm", client_logger);
+            if (tx_thread.joinable()) {
+                tx_thread.join();
+            }
+            message_to_http_server("Restarted: tcp_client_tx_thread", "/alarm", client_logger);
+            tx_alive.store(true);
+            client_logger->warn("TX thread terminated unexpectedly. Restarting.");
+            tx_thread = std::thread(tcp_client_tx_thread, ipv4, &ping_table, client_logger, &tx_alive);
+        }
+        if (!result_alive.load()) {
+            message_to_http_server("Unexpected termination: tcp_client_result_thread", "/alarm", client_logger);
+            if (result_thread.joinable()) {
+                result_thread.join();
+            }
+            message_to_http_server("Restarted: tcp_client_result_thread", "/alarm", client_logger);
+            result_alive.store(true);
+            client_logger->warn("Result thread terminated unexpectedly. Restarting.");
+            result_thread = std::thread(tcp_client_result_thread, ipv4, &client_queue, result_logger, &result_alive);
+        }
     }
 }
 

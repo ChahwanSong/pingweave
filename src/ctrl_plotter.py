@@ -638,11 +638,19 @@ async def pingweave_plotter() -> None:
                         current_time = datetime.now()
                         cursor, keys = redis_server.scan(cursor=cursor)
                         for key in keys:
+                            # if redis key or not what we expected, skip
+                            if REDIS_STREAM_PREFIX in key:
+                                continue
+                            
                             value = redis_server.get(key)
                             if value is None:
                                 logger.warning(f"Redis key {key} not found. Skip.")
                                 continue
-
+                                
+                            if "WRONGTYPE" in value:
+                                logger.warning(f"Key {key} has WRONGTYPE: {value}")
+                                continue
+                            
                             value_splits = value.split(",")
                             # Filter out old data
                             try:

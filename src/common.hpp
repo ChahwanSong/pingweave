@@ -40,7 +40,6 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <fcntl.h>
 
 #include "format.hpp"
 #include "ini.hpp"
@@ -99,8 +98,7 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
                                 const std::string &message,
                                 const std::string &api,
                                 std::shared_ptr<spdlog::logger> logger);
-int message_to_http_server(std::string message, std::string controller_host,
-                           int controller_port, const std::string &req_api,
+int message_to_http_server(const std::string& message, const std::string &req_api,
                            std::shared_ptr<spdlog::logger> logger);
 
 // statistics

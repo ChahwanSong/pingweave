@@ -91,9 +91,8 @@ class TcpUdpPinginfoMap {
                  ping_info.time_ping_send, ping_info.network_delay,
                  PINGWEAVE_RESULT_SUCCESS})) {
             logger->warn(
-                "[Queue Full?] pingid {} (-> {}): Failed to enqueue to result "
-                "queue",
-                ping_info.pingid, ping_info.dstip);
+                "[Queue Full?] pingid {} (-> {}): Failed to enqueue, qlen: {}",
+                ping_info.pingid, ping_info.dstip, client_queue->size_approx());
         }
 
         if (IS_FAILURE(remove(ping_info.pingid))) {  // if failed to remove
@@ -160,9 +159,8 @@ class TcpUdpPinginfoMap {
                     {ping_info.pingid, ip2uint(ping_info.dstip),
                      ping_info.time_ping_send, 0, PINGWEAVE_RESULT_FAILURE})) {
                 logger->error(
-                    "[Queue Full?] Failed to enqueue (pingid {}, failed) to "
-                    "result thread",
-                    ping_info.pingid);
+                    "Failed to enqueue (pingid {}, failed), qlen: {}",
+                    ping_info.pingid, client_queue->size_approx());
             }
 
             keyList.pop_front();

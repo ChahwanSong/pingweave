@@ -5,7 +5,9 @@
 
 void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
                           TcpUdpPinginfoMap* ping_table,
-                          std::shared_ptr<spdlog::logger> logger) {
+                          std::shared_ptr<spdlog::logger> logger,
+                          std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
     uint32_t ping_uid = 0;
@@ -44,13 +46,16 @@ void udp_client_tx_thread(struct udp_context* ctx_tx, const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 }
 
 void udp_client_rx_thread(struct udp_context* ctx_rx,
                           TcpUdpPinginfoMap* ping_table,
-                          std::shared_ptr<spdlog::logger> logger) {
+                          std::shared_ptr<spdlog::logger> logger,
+                          std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     try {
@@ -73,13 +78,18 @@ void udp_client_rx_thread(struct udp_context* ctx_rx,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in RX thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception`
     }
 }
 
 void udp_client_result_thread(const std::string& ipv4,
                               TcpUdpClientQueue* client_queue,
-                              std::shared_ptr<spdlog::logger> logger) {
+                              std::shared_ptr<spdlog::logger> logger,
+                              std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
+    logger->info("Running Result thread (Thread ID: {})", get_thread_id());
+
     int report_interval_ms = 10000;
     if (IS_FAILURE(get_int_param_from_ini(
             report_interval_ms, "interval_report_ping_result_millisec"))) {
@@ -105,6 +115,7 @@ void udp_client_result_thread(const std::string& ipv4,
             get_controller_info_from_ini(controller_host, controller_port))) {
         logger->error(
             "Exit the result thread - failed to load pingweave.ini file");
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 
@@ -140,7 +151,7 @@ void udp_client_result_thread(const std::string& ipv4,
                 } else if (result_msg.result == PINGWEAVE_RESULT_WEIRD) {
                     ++info->n_weird;
                 } else {
-                    logger->error("Unknown type of result - {}, dstip:{}",
+                    logger->warn("Unknown type of result - {}, dstip: {}",
                                   result_msg.result, result_msg.dstip);
                     continue;
                 }
@@ -183,6 +194,7 @@ void udp_client_result_thread(const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in result_thread: {}", e.what());
+        thread_alive->store(false);
         throw;
     }
 }
@@ -247,31 +259,59 @@ void udp_client(const std::string& ipv4) {
         throw std::runtime_error("Failed to initialize UDP contexts.");
     }
 
+
+    // true: running, false: terminated
+    std::atomic<bool> tx_alive{true};
+    std::atomic<bool> rx_alive{true};
+    std::atomic<bool> result_alive{true};
+
     // Start the Result thread
     client_logger->info("Starting UDP result thread (Thread ID: {})...",
                         get_thread_id());
     std::thread result_thread(udp_client_result_thread, ipv4, &client_queue,
-                              result_logger);
+                              result_logger, &result_alive);
 
     // Start the RX thread
     std::thread rx_thread(udp_client_rx_thread, &ctx_rx, &ping_table,
-                          client_logger);
+                          client_logger, &rx_alive);
 
     // Start the TX thread
     std::thread tx_thread(udp_client_tx_thread, &ctx_tx, ipv4, &ping_table,
-                          client_logger);
+                          client_logger, &tx_alive);
 
-    // termination
-    if (result_thread.joinable()) {
-        result_thread.join();
-    }
 
-    if (tx_thread.joinable()) {
-        tx_thread.join();
-    }
-
-    if (rx_thread.joinable()) {
-        rx_thread.join();
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!tx_alive.load()) {
+            message_to_http_server("Unexpected termination: udp_client_tx_thread", "/alarm", client_logger);
+            if (tx_thread.joinable()) {
+                tx_thread.join();
+            }
+            message_to_http_server("Restarted: udp_client_tx_thread", "/alarm", client_logger);
+            tx_alive.store(true);
+            client_logger->warn("TX thread terminated unexpectedly. Restarting.");
+            tx_thread = std::thread(udp_client_tx_thread, &ctx_tx, ipv4, &ping_table, client_logger, &tx_alive);
+        }
+        if (!rx_alive.load()) {
+            message_to_http_server("Unexpected termination: udp_client_rx_thread", "/alarm", client_logger);
+            if (rx_thread.joinable()) {
+                rx_thread.join();
+            }
+            message_to_http_server("Restarted: udp_client_rx_thread", "/alarm", client_logger);
+            rx_alive.store(true);
+            client_logger->warn("RX thread terminated unexpectedly. Restarting.");
+            rx_thread = std::thread(udp_client_rx_thread, &ctx_rx, &ping_table, client_logger, &rx_alive);
+        }
+        if (!result_alive.load()) {
+            message_to_http_server("Unexpected termination: udp_client_result_thread", "/alarm", client_logger);
+            if (result_thread.joinable()) {
+                result_thread.join();
+            }
+            message_to_http_server("Restarted: udp_client_result_thread", "/alarm", client_logger);
+            result_alive.store(true);
+            client_logger->warn("Result thread terminated unexpectedly. Restarting.");
+            result_thread = std::thread(udp_client_result_thread, ipv4, &client_queue, result_logger, &result_alive);
+        }
     }
 }
 

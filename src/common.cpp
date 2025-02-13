@@ -523,16 +523,26 @@ int send_message_to_http_server(const std::string &server_ip, int server_port,
     return PINGWEAVE_SUCCESS;
 }
 
-int message_to_http_server(std::string message, std::string controller_host,
-                           int controller_port, const std::string &req_api,
+int message_to_http_server(const std::string &message,
+                           const std::string &req_api,
                            std::shared_ptr<spdlog::logger> logger) {
     if (message.empty()) {
         // skip to send an empty message
         return PINGWEAVE_FAILURE;
     }
 
-    if (IS_FAILURE(send_message_to_http_server(controller_host, controller_port, message,
-                                    req_api, logger))) {
+    // load controller address
+    std::string controller_host;
+    int controller_port;
+    if (IS_FAILURE(
+            get_controller_info_from_ini(controller_host, controller_port))) {
+        logger->error("Failed to send message to controller {}:{}", req_api,
+                      message);
+        return PINGWEAVE_FAILURE;
+    }
+
+    if (IS_FAILURE(send_message_to_http_server(controller_host, controller_port,
+                                               message, req_api, logger))) {
         logger->error("Failed to post - api: {}, msg: {}.", req_api, message);
         return PINGWEAVE_FAILURE;  // failed
     }

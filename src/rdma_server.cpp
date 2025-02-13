@@ -65,8 +65,9 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     if (!server_queue->try_enqueue(ping_msg)) {
                         logger->warn(
                             "Failed to enqueue ping message, pingid: {}, gid: "
-                            "{}",
-                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
+                            "{}, qlen: {}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                            server_queue->size_approx());
                     }
                 } else {
                     logger->error("Unexpected opcode: {}",
@@ -134,8 +135,10 @@ void server_process_rx_cqe(rdma_context* ctx_rx, RdmaServerQueue* server_queue,
                     // Handle the received message
                     if (!server_queue->try_enqueue(ping_msg)) {
                         logger->warn(
-                            "Failed to enqueue ping msg, pingid: {}, gid: {}",
-                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid));
+                            "Failed to enqueue ping msg, pingid: {}, gid: {}, "
+                            "qlen: {}",
+                            ping_msg.x.pingid, parsed_gid(&ping_msg.x.gid),
+                            server_queue->size_approx());
                         // throw std::runtime_error(
                         //     "Failed to handle PING message");
                     }
@@ -258,8 +261,8 @@ void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     }
 
                     // PONG's CQE ('wr_id' is the 'pingid')
-                    if (IS_FAILURE(server_process_pong_cqe(ctx_tx, wc, cqe_time,
-                                                ping_table, logger))) {
+                    if (IS_FAILURE(server_process_pong_cqe(
+                            ctx_tx, wc, cqe_time, ping_table, logger))) {
                         throw std::runtime_error(
                             "tx cqe - Failed to process PONG CQE");
                     }
@@ -321,8 +324,8 @@ void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
                     }
 
                     // PONG's CQE ('wr_id' is 'pingid')
-                    if (IS_FAILURE(server_process_pong_cqe(ctx_tx, wc, cqe_time,
-                                                ping_table, logger))) {
+                    if (IS_FAILURE(server_process_pong_cqe(
+                            ctx_tx, wc, cqe_time, ping_table, logger))) {
                         throw std::runtime_error(
                             "tx cqe - Failed to process PONG CQE");
                     }
@@ -353,13 +356,16 @@ void server_process_tx_cqe(rdma_context* ctx_tx, PingMsgMap* ping_table,
 // Server RX thread
 void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
                            RdmaServerQueue* server_queue,
-                           std::shared_ptr<spdlog::logger> logger) {
+                           std::shared_ptr<spdlog::logger> logger,
+                           std::atomic<bool>* thread_alive) {
+    thread_alive->store(true);
     logger->info("Running RX thread (Thread ID: {})...", get_thread_id());
 
     // RECV WR uses wr_id as a buffer index
     for (int i = 0; i < ctx_rx->buf.size(); ++i) {
         if (post_recv(ctx_rx, i, RX_DEPTH) != RX_DEPTH) {
             logger->error("Failed to post RECV WRs.");
+            thread_alive->store(false);
             throw std::runtime_error(
                 "rx thread - Failed to post RECV WR when initialization.");
         }
@@ -369,6 +375,7 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_rx), 0)) {
         logger->error("Couldn't register CQE notification");
+        thread_alive->store(false);
         throw std::runtime_error(
             "rx thread -  Couldn't register CQE notification");
     }
@@ -378,6 +385,8 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         while (true) {
             // Wait for the next CQE
             if (IS_FAILURE(wait_for_cq_event(ctx_rx, logger))) {
+                logger->error("Couldn't wait cq event");
+                thread_alive->store(false);
                 throw std::runtime_error(
                     "rx thread -  Failed during CQ event waiting");
             }
@@ -387,20 +396,24 @@ void rdma_server_rx_thread(struct rdma_context* ctx_rx, const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in RX thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 }
 
 void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
                                PingMsgMap* ping_table,
-                               std::shared_ptr<spdlog::logger> logger) {
-    // TX cQE thread loop - handle messages
+                               std::shared_ptr<spdlog::logger> logger,
+                               std::atomic<bool>* thread_alive) {
+    // TX CQE thread loop - handle messages
+    thread_alive->store(true);
     logger->info("Running TX CQE thread (Thread ID: {})...", get_thread_id());
 
     /** IMPORTANT: Use event-driven polling to reduce CPU overhead */
     // Register for CQ event notifications
     if (ibv_req_notify_cq(pingweave_cq(ctx_tx), 0)) {
         logger->error("Couldn't register CQE notification");
+        thread_alive->store(false);
         throw std::runtime_error(
             "tx thread -  Couldn't register CQE notification");
     }
@@ -409,6 +422,8 @@ void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
         while (true) {
             // Wait for the next CQE
             if (IS_FAILURE(wait_for_cq_event(ctx_tx, logger))) {
+                logger->error("Couldn't wait cq event");
+                thread_alive->store(false);
                 throw std::runtime_error(
                     "tx thread -  Failed during CQ event waiting");
             }
@@ -417,6 +432,7 @@ void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX CQE thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 }
@@ -424,8 +440,10 @@ void rdma_server_tx_cqe_thread(struct rdma_context* ctx_tx,
 void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                            RdmaServerQueue* server_queue,
                            PingMsgMap* ping_table,
-                           std::shared_ptr<spdlog::logger> logger) {
+                           std::shared_ptr<spdlog::logger> logger,
+                           std::atomic<bool>* thread_alive) {
     // TX thread loop - handle messages
+    thread_alive->store(true);
     logger->info("Running TX thread (Thread ID: {})...", get_thread_id());
 
     // Variables
@@ -450,7 +468,8 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                     ping_msg.x.time);
 
                 // (1) Store in table
-                if (IS_FAILURE(ping_table->insert(ping_msg.x.pingid, ping_msg))) {
+                if (IS_FAILURE(
+                        ping_table->insert(ping_msg.x.pingid, ping_msg))) {
                     logger->warn("Failed to insert pingid {} into ping_table.",
                                  ping_msg.x.pingid);
                 }
@@ -476,6 +495,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
                                          sizeof(rdma_pongmsg_t),
                                          pong_msg.x.pingid % ctx_tx->buf.size(),
                                          pong_msg.x.pingid, logger))) {
+                    thread_alive->store(false);
                     throw std::runtime_error(
                         "tx thread - SEND PONG post failed");
                 }
@@ -483,6 +503,7 @@ void rdma_server_tx_thread(struct rdma_context* ctx_tx, const std::string& ipv4,
         }
     } catch (const std::exception& e) {
         logger->error("Exception in TX thread: {}", e.what());
+        thread_alive->store(false);
         throw;  // Propagate exception
     }
 }
@@ -524,29 +545,57 @@ void rdma_server(const std::string& ipv4, const std::string& protocol) {
         throw std::runtime_error("server main - save_device_info failed.");
     }
 
+    // true: running, false: terminated
+    std::atomic<bool> rx_alive{true};
+    std::atomic<bool> tx_cqe_alive{true};
+    std::atomic<bool> tx_alive{true};
+
+
     // Start RX thread
     std::thread rx_thread(rdma_server_rx_thread, &ctx_rx, ipv4, &server_queue,
-                          server_logger);
+                          server_logger, &rx_alive);
 
     // Start TX CQE thread
     std::thread tx_cqe_thread(rdma_server_tx_cqe_thread, &ctx_tx, &ping_table,
-                              server_logger);
+                              server_logger, &tx_cqe_alive);
 
     // Start TX thread
     std::thread tx_thread(rdma_server_tx_thread, &ctx_tx, ipv4, &server_queue,
-                          &ping_table, server_logger);
+                          &ping_table, server_logger, &tx_alive);
 
-    // termination
-    if (rx_thread.joinable()) {
-        rx_thread.join();
-    }
-
-    if (tx_cqe_thread.joinable()) {
-        tx_cqe_thread.join();
-    }
-
-    if (tx_thread.joinable()) {
-        tx_thread.join();
+    
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!rx_alive.load()) {
+            message_to_http_server("Unexpected termination: rdma_server_rx_thread", "/alarm", server_logger);
+            if (rx_thread.joinable()) {
+                rx_thread.join();
+            }
+            message_to_http_server("Restarted: rdma_server_rx_thread", "/alarm", server_logger);
+            rx_alive.store(true);
+            server_logger->warn("RX thread terminated unexpectedly. Restarting.");
+            rx_thread = std::thread(rdma_server_rx_thread, &ctx_rx, ipv4, &server_queue, server_logger, &rx_alive);
+        }
+        if (!tx_cqe_alive.load()) {
+            message_to_http_server("Unexpected termination: rdma_server_tx_cqe_thread", "/alarm", server_logger);
+            if (tx_cqe_thread.joinable()) {
+                tx_cqe_thread.join();
+            }
+            message_to_http_server("Restarted: rdma_server_tx_cqe_thread", "/alarm", server_logger);
+            tx_cqe_alive.store(true);
+            server_logger->warn("TX CQE thread terminated unexpectedly. Restarting.");
+            tx_cqe_thread = std::thread(rdma_server_tx_cqe_thread, &ctx_tx, &ping_table, server_logger, &tx_cqe_alive);
+        }
+        if (!tx_alive.load()) {
+            message_to_http_server("Unexpected termination: rdma_server_tx_thread", "/alarm", server_logger);
+            if (tx_thread.joinable()) {
+                tx_thread.join();
+            }
+            message_to_http_server("Restarted: rdma_server_tx_thread", "/alarm", server_logger);
+            tx_alive.store(true);
+            server_logger->warn("TX thread terminated unexpectedly. Restarting.");
+            tx_thread = std::thread(rdma_server_tx_thread, &ctx_tx, ipv4, &server_queue, &ping_table, server_logger, &tx_alive);
+        }
     }
 }
 
