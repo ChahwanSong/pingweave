@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // get a absolute path of source directory
 #ifndef SOURCE_DIR
@@ -32,6 +33,10 @@ const std::string DIR_RESULT_PATH = "/../result";
 const std::string DIR_CONFIG_PATH = "/../config";
 const std::string PINGWEAVE_INI_ABS_PATH =
     get_src_dir() + DIR_CONFIG_PATH + "/pingweave.ini";
+
+// possible protocols
+const std::vector<std::string> TARGET_PROTOCOLS = {"ib", "roce", "tcp", "udp"};
+
 // constants
 const static int MESSAGE_SIZE = 64;                  // Message size of 64B
 const static int MAX_NUM_HOSTS_IN_PINGLIST = 10000;  // Maximum of host number

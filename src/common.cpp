@@ -35,140 +35,139 @@ std::set<std::string> get_all_local_ips() {
     return local_ips;
 }
 
-// If error occurs, myaddr returned is empty set.
-int get_my_addr_from_pinglist(const std::string &pinglist_filename,
-                              std::set<std::string> &myaddr_roce,
-                              std::set<std::string> &myaddr_ib,
-                              std::set<std::string> &myaddr_tcp,
-                              std::set<std::string> &myaddr_udp) {
-    fkyaml::node config;
-    myaddr_roce.clear();
-    myaddr_ib.clear();
-    myaddr_tcp.clear();
-    myaddr_udp.clear();
-    std::set<std::string> local_ips;
+// // This function gets all ips listed in pinglist.yaml, and filter out
+// // the IPs which are not corresponding to the running node.
+// // For example, if local ip has only "10.0.0.1", all IPs in pinglist.yaml
+// // except "10.0.0.1" will be ignored.
+// // If error occurs when load yaml file, this returns an empty set.
+// int get_my_addr_from_pinglist(const std::string &pinglist_filename,
+//                               std::set<std::string> &myaddr_roce,
+//                               std::set<std::string> &myaddr_ib,
+//                               std::set<std::string> &myaddr_tcp,
+//                               std::set<std::string> &myaddr_udp) {
+//     fkyaml::node pinglist;
+//     myaddr_roce.clear();
+//     myaddr_ib.clear();
+//     myaddr_tcp.clear();
+//     myaddr_udp.clear();
+//     std::set<std::string> local_ips;
 
-    try {
-        std::ifstream ifs(pinglist_filename);
-        config = fkyaml::node::deserialize(ifs);
-        spdlog::debug("Pinglist.yaml loaded successfully.");
-    } catch (const std::exception &e) {
-        spdlog::warn("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
-                     e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//     // load pinglist.yaml
+//     try {
+//         std::ifstream ifs(pinglist_filename);
+//         pinglist = fkyaml::node::deserialize(ifs);
+//         spdlog::debug("Pinglist.yaml loaded successfully.");
+//     } catch (const std::exception &e) {
+//         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:deserialize: {}",
+//                      e.what());
+//         return PINGWEAVE_FAILURE;
+//     }
 
-    try {
-        // check empty or not
-        if (config.empty()) {
-            spdlog::warn("No entry in pinglist.yaml, skip.");
-            return PINGWEAVE_FAILURE;
-        }
-    } catch (const std::exception &e) {
-        spdlog::warn("Failed to load a pinglist.yaml - fkyaml:empty: {}",
-                     e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//     // check empty or not
+//     try {
+//         if (pinglist.empty()) {
+//             spdlog::warn("No entry in pinglist.yaml, skip.");
+//             return PINGWEAVE_FAILURE;
+//         }
+//     } catch (const std::exception &e) {
+//         spdlog::warn("Failed to load a pinglist.yaml - fkyaml:empty: {}",
+//                      e.what());
+//         return PINGWEAVE_FAILURE;
+//     }
 
-    try {
-        // Retrieve the node's IP addr
-        local_ips = get_all_local_ips();
-    } catch (const std::exception &e) {
-        spdlog::error("Failed to get my local IPs");
-        return PINGWEAVE_FAILURE;
-    }
+//     // Retrieve the node's local IPs
+//     try {
+//         local_ips = get_all_local_ips();
+//     } catch (const std::exception &e) {
+//         spdlog::error("Failed to get my local IPs");
+//         return PINGWEAVE_FAILURE;
+//     }
 
-    try {
-        // Get the RDMA category groups
-        if (!config.contains("roce")) {
-            spdlog::debug("No 'roce' category found in pinglist.yaml");
-        } else {
-            // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["roce"]) {
-                for (auto &ip : group) {
-                    // If IP is on the current node, add it
-                    std::string ip_addr = ip.get_value_ref<std::string &>();
-                    if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr_roce.insert(ip_addr);
-                    }
-                }
-            }
-        }
-    } catch (const std::exception &e) {
-        spdlog::error("RoCE: Failure occurs while getting IP from pinglist: {}",
-                      e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//     // mesh - list of IPs
+//     try {
+//         if (pinglist.contains("mesh")) {
+//             // Get each category groups - roce, ib, tcp, udp
+//             for (auto &proto : TARGET_PROTOCOLS) {
+//                 if (pinglist["mesh"].contains(proto)) {
+//                     for (auto &group : pinglist["mesh"][proto]) {
+//                         for (auto &ip : group) {
+//                             std::string ip_addr =
+//                                 ip.get_value_ref<std::string &>();
+//                             // If IP is on the current node, add it
+//                             if (local_ips.find(ip_addr) != local_ips.end()) {
+//                                 /** TODO: handle each protocol separately */
+//                                 // myaddr_roce.insert(ip_addr);
+//                                 exit(1);
+//                             }
+//                         }
+//                     }
+//                 } else {
+//                     spdlog::debug(
+//                         "No '{}' category found in pinglist.yaml::mesh", proto);
+//                 }
+//             }
+//         } else {
+//             spdlog::warn("No 'mesh' information in pinglist.yaml");
+//         }
+//     } catch (const std::exception &e) {
+//         spdlog::error("Failed to get IPs from pinglist::mesh - {}", e.what());
+//         return PINGWEAVE_FAILURE;
+//     }
 
-    try {
-        // Get the RDMA category groups
-        if (!config.contains("ib")) {
-            spdlog::debug("No 'ib' category found in pinglist.yaml");
-        } else {
-            // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["ib"]) {
-                for (auto &ip : group) {
-                    // If IP is on the current node, add it
-                    std::string ip_addr = ip.get_value_ref<std::string &>();
-                    if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr_ib.insert(ip_addr);
-                    }
-                }
-            }
-        }
-    } catch (const std::exception &e) {
-        spdlog::error("IB: Failure occurs while getting IP from pinglist: {}",
-                      e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//     // arrow - list of (src IP, dst IP)
+//     try {
+//         if (pinglist.contains("arrow")) {
+//             // Get each category groups - roce, ib, tcp, udp
+//             for (auto &proto : TARGET_PROTOCOLS) {
+//                 if (pinglist["arrow"].contains(proto)) {
+//                     for (auto &group : pinglist["arrow"][proto]) {
+//                         if (!group.contains("src") || !group.contains("dst")) {
+//                             spdlog::warn(
+//                                 "Both src and dst are required for '{}' "
+//                                 "category in pinglist.yaml::arrow",
+//                                 proto);
+//                             continue;
+//                         }
 
-    try {
-        // Get the RDMA category groups
-        if (!config.contains("tcp")) {
-            spdlog::debug("No 'tcp' category found in pinglist.yaml");
-        } else {
-            // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["tcp"]) {
-                for (auto &ip : group) {
-                    // If IP is on the current node, add it
-                    std::string ip_addr = ip.get_value_ref<std::string &>();
-                    if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr_tcp.insert(ip_addr);
-                    }
-                }
-            }
-        }
-    } catch (const std::exception &e) {
-        spdlog::error("TCP: Failure occurs while getting IP from pinglist: {}",
-                      e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//                         for (auto &ip : group["src"]) {
+//                             std::string ip_addr =
+//                                 ip.get_value_ref<std::string &>();
+//                             // If IP is on the current node, add it
+//                             if (local_ips.find(ip_addr) != local_ips.end()) {
+//                                 /** TODO: handle each protocol separately */
+//                                 // myaddr_roce.insert(ip_addr);
+//                                 exit(1);
+//                             }
+//                         }
 
-    try {
-        // Get the UDP category groups
-        if (!config.contains("udp")) {
-            spdlog::debug("No 'udp' category found in pinglist.yaml");
-        } else {
-            // find all my ip addrs is in pinglist ip addrs
-            for (auto &group : config["udp"]) {
-                for (auto &ip : group) {
-                    // If IP is on the current node, add it
-                    std::string ip_addr = ip.get_value_ref<std::string &>();
-                    if (local_ips.find(ip_addr) != local_ips.end()) {
-                        myaddr_udp.insert(ip_addr);
-                    }
-                }
-            }
-        }
-    } catch (const std::exception &e) {
-        spdlog::error("UDP: Failure occurs while getting IP from pinglist: {}",
-                      e.what());
-        return PINGWEAVE_FAILURE;
-    }
+//                         for (auto &ip : group["dst"]) {
+//                             std::string ip_addr =
+//                                 ip.get_value_ref<std::string &>();
+//                             // If IP is on the current node, add it
+//                             if (local_ips.find(ip_addr) != local_ips.end()) {
+//                                 /** TODO: handle each protocol separately */
+//                                 // myaddr_roce.insert(ip_addr);
+//                                 exit(1);
+//                             }
+//                         }
+//                     }
+//                 } else {
+//                     spdlog::debug(
+//                         "No '{}' category found in pinglist.yaml::arrow",
+//                         proto);
+//                 }
+//             }
+//         } else {
+//             spdlog::warn("No 'arrow' information in pinglist.yaml");
+//         }
+//     } catch (const std::exception &e) {
+//         spdlog::error("Failed to get IPs from pinglist::arrow - {}", e.what());
+//         return PINGWEAVE_FAILURE;
+//     }
 
-    // success
-    return PINGWEAVE_SUCCESS;
-}
+//     // success
+//     return PINGWEAVE_SUCCESS;
+// }
 
 int get_controller_info_from_ini(std::string &ip, int &port) {
     IniParser parser;

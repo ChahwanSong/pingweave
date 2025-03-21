@@ -58,7 +58,7 @@ def consumer(stream):
                 for stream, msgs in messages:
                     for msg in msgs:
                         message_id, data = msg
-                        logger.info(f"[Consumer-{stream}] Received: {message_id} -> {data}")
+                        logger.debug(f"[Consumer-{stream}] Received: {message_id} -> {data}")
                         
                         # update the last message ID
                         last_id[protocol] = message_id

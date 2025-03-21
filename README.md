@@ -1,5 +1,8 @@
 # PingWeave
-PingWeave is a mesh-grid network monitoring framework for various transport protocols. 
+
+**Currently, the code is not well-written. Sooner or later, I will do refactoring the whole code.**
+
+PingWeave is a mesh-grid (and arrow-grid) network monitoring framework for various transport protocols. 
 It currently supports TCP, UDP, RDMA (RoCEv2 and Infiniband). 
 The design goals are as following:
 - Performant: CPU consumption, OS resources such as connection states.
@@ -42,13 +45,13 @@ If one of the preliminaries (see below) are not ready, the script exits with err
 
 Here are some example commands:
 ```shell
-# agent
+# To agent on your node
 scripts/install.sh 
-# controller
+# To install controller (including agent) on your node
 scripts/install.sh -c
 # help
 scripts/install.sh -h
-# uninstall the pingweave service
+# uninstall the pingweave systemd service
 scripts/install.sh -d
 ```
 

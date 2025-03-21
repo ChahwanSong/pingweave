@@ -37,9 +37,11 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from ctrl_plotter import run_pingweave_plotter  # Import the plotter function
+    from ctrl_heatmap_plotter import (
+        run_pingweave_heatmap_plotter,
+    )  # Import the plotter function
 except ImportError as e:
-    logger.error(f"Could not import run_pingweave_plotter from plotter.py: {e}")
+    logger.error(f"Could not import run_pingweave_heatmap_plotter from plotter.py: {e}")
     sys.exit(1)
 
 try:
@@ -65,7 +67,9 @@ if __name__ == "__main__":
             target=run_pingweave_webserver, name="pingweave_webserver", daemon=True
         )
         process_plotter = multiprocessing.Process(
-            target=run_pingweave_plotter, name="pingweave_plotter", daemon=True
+            target=run_pingweave_heatmap_plotter,
+            name="pingweave_heatmap_plotter",
+            daemon=True,
         )
         process_collector_http = multiprocessing.Process(
             target=run_pingweave_collector_http,

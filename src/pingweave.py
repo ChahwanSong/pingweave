@@ -122,7 +122,7 @@ def main():
                     time.sleep(1)
                     continue
                 else:
-                    logger.wawrning(f"Failed to load a pinglist. Use empty pinglist.")
+                    logger.warning(f"Failed to load a pinglist. Use empty pinglist.")
 
             # 3) terminate processes which are no more in pinglist
             key_to_pop = []

@@ -215,6 +215,10 @@ ibv_ah *get_or_create_ah(struct rdma_context *ctx, union rdma_addr rem_dest,
                          std::shared_ptr<spdlog::logger> logger) {
     // To avoid lookup slow-down, we clear the map if its size is too big
     if (ctx->ah_map.size() > MAX_NUM_HOSTS_IN_PINGLIST) {
+        logger->warn(
+            "RDMA AH map size is too big ({}), so we clear it up to avoid "
+            "lookup latency.",
+            ctx->ah_map.size());
         for (auto &pair : ctx->ah_map) {
             ibv_destroy_ah(pair.second);
         }
@@ -653,7 +657,6 @@ int save_device_info(struct rdma_context *ctx,
     outfile.close();
     return PINGWEAVE_SUCCESS;
 }
-
 
 std::string convert_rdma_result_to_str(const std::string &srcip,
                                        const std::string &dstip,

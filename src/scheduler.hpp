@@ -15,29 +15,31 @@ class MsgScheduler {
           last_load_time(get_current_timestamp_steady_clock()),
           addr_idx(0) {
         // sanity check
-        if (protocol != "tcp" && protocol != "udp" && protocol != "roce" &&
-            protocol != "ib") {
+        if (std::find(TARGET_PROTOCOLS.begin(), TARGET_PROTOCOLS.end(), protocol) ==
+            TARGET_PROTOCOLS.end()) {
             logger->error("MsgScheduler: Invalid protocol ({})", protocol);
+            std::cerr << "MsgScheduler: Invalid protocol " << protocol
+                      << std::endl;
             exit(1);
         }
 
         std::string interval_param =
             "interval_send_ping_" + protocol + "_microsec";
         if (IS_FAILURE(get_int_param_from_ini(interval_send_ping_microsec,
-                                    interval_param))) {
+                                              interval_param))) {
             interval_send_ping_microsec = 1000000;
             logger->error(
                 "Failed to load 'report_interval' from pingweave.ini. Use {} "
-                "microseconds.",
+                "microseconds by default.",
                 interval_send_ping_microsec);
         }
 
         if (IS_FAILURE(get_int_param_from_ini(load_config_interval_sec,
-                                    "interval_sync_pinglist_sec"))) {
+                                              "interval_sync_pinglist_sec"))) {
             load_config_interval_sec = 10;
             logger->error(
                 "Failed to load 'interval_sync_pinglist_sec' from "
-                "pingweave.ini. Use {} seconds.",
+                "pingweave.ini. Use {} seconds by default.",
                 load_config_interval_sec);
         }
     }

@@ -564,17 +564,17 @@ def plot_heatmap(
     return output_files
 
 
-def process_category_group(
-    category: str, group: str, group_data: dict[str, list[str]]
+def process_protocol_group(
+    protocol: str, group: str, group_data: dict[str, list[str]]
 ) -> list[str]:
     """
-    Process a single category and group combination, generating the relevant heatmap.
+    Process a single protocol and group combination, generating the relevant heatmap.
     Returns a list of the resulting plot files created (without extension).
     """
-    if category in {"udp", "tcp"}:
-        return plot_heatmap(group_data, f"{category}_{group}", "tcpudp")
-    elif category in {"roce", "ib"}:
-        return plot_heatmap(group_data, f"{category}_{group}", "rdma")
+    if protocol in {"udp", "tcp"}:
+        return plot_heatmap(group_data, f"{protocol}_{group}", "tcpudp")
+    elif protocol in {"roce", "ib"}:
+        return plot_heatmap(group_data, f"{protocol}_{group}", "rdma")
     return []
 
 
@@ -583,9 +583,9 @@ def process_category_group(
 # ======================== #
 
 
-async def pingweave_plotter() -> None:
+async def pingweave_heatmap_plotter() -> None:
     """
-    Main asynchronous plotting task. It periodically fetches data from Redis,
+    Main asynchronous heatmap plotting task. It periodically fetches data from Redis,
     generates heatmap plots, and cleans up old files.
     """
     last_plot_time = int(time.time())
@@ -604,16 +604,26 @@ async def pingweave_plotter() -> None:
                 if (last_plot_time + interval_seconds < now_plot_time) and (
                     redis_server is not None
                 ):
+                    # update the current time for periodic plotting
                     last_plot_time = now_plot_time
 
                     # Step 1: Load pinglist into memory
                     read_pinglist()
 
+                    if (
+                        type(pinglist_in_memory) != dict
+                        or "mesh" not in pinglist_in_memory
+                    ):
+                        logger.error(
+                            "No 'mesh' category in pinglist.yaml. Stop heatmap plotting."
+                        )
+                        continue
+
                     # Step 2: Prepare template records and IP->group mapping
-                    records = copy.deepcopy(pinglist_in_memory)
+                    records = copy.deepcopy(pinglist_in_memory["mesh"])
                     map_ip_to_groups = {}
 
-                    for proto, cat_data in pinglist_in_memory.items():
+                    for proto, cat_data in pinglist_in_memory["mesh"].items():
                         for group, ip_list in cat_data.items():
                             # if empty list, ignore
                             if not ip_list:
@@ -637,20 +647,21 @@ async def pingweave_plotter() -> None:
                     while cursor != 0:
                         current_time = datetime.now()
                         cursor, keys = redis_server.scan(cursor=cursor)
+
                         for key in keys:
                             # if redis key or not what we expected, skip
                             if REDIS_STREAM_PREFIX in key:
                                 continue
-                            
+
                             value = redis_server.get(key)
                             if value is None:
                                 logger.warning(f"Redis key {key} not found. Skip.")
                                 continue
-                                
+
                             if "WRONGTYPE" in value:
                                 logger.warning(f"Key {key} has WRONGTYPE: {value}")
                                 continue
-                            
+
                             value_splits = value.split(",")
                             # Filter out old data
                             try:
@@ -690,16 +701,16 @@ async def pingweave_plotter() -> None:
                                         )
                                     records[proto][group][record_key] = value_splits
 
-                    # Step 4: Generate plots (concurrently for each category and group)
+                    # Step 4: Generate plots (concurrently for each protocol and group)
                     new_file_list = []
                     with ThreadPoolExecutor() as executor:
                         futures = []
-                        for category, data in records.items():
+                        for protocol, data in records.items():
                             for group, group_data in data.items():
                                 futures.append(
                                     executor.submit(
-                                        process_category_group,
-                                        category,
+                                        process_protocol_group,
+                                        protocol,
                                         group,
                                         group_data,
                                     )
@@ -730,18 +741,20 @@ async def pingweave_plotter() -> None:
                 clear_directory_conditional(SUMMARY_DIR, new_file_list, "summary")
 
     except KeyboardInterrupt:
-        logger.info("pingweave_plotter received KeyboardInterrupt. Exiting.")
+        logger.info("pingweave_heatmap_plotter received KeyboardInterrupt. Exiting.")
     except Exception as e:
-        logger.error(f"Exception in pingweave_plotter: {e}")
+        logger.error(f"Exception in pingweave_heatmap_plotter: {e}")
 
 
-def run_pingweave_plotter() -> None:
+def run_pingweave_heatmap_plotter() -> None:
     """
     Entry point for the plotter script. Sets process title, runs the async plotter,
     and handles KeyboardInterrupt gracefully.
     """
-    setproctitle("pingweave_ctrl_plotter.py")
+    setproctitle("pingweave_ctrl_heatmap_plotter.py")
     try:
-        asyncio.run(pingweave_plotter())
+        asyncio.run(pingweave_heatmap_plotter())
     except KeyboardInterrupt:
-        logger.info("pingweave_plotter process received KeyboardInterrupt. Exiting.")
+        logger.info(
+            "pingweave_heatmap_plotter process received KeyboardInterrupt. Exiting."
+        )

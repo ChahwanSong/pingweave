@@ -39,6 +39,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "format.hpp"
@@ -59,11 +60,11 @@ typedef moodycamel::BlockingReaderWriterQueue<union rdma_pingmsg_t>
     RdmaServerQueue;
 
 std::set<std::string> get_all_local_ips();
-int get_my_addr_from_pinglist(const std::string &pinglist_filename,
-                              std::set<std::string> &myaddr_roce,
-                              std::set<std::string> &myaddr_ib,
-                              std::set<std::string> &myaddr_tcp,
-                              std::set<std::string> &myaddr_udp);
+// int get_my_addr_from_pinglist(const std::string &pinglist_filename,
+//                               std::set<std::string> &myaddr_roce,
+//                               std::set<std::string> &myaddr_ib,
+//                               std::set<std::string> &myaddr_tcp,
+//                               std::set<std::string> &myaddr_udp);
 int get_controller_info_from_ini(std::string &ip, int &port);
 int get_int_value_from_ini(IniParser &parser, const std::string &section,
                            const std::string &key);

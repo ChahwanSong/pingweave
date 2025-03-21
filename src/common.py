@@ -253,8 +253,7 @@ def send_message_via_http(
 
 def delete_files_in_directory(directory_path, logger):
     """
-    지정된 디렉토리 내의 모든 파일과 하위 디렉토리를 재귀적으로 삭제합니다.
-    하위 디렉토리의 경우, 내부 파일들을 모두 삭제한 후 디렉토리 자체를 삭제합니다.
+    Delete all files and sub-directories 'recursively'.
     """
     try:
         entries = os.listdir(directory_path)
@@ -298,22 +297,56 @@ def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
                 pinglist = yaml.safe_load(file)
                 logger.debug(f"{pinglist_path} yaml was loaded successfully.")
 
-            for protocol, group_data in pinglist.items():
-                # filter invalid protocols
-                if protocol not in records:
-                    logger.debug(f"Skip to load invalid protocols: {protocol}")
+            if not pinglist:
+                logger.debug(f"Empty pinglist.yaml. Use empty pinglist.")
+                return records
 
-                # get ip lists
-                if not group_data:
+            if type(pinglist) != dict:
+                logger.debug(f"pinglist.yaml has non-dictionary type. Use empty pinglist.")
+                return records
+
+            for category, protocol_data in pinglist.items():
+                # check invalid category
+                if category not in ["mesh", "arrow"]:
+                    logger.debug(f"Skip to load invalid category: {category}")
                     continue
+                    
+                if not protocol_data:
+                    logger.debug(f"Empty list of {category} in pinglist.yaml.")
+                    continue
+                
+                for protocol, group_data in protocol_data.items():
+                    # check invalid protocols
+                    if protocol not in records:
+                        logger.debug(f"Skip to load invalid protocols: {protocol}")
 
-                for group, iplist in group_data.items():
-                    if not iplist:
+                    if not group_data:
+                        logger.debug(f"Empty list of {category}:{protocol} in pinglist.yaml.")
                         continue
 
-                    for ip in iplist:
-                        if ip in local_ips:
-                            records[protocol].add(ip)
+                    # get ip lists
+                    if not group_data:
+                        continue
+
+                    if category == "mesh":                        
+                        for group, ip_list in group_data.items():
+                            # skip empty IP list
+                            if not ip_list:
+                                continue
+
+                            for ip in ip_list:
+                                if ip in local_ips:
+                                    records[protocol].add(ip)
+
+                    if category == "arrow":
+                        for group, node_data in group_data.items():
+                            for node_type, ip_list in node_data.items():
+                                if node_type not in ["src", "dst"]:
+                                    logger.warn(f"Skip to load invalid node type: {node_type}")
+                                for ip in ip_list:
+                                    if ip in local_ips:
+                                        records[protocol].add(ip)
+                                        
         else:
             logger.warning(
                 f"Pinglist file not found at {pinglist_path}. Use empty pinglist."
@@ -321,7 +354,7 @@ def get_my_addr_from_pinglist(pinglist_path: str, local_ips: set, logger):
 
         return records
     except Exception as e:
-        logger.warning("Failed to load pinglist.yaml")
+        logger.warning("Failed to load pinglist.yaml. Check its format.")
         return False
 
 

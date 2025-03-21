@@ -163,7 +163,7 @@ async def index(request):
             grouped_files[protocol][group_name] = []
         grouped_files[protocol][group_name].append((fname, measure))
 
-    protocol_list = sorted(grouped_files.keys())
+    TARGET_PROTOCOLS = sorted(grouped_files.keys())
 
     # -------------------- Build HTML --------------------
     content = f"""
@@ -377,7 +377,7 @@ async def index(request):
 
     # Build protocol tabs
     first_protocol = True
-    for protocol in protocol_list:
+    for protocol in TARGET_PROTOCOLS:
         active_class = "active" if first_protocol else ""
         aria_selected = "true" if first_protocol else "false"
         protocol_button_id = f"tab-{protocol}"
@@ -406,7 +406,7 @@ async def index(request):
 
     # Protocol tab panes
     first_protocol = True
-    for protocol in protocol_list:
+    for protocol in TARGET_PROTOCOLS:
         show_active_protocol = "show active" if first_protocol else ""
         first_protocol = False
 
